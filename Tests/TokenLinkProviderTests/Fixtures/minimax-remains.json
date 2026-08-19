@@ -1,0 +1,12 @@
+{
+  "model_remains": [
+    {
+      "model_name": "MiniMax-M2.5",
+      "current_interval_remaining_percent": 60,
+      "current_weekly_remaining_percent": 92,
+      "current_interval_reset_time": 1787137200000,
+      "current_weekly_reset_time": 1787616000000
+    }
+  ],
+  "base_resp": {"status_code": 0, "status_msg": "success"}
+}
