@@ -14,7 +14,8 @@ let package = Package(
         .testTarget(name: "TokenLinkCoreTests", dependencies: ["TokenLinkCore"]),
         .testTarget(
             name: "TokenLinkProviderTests",
-            dependencies: ["TokenLinkCore", "TokenLinkProviders"]),
+            dependencies: ["TokenLinkCore", "TokenLinkProviders"],
+            resources: [.process("Fixtures")]),
     ],
     swiftLanguageModes: [.v6]
 )
