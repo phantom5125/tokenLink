@@ -30,7 +30,7 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 ## Requirements
 
 - macOS 14 or newer
-- Apple Silicon or Intel Mac with Xcode 16+ (Command Line Tools can build the app;
+- Apple Silicon or Intel Mac with Xcode 26+ / Swift 6.2+ (Command Line Tools can build the app;
   the included test wrapper handles CLT installations whose Swift Testing search
   paths are incomplete)
 - A working `codex` CLI for Codex quota

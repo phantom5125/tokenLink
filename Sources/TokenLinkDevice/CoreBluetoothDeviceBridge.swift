@@ -22,6 +22,13 @@ public enum StopWatchDiscoveryFilter {
 }
 
 public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Sendable {
+  private enum ConnectionStage: Equatable {
+    case connecting(UInt64)
+    case discoveringServices(UInt64)
+    case discoveringCharacteristics(UInt64)
+    case ready(UInt64)
+  }
+
   public static var quotaServiceUUID: CBUUID {
     CBUUID(string: "7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C01")
   }
@@ -49,6 +56,13 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   private var pendingIdentifier: UUID?
   private var connectOperationID: UUID?
   private var writeOperationID: UUID?
+  private var connectionGeneration: UInt64 = 0
+  private var connectionStage: ConnectionStage?
+  private var writeConnectionGeneration: UInt64?
+  private var disconnectingPeripheral: CBPeripheral?
+  private var disconnectOperationID: UUID?
+  private var disconnectContinuations: [CheckedContinuation<Void, Never>] = []
+  private var ignoredLateDisconnects: [ObjectIdentifier: Date] = [:]
 
   var hasInitializedCentralManager: Bool {
     queue.sync { central != nil }
@@ -99,7 +113,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
       try await withCheckedThrowingContinuation {
         (continuation: CheckedContinuation<Void, Error>) in
         queue.async { [self] in
-          guard connectContinuation == nil else {
+          guard connectContinuation == nil, disconnectingPeripheral == nil else {
             continuation.resume(throwing: BluetoothTransportError.operationInProgress)
             return
           }
@@ -109,12 +123,26 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
             continuation.resume(throwing: BluetoothTransportError.peripheralNotFound)
             return
           }
+          let peripheralIdentity = ObjectIdentifier(peripheral)
+          let isQuarantined =
+            ignoredLateDisconnects[peripheralIdentity].map { $0 > Date() } ?? false
+          if !isQuarantined {
+            ignoredLateDisconnects.removeValue(forKey: peripheralIdentity)
+          }
+          guard peripheral.state != .disconnecting, !isQuarantined else {
+            continuation.resume(throwing: BluetoothTransportError.disconnected)
+            return
+          }
+          connectionGeneration &+= 1
+          let generation = connectionGeneration
           pendingIdentifier = identifier
           connectOperationID = operationID
           connectContinuation = continuation
+          connectionStage = .connecting(generation)
           peripheral.delegate = self
           if peripheral.state == .connected {
             connectedPeripheral = peripheral
+            connectionStage = .discoveringServices(generation)
             peripheral.discoverServices([Self.quotaServiceUUID])
           } else {
             central.connect(peripheral)
@@ -143,12 +171,14 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
           }
           guard let peripheral = connectedPeripheral,
             peripheral.state == .connected,
-            let quotaCharacteristic
+            let quotaCharacteristic,
+            case .ready(let generation) = connectionStage
           else {
             continuation.resume(throwing: BluetoothTransportError.disconnected)
             return
           }
           writeOperationID = operationID
+          writeConnectionGeneration = generation
           writeContinuation = continuation
           peripheral.writeValue(data, for: quotaCharacteristic, type: .withResponse)
           queue.asyncAfter(deadline: .now() + writeTimeoutSeconds) { [weak self] in
@@ -166,15 +196,21 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   public func disconnect() async {
     await withCheckedContinuation { continuation in
       queue.async { [self] in
-        if let connectedPeripheral, let central {
-          central.cancelPeripheralConnection(connectedPeripheral)
-          eventContinuation.yield(.disconnected(connectedPeripheral.identifier))
-        }
-        connectedPeripheral = nil
-        quotaCharacteristic = nil
+        disconnectContinuations.append(continuation)
+        if disconnectingPeripheral != nil { return }
+
+        let peripheral = connectedPeripheral ?? pendingPeripheral()
         resumeConnect(throwing: BluetoothTransportError.disconnected)
         resumeWrite(throwing: BluetoothTransportError.disconnected)
-        continuation.resume()
+        connectionStage = nil
+        quotaCharacteristic = nil
+        connectedPeripheral = nil
+
+        guard let peripheral, let central, peripheral.state != .disconnected else {
+          finishDisconnect(peripheral: peripheral)
+          return
+        }
+        beginDisconnect(peripheral: peripheral, central: central)
       }
     }
   }
@@ -229,6 +265,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     connectContinuation = nil
     connectOperationID = nil
     pendingIdentifier = nil
+    if error != nil { connectionStage = nil }
     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
   }
 
@@ -236,46 +273,85 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     guard let continuation = writeContinuation else { return }
     writeContinuation = nil
     writeOperationID = nil
+    writeConnectionGeneration = nil
     if let error { continuation.resume(throwing: error) } else { continuation.resume() }
+  }
+
+  private func pendingPeripheral() -> CBPeripheral? {
+    guard let pendingIdentifier else { return nil }
+    return discovered[pendingIdentifier]
+      ?? central?.retrievePeripherals(withIdentifiers: [pendingIdentifier]).first
+  }
+
+  private func beginDisconnect(peripheral: CBPeripheral, central: CBCentralManager) {
+    guard disconnectingPeripheral == nil else { return }
+    let operationID = UUID()
+    disconnectingPeripheral = peripheral
+    disconnectOperationID = operationID
+    connectedPeripheral = nil
+    quotaCharacteristic = nil
+    connectionStage = nil
+    writeConnectionGeneration = nil
+    central.cancelPeripheralConnection(peripheral)
+    queue.asyncAfter(deadline: .now() + 2) { [weak self] in
+      self?.finishDisconnect(peripheral: peripheral, operationID: operationID)
+    }
+  }
+
+  private func finishDisconnect(
+    peripheral: CBPeripheral?,
+    operationID: UUID? = nil
+  ) {
+    if let operationID, operationID != disconnectOperationID { return }
+    if let active = disconnectingPeripheral,
+      let peripheral,
+      active !== peripheral
+    {
+      return
+    }
+    let identifier = (disconnectingPeripheral ?? peripheral)?.identifier
+    if operationID != nil, let peripheral, peripheral.state != .disconnected {
+      ignoredLateDisconnects[ObjectIdentifier(peripheral)] = Date(timeIntervalSinceNow: 5)
+    }
+    disconnectingPeripheral = nil
+    disconnectOperationID = nil
+    connectedPeripheral = nil
+    quotaCharacteristic = nil
+    connectionStage = nil
+    writeConnectionGeneration = nil
+    if let identifier {
+      eventContinuation.yield(.disconnected(identifier))
+    }
+    let continuations = disconnectContinuations
+    disconnectContinuations.removeAll()
+    for continuation in continuations { continuation.resume() }
   }
 
   private func timeoutConnect(operationID: UUID, peripheral: CBPeripheral) {
     guard connectOperationID == operationID else { return }
-    central?.cancelPeripheralConnection(peripheral)
-    connectedPeripheral = nil
-    quotaCharacteristic = nil
+    if let central { beginDisconnect(peripheral: peripheral, central: central) }
     resumeConnect(throwing: BluetoothTransportError.timeout)
-    eventContinuation.yield(.disconnected(peripheral.identifier))
   }
 
   private func cancelConnect(operationID: UUID) {
     guard connectOperationID == operationID else { return }
-    if let pendingIdentifier,
-      let peripheral = central?.retrievePeripherals(withIdentifiers: [pendingIdentifier]).first
-    {
-      central?.cancelPeripheralConnection(peripheral)
+    if let peripheral = pendingPeripheral(), let central {
+      beginDisconnect(peripheral: peripheral, central: central)
     }
-    connectedPeripheral = nil
-    quotaCharacteristic = nil
     resumeConnect(throwing: CancellationError())
   }
 
   private func timeoutWrite(operationID: UUID, peripheral: CBPeripheral) {
     guard writeOperationID == operationID else { return }
-    central?.cancelPeripheralConnection(peripheral)
-    connectedPeripheral = nil
-    quotaCharacteristic = nil
+    if let central { beginDisconnect(peripheral: peripheral, central: central) }
     resumeWrite(throwing: BluetoothTransportError.timeout)
-    eventContinuation.yield(.disconnected(peripheral.identifier))
   }
 
   private func cancelWrite(operationID: UUID) {
     guard writeOperationID == operationID else { return }
-    if let peripheral = connectedPeripheral {
-      central?.cancelPeripheralConnection(peripheral)
+    if let peripheral = connectedPeripheral, let central {
+      beginDisconnect(peripheral: peripheral, central: central)
     }
-    connectedPeripheral = nil
-    quotaCharacteristic = nil
     resumeWrite(throwing: CancellationError())
   }
 
@@ -321,11 +397,14 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
   }
 
   public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
-    guard peripheral.identifier == pendingIdentifier else {
+    guard peripheral.identifier == pendingIdentifier,
+      case .connecting(let generation) = connectionStage
+    else {
       central.cancelPeripheralConnection(peripheral)
       return
     }
     connectedPeripheral = peripheral
+    connectionStage = .discoveringServices(generation)
     peripheral.discoverServices([Self.quotaServiceUUID])
   }
 
@@ -334,7 +413,10 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
     didFailToConnect peripheral: CBPeripheral,
     error: Error?
   ) {
-    guard peripheral.identifier == pendingIdentifier else { return }
+    if ignoredLateDisconnects.removeValue(forKey: ObjectIdentifier(peripheral)) != nil { return }
+    guard peripheral.identifier == pendingIdentifier,
+      case .connecting = connectionStage
+    else { return }
     resumeConnect(
       throwing: BluetoothTransportError.system(
         error?.localizedDescription ?? "Connection failed."))
@@ -345,8 +427,14 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
     didDisconnectPeripheral peripheral: CBPeripheral,
     error: Error?
   ) {
+    let objectIdentifier = ObjectIdentifier(peripheral)
+    if ignoredLateDisconnects.removeValue(forKey: objectIdentifier) != nil { return }
+    if let disconnectingPeripheral, disconnectingPeripheral === peripheral {
+      finishDisconnect(peripheral: peripheral)
+      return
+    }
     guard
-      peripheral.identifier == connectedPeripheral?.identifier
+      peripheral === connectedPeripheral
         || peripheral.identifier == pendingIdentifier
     else { return }
     connectedPeripheral = nil
@@ -364,6 +452,9 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
     _ peripheral: CBPeripheral,
     didDiscoverServices error: Error?
   ) {
+    guard peripheral === connectedPeripheral,
+      case .discoveringServices(let generation) = connectionStage
+    else { return }
     if let error {
       resumeConnect(throwing: BluetoothTransportError.system(error.localizedDescription))
       return
@@ -376,6 +467,7 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
       resumeConnect(throwing: BluetoothTransportError.serviceNotFound)
       return
     }
+    connectionStage = .discoveringCharacteristics(generation)
     peripheral.discoverCharacteristics([Self.quotaWriteUUID], for: service)
   }
 
@@ -384,6 +476,9 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
     didDiscoverCharacteristicsFor service: CBService,
     error: Error?
   ) {
+    guard peripheral === connectedPeripheral,
+      case .discoveringCharacteristics(let generation) = connectionStage
+    else { return }
     if let error {
       resumeConnect(throwing: BluetoothTransportError.system(error.localizedDescription))
       return
@@ -397,6 +492,7 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
       return
     }
     quotaCharacteristic = characteristic
+    connectionStage = .ready(generation)
     resumeConnect()
     eventContinuation.yield(.connected(peripheral.identifier))
   }
@@ -406,7 +502,12 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
     didWriteValueFor characteristic: CBCharacteristic,
     error: Error?
   ) {
-    guard characteristic.uuid == Self.quotaWriteUUID else { return }
+    guard peripheral === connectedPeripheral,
+      characteristic === quotaCharacteristic,
+      characteristic.uuid == Self.quotaWriteUUID,
+      case .ready(let generation) = connectionStage,
+      writeConnectionGeneration == generation
+    else { return }
     if let error {
       resumeWrite(throwing: BluetoothTransportError.system(error.localizedDescription))
     } else {

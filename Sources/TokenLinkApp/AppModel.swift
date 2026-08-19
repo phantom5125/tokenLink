@@ -69,12 +69,15 @@ public final class AppModel {
   @ObservationIgnored private var scheduler: RefreshScheduler
   @ObservationIgnored private var wakeObserver: NSObjectProtocol?
   @ObservationIgnored private var pathMonitor: NWPathMonitor?
-  @ObservationIgnored private var transportEventTask: Task<Void, Never>?
+  @ObservationIgnored private var bridgeEventTask: Task<Void, Never>?
+  @ObservationIgnored private var watchSyncTask: Task<Void, Never>?
+  @ObservationIgnored private var watchSyncToken: UUID?
+  @ObservationIgnored private var bindingGeneration: UInt64 = 0
   @ObservationIgnored private var hasSeenNetworkState = false
   @ObservationIgnored private var networkWasAvailable = false
   @ObservationIgnored private var lastManualRefresh: Date?
   @ObservationIgnored private var started = false
-  @ObservationIgnored private var ignoringExpectedDisconnect = false
+  @ObservationIgnored private var isChangingBinding = false
 
   public init(
     refresher: any AppRefreshing,
@@ -207,7 +210,7 @@ public final class AppModel {
   public func start() async {
     guard !started else { return }
     started = true
-    ensureTransportObservation()
+    await ensureBridgeObservation()
     await requestRefresh(reason: "Started")
     await refreshCredentialStates()
     scheduler.start { [weak self] in
@@ -225,8 +228,15 @@ public final class AppModel {
     wakeObserver = nil
     pathMonitor?.cancel()
     pathMonitor = nil
-    transportEventTask?.cancel()
-    transportEventTask = nil
+    bindingGeneration &+= 1
+    watchSyncTask?.cancel()
+    watchSyncTask = nil
+    watchSyncToken = nil
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    if let bridge {
+      Task { await bridge.stopObservingTransport() }
+    }
     started = false
   }
 
@@ -243,7 +253,7 @@ public final class AppModel {
 
   public func requestRefresh(reason: String) async {
     guard !isRefreshing else { return }
-    ensureTransportObservation()
+    await ensureBridgeObservation()
     isRefreshing = true
     await refresher.refresh()
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
@@ -297,24 +307,40 @@ public final class AppModel {
     isDiscovering = false
   }
 
-  public func bindDevice(_ identifier: UUID) throws {
-    guard let bluetoothTransport else { return }
+  public func bindDevice(_ identifier: UUID) async throws {
+    guard let bluetoothTransport, !isChangingBinding else { return }
+    isChangingBinding = true
+    defer { isChangingBinding = false }
+    bindingGeneration &+= 1
+    let previousBridge = bridge
+    await cancelActiveWatchSync()
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    await previousBridge?.stopObservingTransport()
+    await previousBridge?.disconnect()
     configuration.boundDeviceIdentifier = identifier
     bridge = DeviceBridge(
       transport: bluetoothTransport,
       boundIdentifier: identifier)
-    ensureTransportObservation()
     devicePhase = .disconnected
     try saveConfiguration()
+    await ensureBridgeObservation()
     discoveredDeviceIdentifiers = []
     record("Bound StopWatch")
   }
 
   public func unbindDevice() async throws {
-    await bridge?.disconnect()
+    guard !isChangingBinding else { return }
+    isChangingBinding = true
+    defer { isChangingBinding = false }
+    bindingGeneration &+= 1
+    let previousBridge = bridge
+    await cancelActiveWatchSync()
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    await previousBridge?.stopObservingTransport()
+    await previousBridge?.disconnect()
     bridge = nil
-    transportEventTask?.cancel()
-    transportEventTask = nil
     configuration.boundDeviceIdentifier = nil
     devicePhase = .unbound
     try saveConfiguration()
@@ -322,7 +348,7 @@ public final class AppModel {
   }
 
   public func syncCodexNow() async {
-    ensureTransportObservation()
+    await ensureBridgeObservation()
     await syncCodex(allowStale: true, attempts: 2, automatic: false)
   }
 
@@ -423,6 +449,11 @@ public final class AppModel {
     attempts: Int,
     automatic: Bool
   ) async {
+    guard !isChangingBinding else { return }
+    if let active = watchSyncTask {
+      await active.value
+      return
+    }
     guard let bridge,
       let state = states[.codex],
       state.phase == .healthy || (allowStale && state.phase == .stale),
@@ -430,17 +461,52 @@ public final class AppModel {
       let payload = try? LegacyWatchProjection.encode(snapshot: snapshot, now: now())
     else { return }
 
+    let generation = bindingGeneration
     let boundedAttempts = min(2, max(1, attempts))
-    for attempt in 0..<boundedAttempts {
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.performWatchSync(
+        bridge: bridge,
+        payload: payload,
+        generation: generation,
+        attempts: boundedAttempts,
+        automatic: automatic)
+    }
+    let token = UUID()
+    watchSyncTask = task
+    watchSyncToken = token
+    await task.value
+    if watchSyncToken == token {
+      watchSyncTask = nil
+      watchSyncToken = nil
+    }
+  }
+
+  private func performWatchSync(
+    bridge: DeviceBridge,
+    payload: Data,
+    generation: UInt64,
+    attempts: Int,
+    automatic: Bool
+  ) async {
+    for attempt in 0..<attempts {
+      guard !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) else { return }
       if attempt > 0 {
-        ignoringExpectedDisconnect = true
         await bridge.disconnect()
-        try? await Task.sleep(for: .milliseconds(350))
-        ignoringExpectedDisconnect = false
+        guard !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) else { return }
+        do {
+          try await Task.sleep(for: .milliseconds(100))
+        } catch {
+          return
+        }
       }
       do {
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = .connecting
         try await bridge.connect()
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
         switch devicePhase {
         case .connected, .synced:
@@ -450,40 +516,64 @@ public final class AppModel {
         }
         devicePhase = .syncing
         try await bridge.sync(payload, now: now())
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
         record(automatic ? "Automatically synced Codex quota" : "Synced Codex quota to StopWatch")
         return
+      } catch is CancellationError {
+        return
       } catch {
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
-        if attempt + 1 < boundedAttempts {
+        if attempt + 1 < attempts {
           record("Retrying StopWatch sync")
         }
       }
     }
-    record("StopWatch sync failed")
+    if !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) {
+      record("StopWatch sync failed")
+    }
   }
 
-  private func ensureTransportObservation() {
-    guard transportEventTask == nil, let bluetoothTransport else { return }
-    transportEventTask = Task { @MainActor [weak self] in
-      for await event in bluetoothTransport.connectionEvents() {
+  private func ensureBridgeObservation() async {
+    guard bridgeEventTask == nil, let bridge else { return }
+    await bridge.startObservingTransport()
+    let generation = bindingGeneration
+    bridgeEventTask = Task { @MainActor [weak self] in
+      for await phase in bridge.phaseEvents() {
         guard !Task.isCancelled, let self else { return }
-        switch event {
-        case .connected(let identifier):
-          guard identifier == configuration.boundDeviceIdentifier else { continue }
-          if devicePhase == .connecting || devicePhase == .disconnected {
-            devicePhase = .connected
-          }
-        case .disconnected(let identifier):
-          guard !ignoringExpectedDisconnect else { continue }
-          guard identifier == nil || identifier == configuration.boundDeviceIdentifier else {
-            continue
-          }
-          devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
-          record("StopWatch disconnected")
+        guard self.isCurrentBinding(generation, bridge: bridge) else { return }
+        let wasEstablished: Bool
+        switch self.devicePhase {
+        case .connected, .syncing, .synced:
+          wasEstablished = true
+        default:
+          wasEstablished = false
+        }
+        self.devicePhase = phase
+        if phase == .disconnected, wasEstablished {
+          self.record("StopWatch disconnected")
         }
       }
     }
+  }
+
+  private func cancelActiveWatchSync() async {
+    guard let active = watchSyncTask, let token = watchSyncToken else { return }
+    active.cancel()
+    await active.value
+    if watchSyncToken == token {
+      watchSyncTask = nil
+      watchSyncToken = nil
+    }
+  }
+
+  private func isCurrentBinding(_ generation: UInt64, bridge expectedBridge: DeviceBridge) -> Bool {
+    !isChangingBinding
+      && generation == bindingGeneration
+      && bridge === expectedBridge
+      && configuration.boundDeviceIdentifier != nil
   }
 
   private func record(_ message: String) {

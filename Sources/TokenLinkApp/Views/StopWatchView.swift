@@ -149,11 +149,13 @@ struct StopWatchView: View {
         }
         Button("Bind selected device") {
           guard let selection else { return }
-          do {
-            try model.bindDevice(selection)
-            self.selection = nil
-            message = "StopWatch bound."
-          } catch { message = error.localizedDescription }
+          Task {
+            do {
+              try await model.bindDevice(selection)
+              self.selection = nil
+              message = "StopWatch bound."
+            } catch { message = error.localizedDescription }
+          }
         }
         .buttonStyle(.borderedProminent)
         .disabled(selection == nil)

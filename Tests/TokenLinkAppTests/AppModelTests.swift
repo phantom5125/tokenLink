@@ -33,11 +33,26 @@ private actor TestBLETransport: BLETransport {
   nonisolated let eventStream: AsyncStream<BLETransportEvent>
   nonisolated let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
   let failuresBeforeSuccess: Int
+  let connectDelay: Duration?
+  let writeDelay: Duration?
+  let disconnectDelay: Duration?
+  let noncancellableWriteDelays: [Duration]
   private(set) var connectCount = 0
+  private(set) var writeAttempts = 0
   private(set) var writes: [Data] = []
 
-  init(failuresBeforeSuccess: Int = 0) {
+  init(
+    failuresBeforeSuccess: Int = 0,
+    connectDelay: Duration? = nil,
+    writeDelay: Duration? = nil,
+    disconnectDelay: Duration? = nil,
+    noncancellableWriteDelays: [Duration] = []
+  ) {
     self.failuresBeforeSuccess = failuresBeforeSuccess
+    self.connectDelay = connectDelay
+    self.writeDelay = writeDelay
+    self.disconnectDelay = disconnectDelay
+    self.noncancellableWriteDelays = noncancellableWriteDelays
     (eventStream, eventContinuation) = AsyncStream.makeStream(
       bufferingPolicy: .bufferingNewest(8))
   }
@@ -46,6 +61,7 @@ private actor TestBLETransport: BLETransport {
 
   func connect(identifier: UUID) async throws {
     connectCount += 1
+    if let connectDelay { try await Task.sleep(for: connectDelay) }
     if connectCount <= failuresBeforeSuccess {
       throw BluetoothTransportError.disconnected
     }
@@ -53,10 +69,19 @@ private actor TestBLETransport: BLETransport {
   }
 
   func writeWithResponse(_ data: Data) async throws {
+    writeAttempts += 1
+    if writeAttempts <= noncancellableWriteDelays.count {
+      let delay = noncancellableWriteDelays[writeAttempts - 1]
+      await Task.detached { try? await Task.sleep(for: delay) }.value
+      try Task.checkCancellation()
+    } else if let writeDelay {
+      try await Task.sleep(for: writeDelay)
+    }
     writes.append(data)
   }
 
   func disconnect() async {
+    if let disconnectDelay { try? await Task.sleep(for: disconnectDelay) }
     eventContinuation.yield(.disconnected(nil))
   }
 
@@ -159,7 +184,107 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   try? await Task.sleep(for: .milliseconds(20))
 
   #expect(model.devicePhase == .disconnected)
+  await model.requestRefresh(reason: "Reconnect")
+  #expect(await transport.connectCount == 2)
+  #expect(await transport.writes.count == 2)
+  guard case .synced = model.devicePhase else {
+    Issue.record("Expected the next refresh to reconnect and sync")
+    return
+  }
   model.stop()
+}
+
+@MainActor @Test func concurrentAutomaticAndManualSyncsCoalesce() async {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  let transport = TestBLETransport(writeDelay: .milliseconds(150))
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = identifier
+  let codex = snapshot(.codex, remaining: 72)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  let automatic = Task { await model.requestRefresh(reason: "Automatic") }
+  for _ in 0..<50 {
+    if await transport.writeAttempts == 1 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  let manual = Task { await model.syncCodexNow() }
+  await automatic.value
+  await manual.value
+
+  #expect(await transport.connectCount == 1)
+  #expect(await transport.writeAttempts == 1)
+  #expect(await transport.writes.count == 1)
+  model.stop()
+}
+
+@MainActor @Test func unbindingCancelsInFlightSyncWithoutLateStateWrites() async throws {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  let transport = TestBLETransport(
+    writeDelay: .seconds(2),
+    disconnectDelay: .milliseconds(150))
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = identifier
+  let codex = snapshot(.codex, remaining: 72)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  let refresh = Task { await model.requestRefresh(reason: "Automatic") }
+  for _ in 0..<50 {
+    if await transport.writeAttempts == 1 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  let unbind = Task { try await model.unbindDevice() }
+  try? await Task.sleep(for: .milliseconds(20))
+  let lateManualSync = Task { await model.syncCodexNow() }
+  try await unbind.value
+  await lateManualSync.value
+  await refresh.value
+  try? await Task.sleep(for: .milliseconds(20))
+
+  #expect(model.devicePhase == .unbound)
+  #expect(await transport.writeAttempts == 1)
+  #expect(await transport.writes.isEmpty)
+}
+
+@MainActor @Test func lateCancelledSyncCannotClearReplacementSyncSlot() async {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  let transport = TestBLETransport(
+    noncancellableWriteDelays: [.milliseconds(100), .milliseconds(250), .milliseconds(250)])
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = identifier
+  let codex = snapshot(.codex, remaining: 72)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  let original = Task { await model.requestRefresh(reason: "Original") }
+  for _ in 0..<50 {
+    if await transport.writeAttempts == 1 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  model.stop()
+  let replacement = Task { await model.syncCodexNow() }
+  for _ in 0..<50 {
+    if await transport.writeAttempts == 2 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  try? await Task.sleep(for: .milliseconds(130))
+  let coalesced = Task { await model.syncCodexNow() }
+  await original.value
+  await replacement.value
+  await coalesced.value
+
+  #expect(await transport.writeAttempts == 2)
 }
 
 @MainActor @Test func failedCodexRefreshMarksPreviouslySyncedWatchStale() async {

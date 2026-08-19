@@ -31,10 +31,13 @@ extension BLETransport {
 }
 
 public actor DeviceBridge {
+  nonisolated private let phaseStream: AsyncStream<DevicePhase>
+  nonisolated private let phaseContinuation: AsyncStream<DevicePhase>.Continuation
   private let transport: any BLETransport
   private let boundIdentifier: UUID?
   private let connectTimeout: Duration
   private let writeTimeout: Duration
+  private var transportEventTask: Task<Void, Never>?
   public private(set) var phase: DevicePhase
 
   public init(
@@ -43,11 +46,33 @@ public actor DeviceBridge {
     connectTimeout: Duration = .seconds(12),
     writeTimeout: Duration = .seconds(7)
   ) {
+    (phaseStream, phaseContinuation) = AsyncStream.makeStream(
+      bufferingPolicy: .bufferingNewest(8))
     self.transport = transport
     self.boundIdentifier = boundIdentifier
     self.connectTimeout = connectTimeout
     self.writeTimeout = writeTimeout
     self.phase = boundIdentifier == nil ? .unbound : .disconnected
+  }
+
+  public nonisolated func phaseEvents() -> AsyncStream<DevicePhase> {
+    phaseStream
+  }
+
+  public func startObservingTransport() {
+    guard transportEventTask == nil else { return }
+    let transport = transport
+    transportEventTask = Task { [weak self] in
+      for await event in transport.connectionEvents() {
+        guard !Task.isCancelled, let self else { return }
+        await self.handle(event)
+      }
+    }
+  }
+
+  public func stopObservingTransport() {
+    transportEventTask?.cancel()
+    transportEventTask = nil
   }
 
   public func connect() async throws {
@@ -58,36 +83,59 @@ public actor DeviceBridge {
     default:
       break
     }
-    phase = .connecting
+    updatePhase(.connecting)
     do {
       let transport = transport
       try await Self.perform(timeout: connectTimeout) {
         try await transport.connect(identifier: boundIdentifier)
       }
-      phase = .connected
+      updatePhase(.connected)
     } catch {
-      phase = .disconnected
+      updatePhase(.disconnected)
       throw error
     }
   }
 
   public func sync(_ data: Data, now: Date = .now) async throws {
-    phase = .syncing
+    updatePhase(.syncing)
     do {
       let transport = transport
       try await Self.perform(timeout: writeTimeout) {
         try await transport.writeWithResponse(data)
       }
-      phase = .synced(now)
+      updatePhase(.synced(now))
     } catch {
-      phase = .stale
+      if phase != .disconnected {
+        updatePhase(.stale)
+      }
       throw error
     }
   }
 
   public func disconnect() async {
     await transport.disconnect()
-    phase = boundIdentifier == nil ? .unbound : .disconnected
+    updatePhase(boundIdentifier == nil ? .unbound : .disconnected)
+  }
+
+  private func handle(_ event: BLETransportEvent) {
+    switch event {
+    case .connected(let identifier):
+      guard identifier == boundIdentifier else { return }
+      switch phase {
+      case .connecting, .disconnected:
+        updatePhase(.connected)
+      default:
+        break
+      }
+    case .disconnected(let identifier):
+      guard identifier == nil || identifier == boundIdentifier else { return }
+      updatePhase(boundIdentifier == nil ? .unbound : .disconnected)
+    }
+  }
+
+  private func updatePhase(_ replacement: DevicePhase) {
+    phase = replacement
+    phaseContinuation.yield(replacement)
   }
 
   private static func perform(

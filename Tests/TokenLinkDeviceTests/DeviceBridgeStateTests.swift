@@ -4,6 +4,8 @@ import Testing
 @testable import TokenLinkDevice
 
 private actor FakeBLETransport: BLETransport {
+  nonisolated let eventStream: AsyncStream<BLETransportEvent>
+  nonisolated let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
   let discovered: [UUID]
   let connectDelay: Duration?
   let writeDelay: Duration?
@@ -16,6 +18,8 @@ private actor FakeBLETransport: BLETransport {
     connectDelay: Duration? = nil,
     writeDelay: Duration? = nil
   ) {
+    (eventStream, eventContinuation) = AsyncStream.makeStream(
+      bufferingPolicy: .bufferingNewest(8))
     self.discovered = discovered
     self.connectDelay = connectDelay
     self.writeDelay = writeDelay
@@ -30,7 +34,12 @@ private actor FakeBLETransport: BLETransport {
     if let writeDelay { try await Task.sleep(for: writeDelay) }
     writes.append(data)
   }
-  func disconnect() async { disconnected = true }
+  func disconnect() async {
+    disconnected = true
+    eventContinuation.yield(.disconnected(nil))
+  }
+  nonisolated func connectionEvents() -> AsyncStream<BLETransportEvent> { eventStream }
+  func emit(_ event: BLETransportEvent) { eventContinuation.yield(event) }
 }
 
 @Test func bridgeIgnoresUnboundPeripheralAndWritesBoundOne() async throws {
@@ -128,4 +137,21 @@ private actor FakeBLETransport: BLETransport {
     try await writeBridge.sync(Data("quota".utf8))
   }
   #expect(await writeBridge.phase == .stale)
+}
+
+@Test func bridgeOwnsUnsolicitedDisconnectState() async throws {
+  let bound = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  let transport = FakeBLETransport(discovered: [])
+  let bridge = DeviceBridge(transport: transport, boundIdentifier: bound)
+  await bridge.startObservingTransport()
+  try await bridge.connect()
+  try await bridge.sync(Data("quota".utf8))
+
+  await transport.emit(.disconnected(bound))
+  try? await Task.sleep(for: .milliseconds(10))
+
+  #expect(await bridge.phase == .disconnected)
+  try await bridge.connect()
+  #expect(await transport.connectedIdentifiers == [bound, bound])
+  await bridge.stopObservingTransport()
 }

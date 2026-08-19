@@ -1393,7 +1393,7 @@ Apache License 2.0. Provider names and trademarks belong to their respective own
 
 - [ ] **Step 6: Add CI and commit**
 
-CI checks out on `macos-15`, runs `swift build`, `swift test`, `swift format lint --recursive --strict Sources Tests`, and `bash scripts/privacy_scan.sh`.
+CI checks out on `macos-26` for Swift 6.2 compatibility, runs `swift build`, `swift test`, `swift format lint --recursive --strict Sources Tests`, and `bash scripts/privacy_scan.sh`.
 
 ```bash
 git add .gitignore packaging scripts README.md NOTICE.md SECURITY.md CONTRIBUTING.md .github
