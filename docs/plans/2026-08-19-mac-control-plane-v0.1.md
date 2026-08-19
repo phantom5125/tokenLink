@@ -1,8 +1,13 @@
 # TokenLink macOS Control Plane v0.1 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
 **Goal:** Build a native macOS menu-bar control plane that displays Codex, Kimi, MiniMax, and GLM Coding Plan quota, stores explicit API keys in Keychain, and syncs the Codex primary window to the existing M5Stack StopWatch quota GATT protocol.
+
+> Implementation status (2026-08-20): Tasks 1–12 and automated/package portions
+> of Task 13 are complete. Real Codex validation passed. Interactive UI,
+> credentialed Kimi/MiniMax/GLM requests, and physical StopWatch validation remain
+> explicitly `NOT VERIFIED` in the validation report. The original step boxes
+> below are retained as the pre-implementation procedure rather than rewritten as
+> validation evidence.
 
 **Architecture:** A Swift Package separates pure quota/state logic (`TokenLinkCore`), provider fetchers (`TokenLinkProviders`), CoreBluetooth transport (`TokenLinkDevice`), and the SwiftUI executable (`TokenLinkApp`). Provider adapters emit a shared `QuotaSnapshot`; the app shows every provider while `LegacyWatchProjection` sends only Codex to firmware protocol v1.
 
