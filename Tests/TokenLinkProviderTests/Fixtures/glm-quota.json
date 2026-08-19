@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "data": {
+    "limits": [
+      {
+        "type": "TOKENS_LIMIT",
+        "unit": "5h",
+        "used_percent": 7,
+        "remaining_percent": 93,
+        "reset_time": 1787137200000
+      },
+      {
+        "type": "TOKENS_LIMIT",
+        "unit": "weekly",
+        "used_percent": 18,
+        "remaining_percent": 82,
+        "reset_time": 1787616000000
+      }
+    ]
+  }
+}
