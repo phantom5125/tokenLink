@@ -173,15 +173,19 @@ QuotaWindow
 ### 6.3 MiniMax
 
 - 使用 TokenLink Keychain 中的 Coding Plan API Key。
-- 根据用户选择的 Global/CN region 使用官方 MiniMax host。
+- 根据用户选择的 region 使用 Global `www.minimax.io` 或中国区
+  `www.minimaxi.com` 官方 Token Plan host。
 - 初始实现使用官方 Token Plan remains 接口，并兼容仍在使用的 Coding Plan remains 响应结构。
-- Parser 对字段命名差异使用显式、带测试的兼容分支，不接受任意动态 host。
+- Parser 使用当前 `remains_time` / `weekly_remains_time` 毫秒倒计时，并对旧绝对
+  reset timestamp 使用显式、带测试的兼容分支；不接受任意动态 host。
 
 ### 6.4 GLM
 
 - 使用 TokenLink Keychain 中的 GLM Coding Plan API Key。
 - 支持 Global `api.z.ai` 与中国区 `open.bigmodel.cn` 的显式 region 选择。
 - 调用官方 `/api/monitor/usage/quota/limit` 用量接口。
+- 解析当前 `percentage`、`currentValue`、`usage`、`remaining`、
+  `nextResetTime` 和 numeric `unit`/`number` 字段，并保留显式旧格式兼容。
 - 保留 5-hour、weekly、monthly 等服务实际返回的独立窗口，不根据套餐名称推算额度。
 
 ### 6.5 与 CodexBar 的关系

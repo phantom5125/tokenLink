@@ -125,6 +125,10 @@ struct ProviderQuotaRow: View {
   }
 
   private func detailText(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
+    if row.state.phase == .error {
+      return
+        "Expired cache · fetched \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))"
+    }
     if row.state.phase == .stale {
       return "Stale · fetched \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
     }

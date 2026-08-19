@@ -5,24 +5,29 @@ public struct CodexProvider: QuotaProvider {
   public let id: ProviderID = .codex
   private let client: CodexAppServerClient
   private let now: @Sendable () -> Date
-  private let timeout: Duration
+  private let startupTimeout: Duration
+  private let requestTimeout: Duration
 
   public init(
     executable: URL,
     transport: any AppServerTransport = ProcessAppServerTransport(),
     now: @escaping @Sendable () -> Date = { Date() },
-    timeout: Duration = .seconds(5)
+    startupTimeout: Duration = .seconds(30),
+    requestTimeout: Duration = .seconds(5)
   ) {
     self.client = CodexAppServerClient(
       executable: executable,
       transport: transport)
     self.now = now
-    self.timeout = timeout
+    self.startupTimeout = startupTimeout
+    self.requestTimeout = requestTimeout
   }
 
   public func fetch() async -> Result<QuotaSnapshot, ProviderFailure> {
     do {
-      let data = try await client.readRateLimits(timeout: timeout)
+      let data = try await client.readRateLimits(
+        startupTimeout: startupTimeout,
+        requestTimeout: requestTimeout)
       return .success(
         try CodexRateLimitParser.parse(
           data: data,

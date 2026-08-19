@@ -43,6 +43,43 @@ private struct StubProvider: QuotaProvider {
   #expect(await store.state(for: .glm, refreshIntervalSeconds: 300).phase == .stale)
 }
 
+@Test func failedCachedSnapshotExpiresAfterTwentyFourHours() async {
+  let snapshot = QuotaSnapshot(
+    provider: .kimi, planLabel: nil,
+    windows: [
+      .init(
+        id: "weekly", label: "Weekly", usedPercent: 25,
+        remainingPercent: 75, remainingCount: nil, limitCount: nil, resetsAt: nil)
+    ],
+    source: .apiKey, fetchedAt: Date(timeIntervalSince1970: 100))
+  let store = ProviderStore(now: { Date(timeIntervalSince1970: 86_501) })
+  await store.accept(.success(snapshot), provider: .kimi)
+  await store.accept(.failure(.network("offline")), provider: .kimi)
+
+  let state = await store.state(for: .kimi)
+
+  #expect(state.phase == .error)
+  #expect(state.snapshot == snapshot)
+  #expect(state.error?.kind == .timeout)
+}
+
+@Test func allStatesAppliesConfiguredAgeThreshold() async {
+  let snapshot = QuotaSnapshot(
+    provider: .glm, planLabel: nil,
+    windows: [
+      .init(
+        id: "5h", label: "5 hours", usedPercent: 10,
+        remainingPercent: 90, remainingCount: nil, limitCount: nil, resetsAt: nil)
+    ],
+    source: .apiKey, fetchedAt: Date(timeIntervalSince1970: 100))
+  let store = ProviderStore(now: { Date(timeIntervalSince1970: 701) })
+  await store.accept(.success(snapshot), provider: .glm)
+
+  let states = await store.allStates(refreshIntervalSeconds: 300)
+
+  #expect(states[.glm]?.phase == .stale)
+}
+
 @Test func refreshCoordinatorFetchesProvidersConcurrently() async {
   let snapshot = QuotaSnapshot(
     provider: .codex, planLabel: nil,

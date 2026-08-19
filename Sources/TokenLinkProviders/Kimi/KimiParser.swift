@@ -67,7 +67,14 @@ private struct KimiQuotaDetail: Decodable {
       remainingPercent: remainingPercent,
       remainingCount: remaining.value,
       limitCount: limit.value,
-      resetsAt: resetTime.flatMap { ISO8601DateFormatter().date(from: $0) })
+      resetsAt: resetTime.flatMap(parseISO8601Date))
+  }
+
+  private func parseISO8601Date(_ value: String) -> Date? {
+    let fractional = ISO8601DateFormatter()
+    fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+    if let date = fractional.date(from: value) { return date }
+    return ISO8601DateFormatter().date(from: value)
   }
 }
 

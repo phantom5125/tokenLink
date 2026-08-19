@@ -43,9 +43,10 @@ public struct KimiProvider: QuotaProvider {
         for: request,
         policy: .init(allowedHosts: ["api.kimi.com"]))
       guard response.statusCode == 200 else {
+        let authentication = response.statusCode == 401 || response.statusCode == 403
         return .failure(
           .init(
-            kind: response.statusCode == 401 ? .authentication : .network,
+            kind: authentication ? .authentication : .network,
             message: "Kimi returned HTTP \(response.statusCode)."))
       }
       return .success(

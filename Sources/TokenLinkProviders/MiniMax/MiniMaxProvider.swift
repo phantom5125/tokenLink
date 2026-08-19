@@ -14,7 +14,7 @@ public enum MiniMaxRegion: String, Codable, Sendable {
     case .global:
       URL(string: "https://www.minimax.io/v1/token_plan/remains")!
     case .china:
-      URL(string: "https://platform.minimaxi.com/v1/token_plan/remains")!
+      URL(string: "https://www.minimaxi.com/v1/token_plan/remains")!
     }
   }
 }
@@ -51,18 +51,21 @@ public struct MiniMaxProvider: QuotaProvider {
         for: request,
         policy: EndpointPolicy(allowedHosts: [
           "www.minimax.io",
-          "platform.minimaxi.com",
+          "www.minimaxi.com",
         ]))
       guard response.statusCode == 200 else {
+        let authentication = response.statusCode == 401 || response.statusCode == 403
         return .failure(
           .init(
-            kind: response.statusCode == 401 ? .authentication : .network,
+            kind: authentication ? .authentication : .network,
             message: "MiniMax returned HTTP \(response.statusCode)."))
       }
       return .success(
         try MiniMaxParser.parse(
           data: response.data,
           fetchedAt: now()))
+    } catch let failure as ProviderFailure {
+      return .failure(failure)
     } catch is DecodingError, is MiniMaxParseError {
       return .failure(.decoding("MiniMax usage could not be read."))
     } catch {

@@ -24,12 +24,15 @@ private actor MiniMaxHTTPClient: HTTPClient {
 }
 
 @Test func parsesMiniMaxFiveHourAndWeeklyWindows() throws {
+  let fetchedAt = Date(timeIntervalSince1970: 1_787_130_000)
   let snapshot = try MiniMaxParser.parse(
     data: Fixture.load("minimax-remains.json"),
-    fetchedAt: Date(timeIntervalSince1970: 1_787_130_000))
+    fetchedAt: fetchedAt)
   #expect(snapshot.provider == .minimax)
   #expect(snapshot.windows.map(\.remainingPercent) == [60, 92])
   #expect(snapshot.windows.map(\.id) == ["5h", "weekly"])
+  #expect(snapshot.windows[0].resetsAt == fetchedAt.addingTimeInterval(7_200))
+  #expect(snapshot.windows[1].resetsAt == fetchedAt.addingTimeInterval(172_800))
 }
 
 @Test func rejectsMiniMaxErrorEnvelope() {
@@ -44,10 +47,10 @@ private actor MiniMaxHTTPClient: HTTPClient {
     MiniMaxRegion.global.endpoint.absoluteString == "https://www.minimax.io/v1/token_plan/remains")
   #expect(
     MiniMaxRegion.china.endpoint.absoluteString
-      == "https://platform.minimaxi.com/v1/token_plan/remains")
-  let policy = EndpointPolicy(allowedHosts: ["www.minimax.io", "platform.minimaxi.com"])
+      == "https://www.minimaxi.com/v1/token_plan/remains")
+  let policy = EndpointPolicy(allowedHosts: ["www.minimax.io", "www.minimaxi.com"])
   #expect(try policy.validate(MiniMaxRegion.global.endpoint).host == "www.minimax.io")
-  #expect(try policy.validate(MiniMaxRegion.china.endpoint).host == "platform.minimaxi.com")
+  #expect(try policy.validate(MiniMaxRegion.china.endpoint).host == "www.minimaxi.com")
 }
 
 @Test func minimaxProviderUsesSelectedRegionAndBearerKey() async throws {
@@ -64,4 +67,18 @@ private actor MiniMaxHTTPClient: HTTPClient {
 
   #expect(await http.request?.url == MiniMaxRegion.china.endpoint)
   #expect(await http.request?.value(forHTTPHeaderField: "Authorization") == "Bearer minimax-key")
+}
+
+@Test func minimaxProviderMapsForbiddenToAuthenticationFailure() async {
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: Data(), statusCode: 403))
+  let provider = MiniMaxProvider(
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "invalid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected authentication failure")
+    return
+  }
+  #expect(failure.kind == .authentication)
 }

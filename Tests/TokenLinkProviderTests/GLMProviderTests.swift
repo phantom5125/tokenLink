@@ -28,9 +28,13 @@ private actor GLMHTTPClient: HTTPClient {
     data: Fixture.load("glm-quota.json"),
     fetchedAt: Date(timeIntervalSince1970: 1_787_130_000))
   #expect(snapshot.provider == .glm)
-  #expect(snapshot.windows.map(\.id) == ["5h", "weekly"])
-  #expect(snapshot.windows.map(\.remainingPercent) == [93, 82])
-  #expect(snapshot.windows.allSatisfy { $0.limitCount == nil })
+  #expect(snapshot.planLabel == "pro")
+  #expect(snapshot.windows.map(\.id) == ["5h", "weekly", "mcp-monthly"])
+  #expect(snapshot.windows.map(\.remainingPercent) == [93, 82, 97])
+  #expect(snapshot.windows[0].remainingCount == 37_200_000)
+  #expect(snapshot.windows[0].limitCount == 40_000_000)
+  #expect(snapshot.windows[1].limitCount == nil)
+  #expect(snapshot.windows[0].resetsAt == Date(timeIntervalSince1970: 1_787_137_200))
 }
 
 @Test func glmProviderUsesSelectedOfficialRegionAndRawAuthorizationKey() async throws {

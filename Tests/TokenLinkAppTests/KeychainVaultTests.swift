@@ -36,6 +36,18 @@ private struct NoCLIToken: KimiTokenReading {
   func accessToken() async throws -> String? { nil }
 }
 
+private struct FailingKeychainClient: KeychainClient {
+  func read(service: String, account: String) async throws -> Data? {
+    throw KeychainClientError(status: -1)
+  }
+  func write(_ data: Data, service: String, account: String) async throws {
+    throw KeychainClientError(status: -1)
+  }
+  func delete(service: String, account: String) async throws {
+    throw KeychainClientError(status: -1)
+  }
+}
+
 @Test func keychainUsesFixedServiceAndStableProviderAccount() async throws {
   let client = FakeKeychainClient()
   let vault = KeychainVault(client: client, kimiTokenReader: NoCLIToken())
@@ -50,4 +62,19 @@ private struct NoCLIToken: KimiTokenReading {
 
   try await vault.deleteAPIKey(for: .minimax)
   #expect(try await vault.apiKey(for: .minimax) == nil)
+}
+
+@Test func keychainFailureIsReportedAsConfigurationError() async {
+  let vault = KeychainVault(
+    client: FailingKeychainClient(),
+    kimiTokenReader: NoCLIToken())
+
+  do {
+    _ = try await vault.apiKey(for: .glm)
+    Issue.record("Expected configuration failure")
+  } catch let failure as ProviderFailure {
+    #expect(failure.kind == .configuration)
+  } catch {
+    Issue.record("Unexpected error type: \(error)")
+  }
 }

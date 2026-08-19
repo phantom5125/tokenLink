@@ -9,6 +9,10 @@ one local interface while preserving compatibility with the existing
 > application is implemented and testable; physical-device validation is tracked
 > separately from automated compatibility tests.
 
+TokenLink is an independent open-source project and is not affiliated with,
+endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
+or M5Stack. Provider names and trademarks belong to their respective owners.
+
 ## What it does
 
 - Native `MenuBarExtra` plus a four-route Control Center: Overview, Providers,
@@ -18,6 +22,8 @@ one local interface while preserving compatibility with the existing
 - Stores explicit API keys in macOS Keychain under service
   `io.github.phantom5125.tokenlink.provider` and stable provider accounts.
 - Binds a single StopWatch by CoreBluetooth identifier and writes with response.
+- Automatically syncs a bound watch after a fresh Codex snapshot, with bounded
+  timeout/retry behavior and disconnect-state tracking.
 - Exports diagnostics only after redacting secrets, user paths, account labels,
   and device identifiers.
 
@@ -68,13 +74,15 @@ cookies, or refresh token, and it never refreshes or writes the CLI credential.
 ### MiniMax
 
 Store a MiniMax Coding Plan API key and choose Global or China. Requests are
-restricted to the selected official host and use the Token Plan remains endpoint.
+restricted to the selected official host (`www.minimax.io` or `www.minimaxi.com`)
+and use the Token Plan remains endpoint.
 
 ### GLM
 
 Store a GLM Coding Plan API key and choose Global (Z.AI) or China (BigModel).
-TokenLink parses returned quota windows as-is; it does not estimate limits from a
-plan name.
+TokenLink supports the current numeric-unit/camelCase quota shape plus an explicit
+legacy compatibility branch. It preserves returned windows and does not estimate
+limits from a plan name.
 
 Provider, region, and Codex-path changes are persisted immediately and take effect
 after restarting the v0.1 app. Refresh interval changes take effect immediately.
@@ -86,9 +94,12 @@ after restarting the v0.1 app. Refresh interval changes take effect immediately.
 3. Select one discovered identifier and bind it.
 4. Press **Sync Codex now**.
 
-Discovery occurs only on explicit request. TokenLink connects only to the bound
-identifier, discovers the private quota service and write characteristic, and
-uses a write-with-response operation.
+Discovery occurs only on explicit request. TokenLink first checks connected quota
+and HID peripherals, then performs a short broad scan filtered by the StopWatch
+name or private service UUID. It does not connect until you explicitly bind an
+identifier. Once bound, fresh Codex refreshes sync automatically; **Sync Codex
+now** remains available as a manual action. Connect and write operations have
+finite deadlines and use a write-with-response operation.
 
 The v1 firmware understands only this payload:
 
@@ -121,7 +132,8 @@ See [SECURITY.md](SECURITY.md) for reporting and threat-boundary details.
 - **Stale quota:** TokenLink keeps the last successful snapshot and labels it
   stale; use Refresh after network access returns.
 - **No StopWatch discovered:** confirm the firmware exposes the private quota
-  GATT service, grant Bluetooth access when macOS asks, and scan again.
+  GATT service or the `Codex Micro` device name, grant Bluetooth access when macOS
+  asks, and scan again.
 - **Launch at login requires approval:** enable TokenLink in System Settings →
   General → Login Items.
 

@@ -155,13 +155,17 @@ public struct CodexAppServerClient: Sendable {
     self.transport = transport
   }
 
-  public func readRateLimits(timeout: Duration = .seconds(5)) async throws -> Data {
+  public func readRateLimits(
+    startupTimeout: Duration = .seconds(30),
+    requestTimeout: Duration = .seconds(5)
+  ) async throws -> Data {
     do {
       try await transport.start(executable: executable)
       try await transport.send(.initialize)
+      _ = try await transport.response(id: 0, timeout: startupTimeout)
       try await transport.send(.initialized)
       try await transport.send(.rateLimits(id: 1))
-      let response = try await transport.response(id: 1, timeout: timeout)
+      let response = try await transport.response(id: 1, timeout: requestTimeout)
       await transport.stop()
       return response
     } catch {

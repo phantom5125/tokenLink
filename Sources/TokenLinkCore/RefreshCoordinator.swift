@@ -42,27 +42,36 @@ public actor ProviderStore {
     for provider: ProviderID,
     refreshIntervalSeconds: TimeInterval = 300
   ) -> ProviderState {
-    guard var state = states[provider] else {
+    guard let state = states[provider] else {
       return .init(phase: .disabled)
     }
-    guard state.phase == .healthy, let snapshot = state.snapshot else {
-      return state
-    }
+    return aged(state, refreshIntervalSeconds: refreshIntervalSeconds)
+  }
 
+  public func allStates(
+    refreshIntervalSeconds: TimeInterval = 300
+  ) -> [ProviderID: ProviderState] {
+    states.mapValues {
+      aged($0, refreshIntervalSeconds: refreshIntervalSeconds)
+    }
+  }
+
+  private func aged(
+    _ storedState: ProviderState,
+    refreshIntervalSeconds: TimeInterval
+  ) -> ProviderState {
+    var state = storedState
+    guard let snapshot = state.snapshot else { return state }
     let age = now().timeIntervalSince(snapshot.fetchedAt)
     if age > 86_400 {
       state.phase = .error
       state.error = .init(
         kind: .timeout,
         message: "Cached quota is older than 24 hours.")
-    } else if age > refreshIntervalSeconds * 2 {
+    } else if state.phase == .healthy, age > refreshIntervalSeconds * 2 {
       state.phase = .stale
     }
     return state
-  }
-
-  public func allStates() -> [ProviderID: ProviderState] {
-    states
   }
 }
 

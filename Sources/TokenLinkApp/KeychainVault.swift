@@ -94,15 +94,21 @@ public struct KeychainVault: CredentialReader, Sendable {
   }
 
   public func apiKey(for provider: ProviderID) async throws -> String? {
-    guard
-      let data = try await client.read(
-        service: Self.service,
-        account: provider.rawValue)
-    else { return nil }
-    guard let value = String(data: data, encoding: .utf8) else {
-      throw ProviderFailure.configuration("Keychain value is not valid UTF-8.")
+    do {
+      guard
+        let data = try await client.read(
+          service: Self.service,
+          account: provider.rawValue)
+      else { return nil }
+      guard let value = String(data: data, encoding: .utf8) else {
+        throw ProviderFailure.configuration("Keychain value is not valid UTF-8.")
+      }
+      return value
+    } catch let failure as ProviderFailure {
+      throw failure
+    } catch {
+      throw ProviderFailure.configuration("Keychain access failed.")
     }
-    return value
   }
 
   public func cliAccessToken(for provider: ProviderID) async throws -> String? {
@@ -111,15 +117,23 @@ public struct KeychainVault: CredentialReader, Sendable {
   }
 
   public func setAPIKey(_ value: String, for provider: ProviderID) async throws {
-    try await client.write(
-      Data(value.utf8),
-      service: Self.service,
-      account: provider.rawValue)
+    do {
+      try await client.write(
+        Data(value.utf8),
+        service: Self.service,
+        account: provider.rawValue)
+    } catch {
+      throw ProviderFailure.configuration("Keychain update failed.")
+    }
   }
 
   public func deleteAPIKey(for provider: ProviderID) async throws {
-    try await client.delete(
-      service: Self.service,
-      account: provider.rawValue)
+    do {
+      try await client.delete(
+        service: Self.service,
+        account: provider.rawValue)
+    } catch {
+      throw ProviderFailure.configuration("Keychain deletion failed.")
+    }
   }
 }

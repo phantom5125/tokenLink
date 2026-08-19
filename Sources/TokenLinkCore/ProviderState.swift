@@ -1,3 +1,5 @@
+import Foundation
+
 public enum ProviderErrorKind: String, Codable, Sendable {
   case missingCredential
   case authentication
@@ -24,6 +26,10 @@ public struct ProviderFailure: Error, Equatable, Sendable {
   public static func missingCredential(_ message: String) -> Self {
     .init(kind: .missingCredential, message: message)
   }
+}
+
+extension ProviderFailure: LocalizedError {
+  public var errorDescription: String? { message }
 }
 
 public enum ProviderPhase: String, Codable, Sendable {

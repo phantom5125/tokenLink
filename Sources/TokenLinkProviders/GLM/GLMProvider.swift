@@ -64,6 +64,8 @@ public struct GLMProvider: QuotaProvider {
         try GLMParser.parse(
           data: response.data,
           fetchedAt: now()))
+    } catch let failure as ProviderFailure {
+      return .failure(failure)
     } catch is DecodingError, is GLMParseError {
       return .failure(.decoding("GLM usage could not be read."))
     } catch {

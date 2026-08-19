@@ -4,18 +4,32 @@
     "limits": [
       {
         "type": "TOKENS_LIMIT",
-        "unit": "5h",
-        "used_percent": 7,
-        "remaining_percent": 93,
-        "reset_time": 1787137200000
+        "unit": 3,
+        "number": 5,
+        "usage": 40000000,
+        "currentValue": 2800000,
+        "remaining": 37200000,
+        "percentage": 7,
+        "nextResetTime": 1787137200000
       },
       {
         "type": "TOKENS_LIMIT",
-        "unit": "weekly",
-        "used_percent": 18,
-        "remaining_percent": 82,
-        "reset_time": 1787616000000
+        "unit": 6,
+        "number": 1,
+        "percentage": 18,
+        "nextResetTime": 1787616000000
+      },
+      {
+        "type": "TIME_LIMIT",
+        "unit": 5,
+        "number": 1,
+        "usage": 1000,
+        "currentValue": 30,
+        "remaining": 970,
+        "percentage": 3,
+        "nextResetTime": 1787702400000
       }
-    ]
+    ],
+    "level": "pro"
   }
 }

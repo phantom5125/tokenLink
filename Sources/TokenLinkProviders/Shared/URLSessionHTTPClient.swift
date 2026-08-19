@@ -22,10 +22,26 @@ public struct URLSessionHTTPClient: HTTPClient {
 
     var boundedRequest = request
     boundedRequest.timeoutInterval = 20
-    let (data, response) = try await session.data(for: boundedRequest)
+    let (data, response) = try await session.data(
+      for: boundedRequest,
+      delegate: RedirectRejectingDelegate())
     guard let http = response as? HTTPURLResponse else {
       throw ProviderHostError()
     }
     return HTTPResponse(data: data, statusCode: http.statusCode)
+  }
+}
+
+final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
+  @unchecked Sendable
+{
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
   }
 }

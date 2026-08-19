@@ -38,6 +38,19 @@ private actor KimiHTTPClient: HTTPClient {
   #expect(snapshot.windows[1].remainingPercent == 60)
 }
 
+@Test func parsesKimiNanosecondFractionalResetTime() throws {
+  let data = Data(
+    #"{"subType":"BASIC","usage":{"limit":100,"used":25,"remaining":75,"resetTime":"2026-08-24T00:00:00.123456789Z"},"limits":[]}"#
+      .utf8)
+
+  let snapshot = try KimiParser.parse(
+    data: data,
+    fetchedAt: Date(timeIntervalSince1970: 1_787_130_000),
+    source: .apiKey)
+
+  #expect(snapshot.windows[0].resetsAt != nil)
+}
+
 @Test func kimiCLIReaderUsesOnlyDocumentedCredentialFile() async throws {
   let root = FileManager.default.temporaryDirectory
     .appending(path: UUID().uuidString, directoryHint: .isDirectory)
@@ -92,4 +105,17 @@ private actor KimiHTTPClient: HTTPClient {
   let snapshot = try result.get()
   #expect(snapshot.source == .apiKey)
   #expect(await http.request?.value(forHTTPHeaderField: "Authorization") == "Bearer explicit-key")
+}
+
+@Test func kimiProviderMapsForbiddenToAuthenticationFailure() async {
+  let http = KimiHTTPClient(response: HTTPResponse(data: Data(), statusCode: 403))
+  let provider = KimiProvider(
+    http: http,
+    credentials: KimiCredentials(apiKeyValue: "invalid", cliTokenValue: nil))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected authentication failure")
+    return
+  }
+  #expect(failure.kind == .authentication)
 }

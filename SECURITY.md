@@ -34,9 +34,13 @@ structures.
 
 ## Device boundary
 
-TokenLink scans for the private quota service only during an explicit discovery
-session, persists one selected CoreBluetooth identifier, and connects only to that
-binding. Version 1 sends only the normalized Codex primary-window payload.
+TokenLink initializes CoreBluetooth only for an explicit discovery action or a
+previously bound-device sync. Discovery checks connected private-service/HID
+peripherals and uses a short broad scan filtered by the `Codex Micro` name or the
+private quota-service UUID. It persists one user-selected CoreBluetooth identifier
+and never connects a discovery candidate before binding. Version 1 sends only the
+normalized Codex primary-window payload. Connect/write operations have deadlines,
+bounded retry, and disconnect-state reporting.
 
 ## Diagnostics
 

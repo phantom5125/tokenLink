@@ -58,7 +58,8 @@ public final class AppModel {
   public var configuration: AppConfiguration
 
   @ObservationIgnored private let refresher: any AppRefreshing
-  @ObservationIgnored private let stateLoader: @Sendable () async -> [ProviderID: ProviderState]
+  @ObservationIgnored private let stateLoader:
+    @Sendable (TimeInterval) async -> [ProviderID: ProviderState]
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private let configurationStore: ConfigurationStore?
   @ObservationIgnored private let vault: KeychainVault?
@@ -68,15 +69,19 @@ public final class AppModel {
   @ObservationIgnored private var scheduler: RefreshScheduler
   @ObservationIgnored private var wakeObserver: NSObjectProtocol?
   @ObservationIgnored private var pathMonitor: NWPathMonitor?
+  @ObservationIgnored private var transportEventTask: Task<Void, Never>?
   @ObservationIgnored private var hasSeenNetworkState = false
   @ObservationIgnored private var networkWasAvailable = false
   @ObservationIgnored private var lastManualRefresh: Date?
   @ObservationIgnored private var started = false
+  @ObservationIgnored private var ignoringExpectedDisconnect = false
 
   public init(
     refresher: any AppRefreshing,
     now: @escaping @Sendable () -> Date = { Date() },
-    stateLoader: @escaping @Sendable () async -> [ProviderID: ProviderState] = { [:] },
+    stateLoader: @escaping @Sendable (TimeInterval) async -> [ProviderID: ProviderState] = { _ in
+      [:]
+    },
     configuration: AppConfiguration = .default,
     configurationStore: ConfigurationStore? = nil,
     vault: KeychainVault? = nil,
@@ -150,7 +155,9 @@ public final class AppModel {
     let coordinator = RefreshCoordinator(providers: providers, store: store)
     return AppModel(
       refresher: coordinator,
-      stateLoader: { await store.allStates() },
+      stateLoader: { refreshIntervalSeconds in
+        await store.allStates(refreshIntervalSeconds: refreshIntervalSeconds)
+      },
       configuration: configuration,
       configurationStore: configurationStore,
       vault: vault,
@@ -193,13 +200,14 @@ public final class AppModel {
     case .connected: "Connected"
     case .syncing: "Syncing"
     case .synced: "Synced"
-    case .stale: "Sync failed"
+    case .stale: "Sync stale"
     }
   }
 
   public func start() async {
     guard !started else { return }
     started = true
+    ensureTransportObservation()
     await requestRefresh(reason: "Started")
     await refreshCredentialStates()
     scheduler.start { [weak self] in
@@ -217,6 +225,8 @@ public final class AppModel {
     wakeObserver = nil
     pathMonitor?.cancel()
     pathMonitor = nil
+    transportEventTask?.cancel()
+    transportEventTask = nil
     started = false
   }
 
@@ -233,9 +243,15 @@ public final class AppModel {
 
   public func requestRefresh(reason: String) async {
     guard !isRefreshing else { return }
+    ensureTransportObservation()
     isRefreshing = true
     await refresher.refresh()
-    states = await stateLoader()
+    states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
+    if bridge != nil, states[.codex]?.phase == .healthy {
+      await syncCodex(allowStale: false, attempts: 2, automatic: true)
+    } else if case .synced = devicePhase {
+      devicePhase = .stale
+    }
     isRefreshing = false
     record(reason)
   }
@@ -287,6 +303,7 @@ public final class AppModel {
     bridge = DeviceBridge(
       transport: bluetoothTransport,
       boundIdentifier: identifier)
+    ensureTransportObservation()
     devicePhase = .disconnected
     try saveConfiguration()
     discoveredDeviceIdentifiers = []
@@ -296,6 +313,8 @@ public final class AppModel {
   public func unbindDevice() async throws {
     await bridge?.disconnect()
     bridge = nil
+    transportEventTask?.cancel()
+    transportEventTask = nil
     configuration.boundDeviceIdentifier = nil
     devicePhase = .unbound
     try saveConfiguration()
@@ -303,23 +322,8 @@ public final class AppModel {
   }
 
   public func syncCodexNow() async {
-    guard let bridge,
-      let state = states[.codex],
-      state.phase == .healthy || state.phase == .stale,
-      let snapshot = state.snapshot
-    else { return }
-    do {
-      let payload = try LegacyWatchProjection.encode(snapshot: snapshot, now: now())
-      try await bridge.connect()
-      devicePhase = await bridge.phase
-      guard devicePhase == .connected else { return }
-      try await bridge.sync(payload, now: now())
-      devicePhase = await bridge.phase
-      record("Synced Codex quota to StopWatch")
-    } catch {
-      devicePhase = await bridge.phase
-      record("StopWatch sync failed")
-    }
+    ensureTransportObservation()
+    await syncCodex(allowStale: true, attempts: 2, automatic: false)
   }
 
   public func setProvider(_ provider: ProviderID, enabled: Bool) throws {
@@ -412,6 +416,74 @@ public final class AppModel {
 
   private func saveConfiguration() throws {
     try configurationStore?.save(configuration)
+  }
+
+  private func syncCodex(
+    allowStale: Bool,
+    attempts: Int,
+    automatic: Bool
+  ) async {
+    guard let bridge,
+      let state = states[.codex],
+      state.phase == .healthy || (allowStale && state.phase == .stale),
+      let snapshot = state.snapshot,
+      let payload = try? LegacyWatchProjection.encode(snapshot: snapshot, now: now())
+    else { return }
+
+    let boundedAttempts = min(2, max(1, attempts))
+    for attempt in 0..<boundedAttempts {
+      if attempt > 0 {
+        ignoringExpectedDisconnect = true
+        await bridge.disconnect()
+        try? await Task.sleep(for: .milliseconds(350))
+        ignoringExpectedDisconnect = false
+      }
+      do {
+        devicePhase = .connecting
+        try await bridge.connect()
+        devicePhase = await bridge.phase
+        switch devicePhase {
+        case .connected, .synced:
+          break
+        default:
+          continue
+        }
+        devicePhase = .syncing
+        try await bridge.sync(payload, now: now())
+        devicePhase = await bridge.phase
+        record(automatic ? "Automatically synced Codex quota" : "Synced Codex quota to StopWatch")
+        return
+      } catch {
+        devicePhase = await bridge.phase
+        if attempt + 1 < boundedAttempts {
+          record("Retrying StopWatch sync")
+        }
+      }
+    }
+    record("StopWatch sync failed")
+  }
+
+  private func ensureTransportObservation() {
+    guard transportEventTask == nil, let bluetoothTransport else { return }
+    transportEventTask = Task { @MainActor [weak self] in
+      for await event in bluetoothTransport.connectionEvents() {
+        guard !Task.isCancelled, let self else { return }
+        switch event {
+        case .connected(let identifier):
+          guard identifier == configuration.boundDeviceIdentifier else { continue }
+          if devicePhase == .connecting || devicePhase == .disconnected {
+            devicePhase = .connected
+          }
+        case .disconnected(let identifier):
+          guard !ignoringExpectedDisconnect else { continue }
+          guard identifier == nil || identifier == configuration.boundDeviceIdentifier else {
+            continue
+          }
+          devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
+          record("StopWatch disconnected")
+        }
+      }
+    }
   }
 
   private func record(_ message: String) {

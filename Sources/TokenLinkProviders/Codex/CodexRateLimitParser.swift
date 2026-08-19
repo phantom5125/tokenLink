@@ -10,7 +10,9 @@ public enum CodexRateLimitParser {
     let envelope = try JSONDecoder().decode(CodexEnvelope.self, from: data)
     let window =
       envelope.result.rateLimitsByLimitID?["codex"]?.primary
-      ?? envelope.result.rateLimits?.primary
+      ?? envelope.result.rateLimits.flatMap { limit in
+        limit.limitID == "codex" ? limit.primary : nil
+      }
     guard let window else {
       throw CodexRateLimitParseError.missingPrimaryWindow
     }

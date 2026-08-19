@@ -5,31 +5,45 @@ import TokenLinkCore
 @testable import TokenLinkProviders
 
 private actor FakeAppServerTransport: AppServerTransport {
+  enum Event: Equatable, Sendable {
+    case started
+    case sent(AppServerMessage)
+    case awaited(Int)
+    case stopped
+  }
+
   enum Mode: Sendable {
     case fixture(Data)
     case timeout
   }
 
   let mode: Mode
-  private(set) var messages: [AppServerMessage] = []
+  private(set) var events: [Event] = []
   private(set) var stopped = false
 
   init(mode: Mode) { self.mode = mode }
 
-  func start(executable: URL) async throws {}
+  func start(executable: URL) async throws {
+    events.append(.started)
+  }
 
   func send(_ message: AppServerMessage) async throws {
-    messages.append(message)
+    events.append(.sent(message))
   }
 
   func response(id: Int, timeout: Duration) async throws -> Data {
+    events.append(.awaited(id))
     switch mode {
-    case .fixture(let data): data
+    case .fixture(let data):
+      return id == 0 ? Data(#"{"id":0,"result":{}}"#.utf8) : data
     case .timeout: throw AppServerTransportError.timeout
     }
   }
 
-  func stop() async { stopped = true }
+  func stop() async {
+    stopped = true
+    events.append(.stopped)
+  }
 }
 
 @Test func parsesCurrentAndLegacyCodexRateLimits() throws {
@@ -44,6 +58,15 @@ private actor FakeAppServerTransport: AppServerTransport {
   #expect(legacy.windows[0].remainingPercent == 68)
 }
 
+@Test func rejectsLegacyCodexBucketWithDifferentLimitID() {
+  let data = Data(
+    #"{"id":1,"result":{"rateLimits":{"limitId":"other","primary":{"usedPercent":32,"resetsAt":1787616000}}}}"#
+      .utf8)
+  #expect(throws: CodexRateLimitParseError.missingPrimaryWindow) {
+    try CodexRateLimitParser.parse(data: data, fetchedAt: .distantPast)
+  }
+}
+
 @Test func codexProviderHandshakesBeforeQuotaAndStops() async throws {
   let transport = FakeAppServerTransport(
     mode: .fixture(try Fixture.load("codex-rate-limits.json")))
@@ -56,10 +79,14 @@ private actor FakeAppServerTransport: AppServerTransport {
 
   #expect(snapshot.provider == .codex)
   #expect(
-    await transport.messages == [
-      .initialize,
-      .initialized,
-      .rateLimits(id: 1),
+    await transport.events == [
+      .started,
+      .sent(.initialize),
+      .awaited(0),
+      .sent(.initialized),
+      .sent(.rateLimits(id: 1)),
+      .awaited(1),
+      .stopped,
     ])
   #expect(await transport.stopped)
 }

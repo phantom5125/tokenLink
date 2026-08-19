@@ -31,7 +31,7 @@ public enum MiniMaxParser {
           remainingPercent: intervalRemaining,
           remainingCount: nil,
           limitCount: nil,
-          resetsAt: model.currentIntervalResetTime.map(Date.fromMilliseconds)),
+          resetsAt: model.intervalResetDate(fetchedAt: fetchedAt)),
         QuotaWindow(
           id: "weekly",
           label: "Weekly",
@@ -39,7 +39,7 @@ public enum MiniMaxParser {
           remainingPercent: weeklyRemaining,
           remainingCount: nil,
           limitCount: nil,
-          resetsAt: model.currentWeeklyResetTime.map(Date.fromMilliseconds)),
+          resetsAt: model.weeklyResetDate(fetchedAt: fetchedAt)),
       ],
       source: .apiKey,
       fetchedAt: fetchedAt)
@@ -72,6 +72,8 @@ private struct MiniMaxModelRemain: Decodable {
   let currentWeeklyRemainingPercent: Double
   let currentIntervalResetTime: Double?
   let currentWeeklyResetTime: Double?
+  let remainsTime: Double?
+  let weeklyRemainsTime: Double?
 
   enum CodingKeys: String, CodingKey {
     case modelName = "model_name"
@@ -79,6 +81,18 @@ private struct MiniMaxModelRemain: Decodable {
     case currentWeeklyRemainingPercent = "current_weekly_remaining_percent"
     case currentIntervalResetTime = "current_interval_reset_time"
     case currentWeeklyResetTime = "current_weekly_reset_time"
+    case remainsTime = "remains_time"
+    case weeklyRemainsTime = "weekly_remains_time"
+  }
+
+  func intervalResetDate(fetchedAt: Date) -> Date? {
+    remainsTime.map { fetchedAt.addingTimeInterval($0 / 1_000) }
+      ?? currentIntervalResetTime.map(Date.fromMilliseconds)
+  }
+
+  func weeklyResetDate(fetchedAt: Date) -> Date? {
+    weeklyRemainsTime.map { fetchedAt.addingTimeInterval($0 / 1_000) }
+      ?? currentWeeklyResetTime.map(Date.fromMilliseconds)
   }
 }
 

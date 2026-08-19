@@ -141,12 +141,9 @@ private struct ProviderOverviewCard: View {
         }
         ProgressView(value: window.remainingPercent, total: 100)
           .tint(ProviderPresentation.color(for: row.id))
-        Text(
-          window.resetsAt.map { "Resets \(ProviderPresentation.relative($0))" }
-            ?? "Reset time unavailable"
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
+        Text(detail(snapshot: snapshot, window: window))
+          .font(.caption)
+          .foregroundStyle(row.state.phase == .error ? .red : .secondary)
       } else {
         Spacer(minLength: 8)
         Text(row.state.error?.message ?? "No quota snapshot yet")
@@ -163,5 +160,17 @@ private struct ProviderOverviewCard: View {
       RoundedRectangle(cornerRadius: 16, style: .continuous)
         .strokeBorder(.quaternary)
     }
+  }
+
+  private func detail(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
+    if row.state.phase == .error {
+      return
+        "Expired cache from \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))"
+    }
+    if row.state.phase == .stale {
+      return "Stale · fetched \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+    }
+    return window.resetsAt.map { "Resets \(ProviderPresentation.relative($0))" }
+      ?? "Reset time unavailable"
   }
 }
