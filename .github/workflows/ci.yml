@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+      - name: Format
+        run: swift format lint --recursive --strict Sources Tests
+      - name: Privacy scan
+        run: bash scripts/privacy_scan.sh

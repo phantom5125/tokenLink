@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 *.xcodeproj/
 *.xcworkspace/
 .DS_Store
+TokenLink.app/
+.local/
+.swiftpm/xcode/package.xcworkspace/xcuserdata/
