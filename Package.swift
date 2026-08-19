@@ -8,11 +8,15 @@ let package = Package(
         .library(name: "TokenLinkCore", targets: ["TokenLinkCore"]),
         .library(name: "TokenLinkProviders", targets: ["TokenLinkProviders"]),
         .library(name: "TokenLinkDevice", targets: ["TokenLinkDevice"]),
+        .executable(name: "tokenlink", targets: ["TokenLinkApp"]),
     ],
     targets: [
         .target(name: "TokenLinkCore"),
         .target(name: "TokenLinkProviders", dependencies: ["TokenLinkCore"]),
         .target(name: "TokenLinkDevice", dependencies: ["TokenLinkCore"]),
+        .executableTarget(
+            name: "TokenLinkApp",
+            dependencies: ["TokenLinkCore", "TokenLinkProviders", "TokenLinkDevice"]),
         .testTarget(name: "TokenLinkCoreTests", dependencies: ["TokenLinkCore"]),
         .testTarget(
             name: "TokenLinkProviderTests",
@@ -21,6 +25,14 @@ let package = Package(
         .testTarget(
             name: "TokenLinkDeviceTests",
             dependencies: ["TokenLinkCore", "TokenLinkDevice"]),
+        .testTarget(
+            name: "TokenLinkAppTests",
+            dependencies: [
+                "TokenLinkApp",
+                "TokenLinkCore",
+                "TokenLinkProviders",
+                "TokenLinkDevice",
+            ]),
     ],
     swiftLanguageModes: [.v6]
 )
