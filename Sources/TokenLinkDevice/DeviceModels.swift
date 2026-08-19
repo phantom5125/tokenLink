@@ -31,6 +31,12 @@ public actor DeviceBridge {
 
   public func connect() async throws {
     guard let boundIdentifier else { return }
+    switch phase {
+    case .connected, .syncing, .synced:
+      return
+    default:
+      break
+    }
     phase = .scanning
     do {
       guard try await transport.discoveredIdentifiers().contains(boundIdentifier) else {

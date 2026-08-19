@@ -50,3 +50,15 @@ private actor FakeBLETransport: BLETransport {
 
   #expect(await bridge.phase == .unbound)
 }
+
+@Test func bridgeDoesNotReconnectAfterSuccessfulSync() async throws {
+  let bound = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+  let transport = FakeBLETransport(discovered: [bound])
+  let bridge = DeviceBridge(transport: transport, boundIdentifier: bound)
+
+  try await bridge.connect()
+  try await bridge.sync(Data("first".utf8))
+  try await bridge.connect()
+
+  #expect(await transport.connectedIdentifiers == [bound])
+}

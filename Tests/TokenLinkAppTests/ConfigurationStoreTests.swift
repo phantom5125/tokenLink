@@ -40,3 +40,20 @@ import TokenLinkProviders
     try FileManager.default.contentsOfDirectory(atPath: directory.path)
       .contains("config.json.invalid-42"))
 }
+
+@Test func configurationCanBeReplacedAtomically() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = ConfigurationStore(directory: directory)
+  var updated = AppConfiguration.default
+
+  try store.save(updated)
+  updated.refreshMinutes = 15
+  try store.save(updated)
+
+  #expect(try store.load().refreshMinutes == 15)
+  #expect(
+    !FileManager.default.fileExists(
+      atPath: directory.appending(path: "config.json.tmp").path))
+}
