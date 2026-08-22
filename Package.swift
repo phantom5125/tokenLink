@@ -22,12 +22,21 @@ let testLinkerSettings: [LinkerSetting] = needsCLTTestingPaths
 let package = Package(
     name: "TokenLink",
     platforms: [.macOS(.v14)],
-    products: [.library(name: "TokenLinkCore", targets: ["TokenLinkCore"])],
+    products: [
+        .library(name: "TokenLinkCore", targets: ["TokenLinkCore"]),
+        .library(name: "TokenLinkProviders", targets: ["TokenLinkProviders"]),
+    ],
     targets: [
         .target(name: "TokenLinkCore"),
         .testTarget(
             name: "TokenLinkCoreTests",
             dependencies: ["TokenLinkCore"],
+            swiftSettings: testSwiftSettings,
+            linkerSettings: testLinkerSettings),
+        .target(name: "TokenLinkProviders", dependencies: ["TokenLinkCore"]),
+        .testTarget(
+            name: "TokenLinkProviderTests",
+            dependencies: ["TokenLinkCore", "TokenLinkProviders"],
             swiftSettings: testSwiftSettings,
             linkerSettings: testLinkerSettings),
     ],
