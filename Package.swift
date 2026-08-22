@@ -37,6 +37,7 @@ let package = Package(
         .testTarget(
             name: "TokenLinkProviderTests",
             dependencies: ["TokenLinkCore", "TokenLinkProviders"],
+            resources: [.process("Fixtures")],
             swiftSettings: testSwiftSettings,
             linkerSettings: testLinkerSettings),
     ],
