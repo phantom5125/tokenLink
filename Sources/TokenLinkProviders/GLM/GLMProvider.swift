@@ -1,10 +1,6 @@
 import Foundation
 import TokenLinkCore
 
-#if canImport(FoundationNetworking)
-  import FoundationNetworking
-#endif
-
 public enum GLMRegion: String, Codable, Sendable {
   case global
   case china
@@ -19,12 +15,10 @@ public enum GLMRegion: String, Codable, Sendable {
   }
 }
 
+/// Thin wrapper over `SpecDrivenProvider` for the default GLM account.
 public struct GLMProvider: QuotaProvider {
   public let id: ProviderID = .glm
-  private let region: GLMRegion
-  private let http: any HTTPClient
-  private let credentials: any CredentialReader
-  private let now: @Sendable () -> Date
+  private let inner: SpecDrivenProvider
 
   public init(
     region: GLMRegion,
@@ -32,44 +26,15 @@ public struct GLMProvider: QuotaProvider {
     credentials: any CredentialReader,
     now: @escaping @Sendable () -> Date = { Date() }
   ) {
-    self.region = region
-    self.http = http
-    self.credentials = credentials
-    self.now = now
+    self.inner = SpecDrivenProvider(
+      spec: ProviderRegistry.glm,
+      region: region.rawValue,
+      http: http,
+      credentials: credentials,
+      now: now)
   }
 
   public func fetch() async -> Result<QuotaSnapshot, ProviderFailure> {
-    do {
-      guard let key = try await credentials.apiKey(for: .glm), !key.isEmpty else {
-        return .failure(
-          .missingCredential(
-            "Configure a GLM Coding Plan API key."))
-      }
-      var request = URLRequest(url: region.endpoint)
-      request.setValue(key, forHTTPHeaderField: "Authorization")
-      let response = try await http.data(
-        for: request,
-        policy: EndpointPolicy(allowedHosts: [
-          "api.z.ai",
-          "open.bigmodel.cn",
-        ]))
-      guard response.statusCode == 200 else {
-        let authentication = response.statusCode == 401 || response.statusCode == 403
-        return .failure(
-          .init(
-            kind: authentication ? .authentication : .network,
-            message: "GLM returned HTTP \(response.statusCode)."))
-      }
-      return .success(
-        try GLMParser.parse(
-          data: response.data,
-          fetchedAt: now()))
-    } catch let failure as ProviderFailure {
-      return .failure(failure)
-    } catch is DecodingError, is GLMParseError {
-      return .failure(.decoding("GLM usage could not be read."))
-    } catch {
-      return .failure(.network("GLM quota request failed."))
-    }
+    await inner.fetch()
   }
 }

@@ -5,7 +5,7 @@ import TokenLinkCore
 @testable import TokenLinkProviders
 
 private struct ThrowingCredentials: CredentialReader {
-  func apiKey(for provider: ProviderID) async throws -> String? {
+  func apiKey(forAccount account: String) async throws -> String? {
     throw ProviderFailure.configuration("Keychain denied access.")
   }
   func cliAccessToken(for provider: ProviderID) async throws -> String? { nil }

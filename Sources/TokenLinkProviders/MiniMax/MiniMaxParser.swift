@@ -7,6 +7,10 @@ public enum MiniMaxParseError: Error, Equatable {
 }
 
 public enum MiniMaxParser {
+  /// `base_resp.status_code` values that indicate an authentication problem
+  /// even though the HTTP status is 200 (e.g. 1004, 2049 "invalid api key").
+  public static let authenticationStatusCodes: Set<Int> = [1004, 2049]
+
   public static func parse(data: Data, fetchedAt: Date) throws -> QuotaSnapshot {
     let response = try JSONDecoder().decode(MiniMaxResponse.self, from: data)
     guard response.baseResponse.statusCode == 0 else {

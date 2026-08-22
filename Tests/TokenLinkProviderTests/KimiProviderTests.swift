@@ -8,7 +8,7 @@ private struct KimiCredentials: CredentialReader {
   let apiKeyValue: String?
   let cliTokenValue: String?
 
-  func apiKey(for provider: ProviderID) async throws -> String? { apiKeyValue }
+  func apiKey(forAccount account: String) async throws -> String? { apiKeyValue }
   func cliAccessToken(for provider: ProviderID) async throws -> String? { cliTokenValue }
 }
 

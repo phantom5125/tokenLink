@@ -83,22 +83,38 @@ public struct KeychainVault: CredentialReader, Sendable {
 
   private let client: any KeychainClient
   private let kimiTokenReader: any KimiTokenReading
+  private let environment: @Sendable (String) -> String?
 
   public init(
     client: any KeychainClient = SystemKeychainClient(),
     kimiTokenReader: any KimiTokenReading = KimiCLICredentialReader(
-      homeURL: FileManager.default.homeDirectoryForCurrentUser)
+      homeURL: FileManager.default.homeDirectoryForCurrentUser),
+    environment: @escaping @Sendable (String) -> String? = {
+      ProcessInfo.processInfo.environment[$0]
+    }
   ) {
     self.client = client
     self.kimiTokenReader = kimiTokenReader
+    self.environment = environment
   }
 
-  public func apiKey(for provider: ProviderID) async throws -> String? {
+  /// Keychain account naming: the default account of a provider keeps the
+  /// historical `provider.rawValue` name so existing stored keys keep working;
+  /// additional accounts are namespaced by their account id.
+  public static func keychainAccountName(
+    provider: ProviderID,
+    accountID: UUID,
+    isDefault: Bool
+  ) -> String {
+    isDefault ? provider.rawValue : "\(provider.rawValue).\(accountID.uuidString)"
+  }
+
+  public func apiKey(forAccount account: String) async throws -> String? {
     do {
       guard
         let data = try await client.read(
           service: Self.service,
-          account: provider.rawValue)
+          account: account)
       else { return nil }
       guard let value = String(data: data, encoding: .utf8) else {
         throw ProviderFailure.configuration("Keychain value is not valid UTF-8.")
@@ -111,29 +127,99 @@ public struct KeychainVault: CredentialReader, Sendable {
     }
   }
 
+  public func apiKey(for account: ProviderAccount, isDefault: Bool) async throws -> String? {
+    try await apiKey(
+      forAccount: Self.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: isDefault))
+  }
+
   public func cliAccessToken(for provider: ProviderID) async throws -> String? {
     guard provider == .kimi else { return nil }
     return try await kimiTokenReader.accessToken()
   }
 
-  public func setAPIKey(_ value: String, for provider: ProviderID) async throws {
+  /// Reads only the environment variables declared in the provider's spec.
+  public func environmentAPIKey(for provider: ProviderID) async throws -> String? {
+    guard let spec = ProviderRegistry.spec(for: provider) else { return nil }
+    for name in spec.credentialEnvVars {
+      if let value = environment(name), !value.isEmpty {
+        return value
+      }
+    }
+    return nil
+  }
+
+  public func setAPIKey(_ value: String, forAccount account: String) async throws {
     do {
       try await client.write(
         Data(value.utf8),
         service: Self.service,
-        account: provider.rawValue)
+        account: account)
     } catch {
       throw ProviderFailure.configuration("Keychain update failed.")
     }
   }
 
-  public func deleteAPIKey(for provider: ProviderID) async throws {
+  public func setAPIKey(_ value: String, for provider: ProviderID) async throws {
+    try await setAPIKey(value, forAccount: provider.rawValue)
+  }
+
+  public func setAPIKey(
+    _ value: String,
+    for account: ProviderAccount,
+    isDefault: Bool
+  ) async throws {
+    try await setAPIKey(
+      value,
+      forAccount: Self.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: isDefault))
+  }
+
+  public func deleteAPIKey(forAccount account: String) async throws {
     do {
       try await client.delete(
         service: Self.service,
-        account: provider.rawValue)
+        account: account)
     } catch {
       throw ProviderFailure.configuration("Keychain deletion failed.")
     }
+  }
+
+  public func deleteAPIKey(for provider: ProviderID) async throws {
+    try await deleteAPIKey(forAccount: provider.rawValue)
+  }
+
+  public func deleteAPIKey(for account: ProviderAccount, isDefault: Bool) async throws {
+    try await deleteAPIKey(
+      forAccount: Self.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: isDefault))
+  }
+
+  /// Display-only mask: first 8 + "…" + last 4 characters. Keys shorter than
+  /// 12 characters show only their first 4 characters plus the ellipsis.
+  public static func keyHint(for key: String) -> String {
+    if key.count < 12 {
+      return String(key.prefix(4)) + "…"
+    }
+    return String(key.prefix(8)) + "…" + String(key.suffix(4))
+  }
+
+  public func keyHint(forAccount account: String) async throws -> String? {
+    guard let key = try await apiKey(forAccount: account) else { return nil }
+    return Self.keyHint(for: key)
+  }
+
+  public func keyHint(for account: ProviderAccount, isDefault: Bool) async throws -> String? {
+    try await keyHint(
+      forAccount: Self.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: isDefault))
   }
 }

@@ -54,8 +54,24 @@ use. A notarized release pipeline is intentionally outside v0.1.
 ## Provider setup
 
 Open **Control Center → Providers**. Secret fields are always blank: TokenLink
-shows only whether a credential is configured and never reads a key back into the
-UI.
+shows only whether a credential is configured — plus a masked head/tail hint of
+the stored key (for example `sk-cp-ab…wxyz`) and its source (Keychain, CLI, or
+environment variable) — and never reads a key back into the UI. Each provider
+section links to the official console where you can create a key.
+
+Credentials resolve in this order: an explicit key in Keychain, then the
+provider's documented local CLI credential (Kimi only), then a small allowlist
+of environment variables (`KIMI_CODE_API_KEY`/`KIMI_API_KEY`,
+`MINIMAX_API_KEY`, `ZAI_API_KEY`/`ZHIPU_API_KEY`/`GLM_API_KEY`/`BIGMODEL_API_KEY`).
+The environment fallback exists mainly for testing.
+
+Multiple accounts per provider are supported as an advanced, not-recommended
+option: use **Add account (advanced)** in a provider section to attach another
+plan with its own label and key. Codex stays single-account because it uses the
+local CLI sign-in.
+
+The app UI is available in English, 中文（简体）, and 日本語; choose under
+**Settings & Diagnostics → Language** or follow the system language.
 
 ### Codex
 
@@ -84,8 +100,9 @@ TokenLink supports the current numeric-unit/camelCase quota shape plus an explic
 legacy compatibility branch. It preserves returned windows and does not estimate
 limits from a plan name.
 
-Provider, region, and Codex-path changes are persisted immediately and take effect
-after restarting the v0.1 app. Refresh interval changes take effect immediately.
+Provider and Codex-path changes are persisted immediately and take effect
+after restarting the app. Region, account, and refresh-interval changes take
+effect immediately.
 
 ## StopWatch binding and protocol v1
 

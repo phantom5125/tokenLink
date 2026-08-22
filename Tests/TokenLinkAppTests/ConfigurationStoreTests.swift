@@ -57,3 +57,48 @@ import TokenLinkProviders
     !FileManager.default.fileExists(
       atPath: directory.appending(path: "config.json.tmp").path))
 }
+
+@Test func legacyEnabledProvidersConfigurationMigratesToAccounts() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let legacy = """
+    {
+      "enabledProviders" : ["codex", "kimi", "minimax", "glm"],
+      "refreshMinutes" : 5,
+      "miniMaxRegion" : "china",
+      "glmRegion" : "global"
+    }
+    """
+  try Data(legacy.utf8).write(to: directory.appending(path: "config.json"))
+  let store = ConfigurationStore(directory: directory)
+
+  let loaded = try store.load()
+
+  #expect(loaded.accounts.map(\.provider) == ProviderID.allCases)
+  #expect(loaded.accounts.allSatisfy { $0.enabled })
+  #expect(loaded.accounts.map(\.label) == ["Codex", "Kimi", "MiniMax", "GLM"])
+  #expect(loaded.enabledProviders == Set(ProviderID.allCases))
+  #expect(loaded.refreshMinutes == 5)
+  #expect(loaded.miniMaxRegion == .china)
+  #expect(loaded.glmRegion == .global)
+}
+
+@Test func accountsRoundTripWithStableIDsAndLabels() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = ConfigurationStore(directory: directory)
+  var expected = AppConfiguration.default
+  let extra = ProviderAccount(provider: .kimi, label: "Work", enabled: true)
+  expected.accounts.append(extra)
+  expected.accounts[0].enabled = false
+
+  try store.save(expected)
+
+  let loaded = try store.load()
+  #expect(loaded == expected)
+  #expect(loaded.accounts.contains(extra))
+  #expect(loaded.enabledProviders == [.kimi, .minimax, .glm])
+}

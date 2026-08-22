@@ -15,6 +15,15 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     case .settings: "gearshape.2"
     }
   }
+
+  var l10nKey: L10n.Key {
+    switch self {
+    case .overview: .routeOverview
+    case .providers: .routeProviders
+    case .stopwatch: .routeStopwatch
+    case .settings: .routeSettings
+    }
+  }
 }
 
 struct ControlCenterView: View {
@@ -24,7 +33,7 @@ struct ControlCenterView: View {
   var body: some View {
     NavigationSplitView {
       List(ControlRoute.allCases, selection: $selection) { route in
-        Label(route.rawValue, systemImage: route.symbol)
+        Label(model.text(route.l10nKey), systemImage: route.symbol)
           .tag(route)
           .padding(.vertical, 4)
       }
@@ -43,12 +52,13 @@ struct ControlCenterView: View {
           SettingsView(model: model)
         }
       }
+      .environment(\.appLanguage, model.currentLanguage)
       .toolbar {
         ToolbarItem {
           Button {
             Task { await model.refreshManually() }
           } label: {
-            Label("Refresh", systemImage: "arrow.clockwise")
+            Label(model.text(.actionRefresh), systemImage: "arrow.clockwise")
           }
           .disabled(model.isRefreshing)
         }

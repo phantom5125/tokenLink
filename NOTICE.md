@@ -8,3 +8,7 @@ contributors, MIT License. TokenLink does not bundle or depend on CodexBarCore i
 
 GLM quota response handling was checked against zai-org/zai-coding-plugins,
 Apache License 2.0. Provider names and trademarks belong to their respective owners.
+
+The Codex, Kimi, MiniMax, and GLM (Z.AI) logos displayed in the app are trademarks
+of their respective companies and are shown solely to identify the corresponding
+services.

@@ -3,6 +3,7 @@ import Foundation
 public enum CredentialSource: String, Codable, Sendable {
   case apiKey
   case cliCredential
+  case environmentVariable
   case localAppServer
 }
 

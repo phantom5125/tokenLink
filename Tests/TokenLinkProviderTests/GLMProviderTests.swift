@@ -6,7 +6,7 @@ import TokenLinkCore
 
 private struct GLMCredentials: CredentialReader {
   let key: String?
-  func apiKey(for provider: ProviderID) async throws -> String? { key }
+  func apiKey(forAccount account: String) async throws -> String? { key }
   func cliAccessToken(for provider: ProviderID) async throws -> String? { nil }
 }
 

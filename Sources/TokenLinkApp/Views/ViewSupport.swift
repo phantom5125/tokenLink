@@ -1,6 +1,17 @@
 import SwiftUI
 import TokenLinkCore
 
+private struct AppLanguageEnvironmentKey: EnvironmentKey {
+  static let defaultValue: AppLanguage = .english
+}
+
+extension EnvironmentValues {
+  var appLanguage: AppLanguage {
+    get { self[AppLanguageEnvironmentKey.self] }
+    set { self[AppLanguageEnvironmentKey.self] = newValue }
+  }
+}
+
 enum ProviderPresentation {
   static func symbol(for provider: ProviderID) -> String {
     switch provider {
@@ -30,15 +41,17 @@ enum ProviderPresentation {
     }
   }
 
-  static func phaseText(_ phase: ProviderPhase) -> String {
-    switch phase {
-    case .disabled: "Disabled"
-    case .missingCredential: "Credential needed"
-    case .refreshing: "Refreshing"
-    case .healthy: "Live"
-    case .stale: "Stale"
-    case .error: "Unavailable"
-    }
+  static func phaseText(_ phase: ProviderPhase, language: AppLanguage) -> String {
+    let key: L10n.Key =
+      switch phase {
+      case .disabled: .phaseDisabled
+      case .missingCredential: .phaseMissingCredential
+      case .refreshing: .phaseRefreshing
+      case .healthy: .phaseHealthy
+      case .stale: .phaseStale
+      case .error: .phaseError
+      }
+    return L10n.text(key, language: language)
   }
 
   static func relative(_ date: Date, relativeTo now: Date = .now) -> String {
@@ -53,31 +66,40 @@ struct ProviderMark: View {
   var size: CGFloat = 34
 
   var body: some View {
-    Image(systemName: ProviderPresentation.symbol(for: provider))
-      .font(.system(size: size * 0.42, weight: .semibold))
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(
-        LinearGradient(
-          colors: [
-            ProviderPresentation.color(for: provider),
-            ProviderPresentation.color(for: provider).opacity(0.72),
-          ],
-          startPoint: .topLeading,
-          endPoint: .bottomTrailing),
-        in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+    if let logo = ProviderLogo.image(for: provider) {
+      logo
+        .resizable()
+        .scaledToFit()
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+    } else {
+      Image(systemName: ProviderPresentation.symbol(for: provider))
+        .font(.system(size: size * 0.42, weight: .semibold))
+        .foregroundStyle(.white)
+        .frame(width: size, height: size)
+        .background(
+          LinearGradient(
+            colors: [
+              ProviderPresentation.color(for: provider),
+              ProviderPresentation.color(for: provider).opacity(0.72),
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing),
+          in: RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
+    }
   }
 }
 
 struct PhaseBadge: View {
   let phase: ProviderPhase
+  @Environment(\.appLanguage) private var language
 
   var body: some View {
     HStack(spacing: 5) {
       Circle()
         .fill(ProviderPresentation.phaseColor(phase))
         .frame(width: 7, height: 7)
-      Text(ProviderPresentation.phaseText(phase))
+      Text(ProviderPresentation.phaseText(phase, language: language))
         .font(.caption)
         .foregroundStyle(.secondary)
     }

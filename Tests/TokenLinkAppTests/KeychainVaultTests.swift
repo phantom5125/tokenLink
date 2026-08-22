@@ -78,3 +78,68 @@ private struct FailingKeychainClient: KeychainClient {
     Issue.record("Unexpected error type: \(error)")
   }
 }
+
+@Test func additionalAccountsAreNamespacedByAccountID() async throws {
+  let client = FakeKeychainClient()
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLIToken())
+  let defaultAccount = ProviderAccount(provider: .minimax, label: "MiniMax")
+  let extraAccount = ProviderAccount(provider: .minimax, label: "Second")
+
+  try await vault.setAPIKey("default-key", for: defaultAccount, isDefault: true)
+  #expect(await client.lastAddress?.account == "minimax")
+
+  try await vault.setAPIKey("second-key", for: extraAccount, isDefault: false)
+  #expect(
+    await client.lastAddress?.account == "minimax.\(extraAccount.id.uuidString)")
+
+  #expect(try await vault.apiKey(for: defaultAccount, isDefault: true) == "default-key")
+  #expect(try await vault.apiKey(for: extraAccount, isDefault: false) == "second-key")
+}
+
+@Test func environmentFallbackReadsOnlySpecAllowlist() async throws {
+  let environment: [String: String] = [
+    "ZHIPU_API_KEY": "glm-env-key",
+    "MINIMAX_API_KEY": "minimax-env-key",
+    "UNRELATED_SECRET": "must-not-be-read",
+  ]
+  let vault = KeychainVault(
+    client: FakeKeychainClient(),
+    kimiTokenReader: NoCLIToken(),
+    environment: { environment[$0] })
+
+  #expect(try await vault.environmentAPIKey(for: .glm) == "glm-env-key")
+  #expect(try await vault.environmentAPIKey(for: .minimax) == "minimax-env-key")
+  #expect(try await vault.environmentAPIKey(for: .kimi) == nil)
+  #expect(try await vault.environmentAPIKey(for: .codex) == nil)
+}
+
+@Test func environmentFallbackFollowsDeclaredPriorityOrder() async throws {
+  let environment: [String: String] = [
+    "GLM_API_KEY": "third",
+    "ZAI_API_KEY": "first",
+  ]
+  let vault = KeychainVault(
+    client: FakeKeychainClient(),
+    kimiTokenReader: NoCLIToken(),
+    environment: { environment[$0] })
+
+  #expect(try await vault.environmentAPIKey(for: .glm) == "first")
+}
+
+@Test func keyHintMasksHeadAndTail() {
+  #expect(KeychainVault.keyHint(for: "abcdefghijklmnop") == "abcdefgh…mnop")
+  #expect(KeychainVault.keyHint(for: "123456789012") == "12345678…9012")
+  #expect(KeychainVault.keyHint(for: "short") == "shor…")
+  #expect(KeychainVault.keyHint(for: "abcd") == "abcd…")
+  #expect(KeychainVault.keyHint(for: "") == "…")
+}
+
+@Test func keyHintReadsStoredKeyAndMasksIt() async throws {
+  let client = FakeKeychainClient()
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLIToken())
+  let account = ProviderAccount(provider: .glm, label: "GLM")
+  try await vault.setAPIKey("glm-secret-key-value", for: account, isDefault: true)
+
+  #expect(try await vault.keyHint(for: account, isDefault: true) == "glm-secr…alue")
+  #expect(try await vault.keyHint(forAccount: "kimi") == nil)
+}

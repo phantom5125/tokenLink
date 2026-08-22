@@ -4,7 +4,11 @@ import TokenLinkProviders
 
 struct ProvidersView: View {
   @Bindable var model: AppModel
-  @State private var replacementKeys: [ProviderID: String] = [:]
+  @State private var replacementKeys: [UUID: String] = [:]
+  @State private var keyHints: [UUID: String] = [:]
+  @State private var newAccountLabels: [ProviderID: String] = [:]
+  @State private var newAccountKeys: [ProviderID: String] = [:]
+  @State private var addAccountExpanded: Set<ProviderID> = []
   @State private var codexPath = ""
   @State private var message: String?
 
@@ -12,15 +16,15 @@ struct ProvidersView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         VStack(alignment: .leading, spacing: 6) {
-          Text("Providers")
+          Text(model.text(.providersTitle))
             .font(.largeTitle.bold())
-          Text("Keys are written to macOS Keychain and are never read back into these fields.")
+          Text(model.text(.providersSubtitle))
             .foregroundStyle(.secondary)
         }
 
         if model.configurationRestartRequired {
           Label(
-            "Provider or region changes apply after restarting TokenLink.",
+            model.text(.providersRestartBanner),
             systemImage: "arrow.clockwise.circle"
           )
           .font(.subheadline)
@@ -44,10 +48,11 @@ struct ProvidersView: View {
       .frame(maxWidth: 820, alignment: .leading)
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-    .navigationTitle("Providers")
+    .navigationTitle(model.text(.providersTitle))
     .task {
       codexPath = model.configuration.codexPath ?? ""
       await model.refreshCredentialStates()
+      await loadKeyHints()
     }
   }
 
@@ -59,13 +64,13 @@ struct ProvidersView: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(AppModel.displayName(for: provider))
             .font(.headline)
-          Text(subtitle(provider))
+          Text(model.text(subtitleKey(provider)))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
         Spacer()
         Toggle(
-          "Enabled",
+          model.text(.providersEnabled),
           isOn: Binding(
             get: { model.configuration.enabledProviders.contains(provider) },
             set: { enabled in
@@ -81,62 +86,23 @@ struct ProvidersView: View {
       Divider()
 
       if provider == .codex {
-        LabeledContent("Codex executable") {
-          HStack {
-            TextField("Auto-detect from PATH", text: $codexPath)
-              .textFieldStyle(.roundedBorder)
-            Button("Save") {
-              do {
-                try model.setCodexPath(codexPath)
-                message = "Codex path saved."
-              } catch { message = error.localizedDescription }
-            }
-          }
-          .frame(maxWidth: 460)
-        }
-        Text("Uses the local `codex app-server`; no Codex API key is stored by TokenLink.")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        codexSection
       } else {
-        LabeledContent("Credential") {
-          HStack(spacing: 8) {
-            Image(
-              systemName: model.credentialConfigured[provider] == true
-                ? "checkmark.circle.fill" : "circle.dashed"
-            )
-            .foregroundStyle(
-              model.credentialConfigured[provider] == true
-                ? .green : .secondary)
-            Text(
-              model.credentialConfigured[provider] == true
-                ? "Configured" : "Not configured"
-            )
-            .foregroundStyle(.secondary)
+        let group = model.accountGroups.first { $0.provider == provider }
+        ForEach(group?.accounts ?? []) { account in
+          accountRow(account)
+          if account.id != group?.accounts.last?.id {
+            Divider()
           }
-        }
-        LabeledContent("Replace API key") {
-          HStack {
-            SecureField(
-              "Paste a new key",
-              text: Binding(
-                get: { replacementKeys[provider, default: ""] },
-                set: { replacementKeys[provider] = $0 })
-            )
-            .textFieldStyle(.roundedBorder)
-            Button("Save") { saveKey(provider) }
-              .disabled(replacementKeys[provider, default: ""].isEmpty)
-            Button("Delete", role: .destructive) { deleteKey(provider) }
-          }
-          .frame(maxWidth: 460)
         }
         regionPicker(provider)
+        keyHelpLink(provider)
         if provider == .kimi {
-          Text(
-            "If no API key is stored, TokenLink may read the current non-expired Kimi Code CLI access token from its documented credential file. Refresh tokens are never read."
-          )
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          Text(model.text(.providersKimiCLINote))
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
+        addAccountSection(provider)
       }
     }
     .padding(20)
@@ -147,32 +113,182 @@ struct ProvidersView: View {
     }
   }
 
+  private var codexSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      LabeledContent(model.text(.providersCodexExecutable)) {
+        HStack {
+          TextField(model.text(.providersCodexPathPlaceholder), text: $codexPath)
+            .textFieldStyle(.roundedBorder)
+          Button(model.text(.actionSave)) {
+            do {
+              try model.setCodexPath(codexPath)
+              message = model.text(.providersKeySaved)
+                .replacingOccurrences(of: "%@", with: "Codex path")
+            } catch { message = error.localizedDescription }
+          }
+        }
+        .frame(maxWidth: 460)
+      }
+      Text(model.text(.providersCodexNote))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  @ViewBuilder
+  private func accountRow(_ account: AccountRow) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      HStack(spacing: 8) {
+        Text(account.label)
+          .font(.subheadline.weight(.semibold))
+        if account.isDefault {
+          Text(model.text(.providersDefaultBadge))
+            .font(.caption2)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 2)
+            .background(.secondary.opacity(0.12), in: Capsule())
+        }
+        Spacer()
+        credentialStatus(account)
+        if !account.isDefault {
+          Button(model.text(.providersDeleteAccount), role: .destructive) {
+            removeAccount(account)
+          }
+          .font(.caption)
+        }
+      }
+
+      LabeledContent(model.text(.providersReplaceKey)) {
+        HStack {
+          SecureField(
+            model.text(.providersKeyPlaceholder),
+            text: Binding(
+              get: { replacementKeys[account.id, default: ""] },
+              set: { replacementKeys[account.id] = $0 })
+          )
+          .textFieldStyle(.roundedBorder)
+          Button(model.text(.actionSave)) { saveKey(account) }
+            .disabled(replacementKeys[account.id, default: ""].isEmpty)
+          Button(model.text(.actionDelete), role: .destructive) { deleteKey(account) }
+        }
+        .frame(maxWidth: 460)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func credentialStatus(_ account: AccountRow) -> some View {
+    let configured = model.credentialConfiguredByAccount[account.id] == true
+    HStack(spacing: 6) {
+      Image(systemName: configured ? "checkmark.circle.fill" : "circle.dashed")
+        .foregroundStyle(configured ? .green : .secondary)
+      Text(
+        configured
+          ? model.text(.providersConfigured) : model.text(.providersNotConfigured)
+      )
+      .foregroundStyle(.secondary)
+      if configured {
+        if let hint = keyHints[account.id] {
+          Text(hint)
+            .font(.system(.caption, design: .monospaced))
+            .foregroundStyle(.secondary)
+        }
+        if let source = model.credentialSourceByAccount[account.id] {
+          Text("· \(sourceText(source))")
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+      }
+    }
+    .font(.subheadline)
+  }
+
+  @ViewBuilder
+  private func keyHelpLink(_ provider: ProviderID) -> some View {
+    if let spec = ProviderRegistry.spec(for: provider) {
+      let region: String? =
+        switch provider {
+        case .minimax: model.configuration.miniMaxRegion.rawValue
+        case .glm: model.configuration.glmRegion.rawValue
+        default: nil
+        }
+      Link(model.text(.providersGetKey), destination: spec.keyHelpURL(region))
+        .font(.caption)
+    }
+  }
+
+  @ViewBuilder
+  private func addAccountSection(_ provider: ProviderID) -> some View {
+    if addAccountExpanded.contains(provider) {
+      VStack(alignment: .leading, spacing: 10) {
+        Text(model.text(.providersAddAccountNote))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        LabeledContent(model.text(.providersAccountLabel)) {
+          TextField(
+            model.text(.providersAccountLabelPlaceholder),
+            text: Binding(
+              get: { newAccountLabels[provider, default: ""] },
+              set: { newAccountLabels[provider] = $0 })
+          )
+          .textFieldStyle(.roundedBorder)
+          .frame(maxWidth: 240)
+        }
+        LabeledContent("API Key") {
+          HStack {
+            SecureField(
+              model.text(.providersKeyPlaceholder),
+              text: Binding(
+                get: { newAccountKeys[provider, default: ""] },
+                set: { newAccountKeys[provider] = $0 })
+            )
+            .textFieldStyle(.roundedBorder)
+            Button(model.text(.actionSave)) { addAccount(provider) }
+              .disabled(newAccountKeys[provider, default: ""].isEmpty)
+          }
+          .frame(maxWidth: 460)
+        }
+      }
+      .padding(12)
+      .background(.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+    } else {
+      Button {
+        addAccountExpanded.insert(provider)
+      } label: {
+        Label(model.text(.providersAddAccount), systemImage: "plus.circle")
+          .font(.caption)
+      }
+      .buttonStyle(.plain)
+      .foregroundStyle(.secondary)
+    }
+  }
+
   @ViewBuilder
   private func regionPicker(_ provider: ProviderID) -> some View {
     if provider == .minimax {
-      LabeledContent("Region") {
+      LabeledContent(model.text(.providersRegion)) {
         Picker(
-          "Region",
+          model.text(.providersRegion),
           selection: Binding(
             get: { model.configuration.miniMaxRegion },
             set: { region in try? model.setMiniMaxRegion(region) })
         ) {
-          Text("Global").tag(MiniMaxRegion.global)
-          Text("China").tag(MiniMaxRegion.china)
+          Text(model.text(.regionGlobal)).tag(MiniMaxRegion.global)
+          Text(model.text(.regionChina)).tag(MiniMaxRegion.china)
         }
         .labelsHidden()
         .frame(width: 180)
       }
     } else if provider == .glm {
-      LabeledContent("Region") {
+      LabeledContent(model.text(.providersRegion)) {
         Picker(
-          "Region",
+          model.text(.providersRegion),
           selection: Binding(
             get: { model.configuration.glmRegion },
             set: { region in try? model.setGLMRegion(region) })
         ) {
-          Text("Global (Z.AI)").tag(GLMRegion.global)
-          Text("China (BigModel)").tag(GLMRegion.china)
+          Text(model.text(.regionGlobalZAI)).tag(GLMRegion.global)
+          Text(model.text(.regionChinaBigModel)).tag(GLMRegion.china)
         }
         .labelsHidden()
         .frame(width: 180)
@@ -180,33 +296,82 @@ struct ProvidersView: View {
     }
   }
 
-  private func saveKey(_ provider: ProviderID) {
-    let value = replacementKeys[provider, default: ""]
+  private func saveKey(_ account: AccountRow) {
+    let value = replacementKeys[account.id, default: ""]
     Task {
       do {
-        try await model.saveAPIKey(value, for: provider)
-        replacementKeys[provider] = ""
-        message = "\(AppModel.displayName(for: provider)) key saved to Keychain."
+        try await model.setAPIKey(value, for: account.id)
+        replacementKeys[account.id] = ""
+        message = String(
+          format: model.text(.providersKeySaved), AppModel.displayName(for: account.provider))
+        await loadKeyHints()
       } catch { message = error.localizedDescription }
     }
   }
 
-  private func deleteKey(_ provider: ProviderID) {
+  private func deleteKey(_ account: AccountRow) {
     Task {
       do {
-        try await model.deleteAPIKey(for: provider)
-        replacementKeys[provider] = ""
-        message = "\(AppModel.displayName(for: provider)) key deleted."
+        try await model.setAPIKey("", for: account.id)
+        replacementKeys[account.id] = ""
+        message = String(
+          format: model.text(.providersKeyDeleted), AppModel.displayName(for: account.provider))
+        await loadKeyHints()
       } catch { message = error.localizedDescription }
     }
   }
 
-  private func subtitle(_ provider: ProviderID) -> String {
+  private func addAccount(_ provider: ProviderID) {
+    Task {
+      do {
+        let account = try model.addAccount(
+          provider: provider, label: newAccountLabels[provider, default: ""])
+        let key = newAccountKeys[provider, default: ""]
+        try await model.setAPIKey(key, for: account.id)
+        newAccountLabels[provider] = ""
+        newAccountKeys[provider] = ""
+        addAccountExpanded.remove(provider)
+        message = String(format: model.text(.providersAccountAdded), account.label)
+        await loadKeyHints()
+      } catch { message = error.localizedDescription }
+    }
+  }
+
+  private func removeAccount(_ account: AccountRow) {
+    Task {
+      do {
+        try await model.removeAccount(id: account.id)
+        message = String(format: model.text(.providersAccountRemoved), account.label)
+        await loadKeyHints()
+      } catch { message = error.localizedDescription }
+    }
+  }
+
+  private func loadKeyHints() async {
+    var hints: [UUID: String] = [:]
+    for group in model.accountGroups {
+      for account in group.accounts {
+        hints[account.id] = await model.keyHint(for: account.id)
+      }
+    }
+    keyHints = hints
+  }
+
+  private func sourceText(_ source: CredentialSource) -> String {
+    switch source {
+    case .apiKey: model.text(.sourceKeychain)
+    case .cliCredential: model.text(.sourceCLI)
+    case .environmentVariable: model.text(.sourceEnvironment)
+    case .localAppServer: model.text(.subtitleCodex)
+    }
+  }
+
+  private func subtitleKey(_ provider: ProviderID) -> L10n.Key {
     switch provider {
-    case .codex: "Local app-server"
-    case .kimi: "Coding Plan usage API or Kimi Code CLI"
-    case .minimax: "Token Plan remains API"
-    case .glm: "Coding Plan quota monitor"
+    case .codex: .subtitleCodex
+    case .kimi: .subtitleKimi
+    case .minimax: .subtitleMinimax
+    case .glm: .subtitleGLM
     }
   }
 }

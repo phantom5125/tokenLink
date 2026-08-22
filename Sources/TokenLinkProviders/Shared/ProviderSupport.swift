@@ -20,8 +20,24 @@ public protocol HTTPClient: Sendable {
 }
 
 public protocol CredentialReader: Sendable {
-  func apiKey(for provider: ProviderID) async throws -> String?
+  /// Reads the explicit (Keychain) API key stored under a credential account
+  /// name. The default account of a provider uses `provider.rawValue`;
+  /// additional accounts use "<provider>.<account-uuid>".
+  func apiKey(forAccount account: String) async throws -> String?
   func cliAccessToken(for provider: ProviderID) async throws -> String?
+  /// Reads an API key from the provider's allowlisted environment variables
+  /// (see `ProviderSpec.credentialEnvVars`). Never scans arbitrary variables.
+  func environmentAPIKey(for provider: ProviderID) async throws -> String?
+}
+
+extension CredentialReader {
+  public func apiKey(for provider: ProviderID) async throws -> String? {
+    try await apiKey(forAccount: provider.rawValue)
+  }
+
+  public func environmentAPIKey(for provider: ProviderID) async throws -> String? {
+    nil
+  }
 }
 
 public struct ProviderHostError: Error, Equatable, Sendable {

@@ -11,9 +11,7 @@ struct StopWatchView: View {
         VStack(alignment: .leading, spacing: 6) {
           Text("StopWatch")
             .font(.largeTitle.bold())
-          Text(
-            "Bind one M5Stack device and sync the Codex primary quota window over the existing private GATT service."
-          )
+          Text(model.text(.watchSubtitle))
           .foregroundStyle(.secondary)
         }
 
@@ -40,11 +38,9 @@ struct StopWatchView: View {
         .font(.title2)
         .foregroundStyle(.blue)
       VStack(alignment: .leading, spacing: 4) {
-        Text("Firmware v1 compatibility mode")
+        Text(model.text(.watchCompatTitle))
           .font(.headline)
-        Text(
-          "The current face remains unchanged. TokenLink sends only Codex using `remaining_percent` and `reset_in_seconds`; Kimi, MiniMax, and GLM stay on the Mac until protocol v2."
-        )
+        Text(model.text(.watchCompatBody))
         .font(.subheadline)
         .foregroundStyle(.secondary)
       }
@@ -57,12 +53,15 @@ struct StopWatchView: View {
     VStack(alignment: .leading, spacing: 14) {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
-          Text("Bound device")
+          Text(model.text(.watchBoundDevice))
             .font(.headline)
-          Text(model.configuration.boundDeviceIdentifier?.uuidString ?? "No StopWatch bound")
-            .font(.system(.caption, design: .monospaced))
-            .foregroundStyle(.secondary)
-            .textSelection(.enabled)
+          Text(
+            model.configuration.boundDeviceIdentifier?.uuidString
+              ?? model.text(.watchNoBoundDevice)
+          )
+          .font(.system(.caption, design: .monospaced))
+          .foregroundStyle(.secondary)
+          .textSelection(.enabled)
         }
         Spacer()
         Text(model.deviceStatusText)
@@ -75,17 +74,17 @@ struct StopWatchView: View {
         Button {
           Task { await model.syncCodexNow() }
         } label: {
-          Label("Sync Codex now", systemImage: "arrow.triangle.2.circlepath")
+          Label(model.text(.watchSyncNow), systemImage: "arrow.triangle.2.circlepath")
         }
         .buttonStyle(.borderedProminent)
         .disabled(model.configuration.boundDeviceIdentifier == nil)
 
         if model.configuration.boundDeviceIdentifier != nil {
-          Button("Unbind", role: .destructive) {
+          Button(model.text(.watchUnbind), role: .destructive) {
             Task {
               do {
                 try await model.unbindDevice()
-                message = "StopWatch unbound."
+                message = model.text(.watchUnboundMessage)
               } catch { message = error.localizedDescription }
             }
           }
@@ -101,9 +100,9 @@ struct StopWatchView: View {
     VStack(alignment: .leading, spacing: 14) {
       HStack {
         VStack(alignment: .leading, spacing: 3) {
-          Text("Discover nearby devices")
+          Text(model.text(.watchDiscoverTitle))
             .font(.headline)
-          Text("Discovery starts only when you press Scan. Results are not retained after binding.")
+          Text(model.text(.watchDiscoverNote))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -113,7 +112,8 @@ struct StopWatchView: View {
           Task { await model.discoverDevices() }
         } label: {
           Label(
-            model.isDiscovering ? "Scanning…" : "Scan", systemImage: "dot.radiowaves.left.and.right"
+            model.isDiscovering ? model.text(.watchScanning) : model.text(.watchScan),
+            systemImage: "dot.radiowaves.left.and.right"
           )
         }
         .disabled(model.isDiscovering)
@@ -147,13 +147,13 @@ struct StopWatchView: View {
             .background(.secondary.opacity(0.07), in: RoundedRectangle(cornerRadius: 9))
           }
         }
-        Button("Bind selected device") {
+        Button(model.text(.watchBindSelected)) {
           guard let selection else { return }
           Task {
             do {
               try await model.bindDevice(selection)
               self.selection = nil
-              message = "StopWatch bound."
+              message = model.text(.watchBoundMessage)
             } catch { message = error.localizedDescription }
           }
         }

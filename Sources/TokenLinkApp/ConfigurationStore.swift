@@ -2,13 +2,59 @@ import Foundation
 import TokenLinkCore
 import TokenLinkProviders
 
+public struct ProviderAccount: Codable, Equatable, Sendable, Identifiable {
+  public let id: UUID
+  public let provider: ProviderID
+  public var label: String
+  public var enabled: Bool
+
+  public init(
+    id: UUID = UUID(),
+    provider: ProviderID,
+    label: String,
+    enabled: Bool = true
+  ) {
+    self.id = id
+    self.provider = provider
+    self.label = label
+    self.enabled = enabled
+  }
+}
+
 public struct AppConfiguration: Codable, Equatable, Sendable {
-  public var enabledProviders: Set<ProviderID>
+  /// Accounts are the source of truth for provider enablement; ordered, and
+  /// the first account of each provider is its default account.
+  public var accounts: [ProviderAccount]
   public var refreshMinutes: Int
   public var boundDeviceIdentifier: UUID?
   public var codexPath: String?
   public var miniMaxRegion: MiniMaxRegion
   public var glmRegion: GLMRegion
+  /// nil = follow the system language; otherwise an `AppLanguage` raw value.
+  public var appLanguage: String?
+
+  /// Derived from enabled accounts; kept for readable call sites.
+  public var enabledProviders: Set<ProviderID> {
+    Set(accounts.filter(\.enabled).map(\.provider))
+  }
+
+  public init(
+    accounts: [ProviderAccount],
+    refreshMinutes: Int,
+    boundDeviceIdentifier: UUID?,
+    codexPath: String?,
+    miniMaxRegion: MiniMaxRegion,
+    glmRegion: GLMRegion,
+    appLanguage: String? = nil
+  ) {
+    self.accounts = accounts
+    self.refreshMinutes = min(60, max(1, refreshMinutes))
+    self.boundDeviceIdentifier = boundDeviceIdentifier
+    self.codexPath = codexPath
+    self.miniMaxRegion = miniMaxRegion
+    self.glmRegion = glmRegion
+    self.appLanguage = appLanguage
+  }
 
   public init(
     enabledProviders: Set<ProviderID>,
@@ -16,14 +62,17 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     boundDeviceIdentifier: UUID?,
     codexPath: String?,
     miniMaxRegion: MiniMaxRegion,
-    glmRegion: GLMRegion
+    glmRegion: GLMRegion,
+    appLanguage: String? = nil
   ) {
-    self.enabledProviders = enabledProviders
-    self.refreshMinutes = min(60, max(1, refreshMinutes))
-    self.boundDeviceIdentifier = boundDeviceIdentifier
-    self.codexPath = codexPath
-    self.miniMaxRegion = miniMaxRegion
-    self.glmRegion = glmRegion
+    self.init(
+      accounts: Self.defaultAccounts(for: enabledProviders),
+      refreshMinutes: refreshMinutes,
+      boundDeviceIdentifier: boundDeviceIdentifier,
+      codexPath: codexPath,
+      miniMaxRegion: miniMaxRegion,
+      glmRegion: glmRegion,
+      appLanguage: appLanguage)
   }
 
   public static let `default` = AppConfiguration(
@@ -33,6 +82,71 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     codexPath: nil,
     miniMaxRegion: .global,
     glmRegion: .global)
+
+  public static func defaultAccounts(for providers: Set<ProviderID>) -> [ProviderAccount] {
+    ProviderID.allCases.filter(providers.contains).map { provider in
+      ProviderAccount(
+        provider: provider,
+        label: ProviderRegistry.displayName(for: provider))
+    }
+  }
+
+  public func defaultAccount(for provider: ProviderID) -> ProviderAccount? {
+    accounts.first { $0.provider == provider }
+  }
+
+  public func isDefaultAccount(_ account: ProviderAccount) -> Bool {
+    defaultAccount(for: account.provider)?.id == account.id
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case accounts
+    case refreshMinutes
+    case boundDeviceIdentifier
+    case codexPath
+    case miniMaxRegion
+    case glmRegion
+    case appLanguage
+    case legacyEnabledProviders = "enabledProviders"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let accounts: [ProviderAccount]
+    if let decoded = try container.decodeIfPresent(
+      [ProviderAccount].self, forKey: .accounts)
+    {
+      accounts = decoded
+    } else if let legacy = try container.decodeIfPresent(
+      [ProviderID].self, forKey: .legacyEnabledProviders)
+    {
+      // Migrate pre-account configs: one default account per enabled provider.
+      accounts = Self.defaultAccounts(for: Set(legacy))
+    } else {
+      accounts = Self.defaultAccounts(for: Set(ProviderID.allCases))
+    }
+    self.init(
+      accounts: accounts,
+      refreshMinutes: try container.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 5,
+      boundDeviceIdentifier: try container.decodeIfPresent(
+        UUID.self, forKey: .boundDeviceIdentifier),
+      codexPath: try container.decodeIfPresent(String.self, forKey: .codexPath),
+      miniMaxRegion: try container.decodeIfPresent(MiniMaxRegion.self, forKey: .miniMaxRegion)
+        ?? .global,
+      glmRegion: try container.decodeIfPresent(GLMRegion.self, forKey: .glmRegion) ?? .global,
+      appLanguage: try container.decodeIfPresent(String.self, forKey: .appLanguage))
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(accounts, forKey: .accounts)
+    try container.encode(refreshMinutes, forKey: .refreshMinutes)
+    try container.encodeIfPresent(boundDeviceIdentifier, forKey: .boundDeviceIdentifier)
+    try container.encodeIfPresent(codexPath, forKey: .codexPath)
+    try container.encode(miniMaxRegion, forKey: .miniMaxRegion)
+    try container.encode(glmRegion, forKey: .glmRegion)
+    try container.encodeIfPresent(appLanguage, forKey: .appLanguage)
+  }
 }
 
 public struct ConfigurationStore: Sendable {

@@ -33,15 +33,15 @@ struct MenuBarView: View {
 
       if model.orderedProviderRows.isEmpty {
         ContentUnavailableView(
-          "No providers enabled",
+          model.text(.menubarNoProviders),
           systemImage: "gauge.open.with.lines.needle.33percent",
-          description: Text("Enable a provider in Control Center.")
+          description: Text(model.text(.menubarEnableHint))
         )
         .frame(height: 170)
       } else {
         VStack(spacing: 0) {
           ForEach(model.orderedProviderRows) { row in
-            ProviderQuotaRow(row: row)
+            ProviderQuotaRow(row: row, language: model.currentLanguage)
               .padding(.horizontal, 16)
               .padding(.vertical, 11)
             if row.id != model.orderedProviderRows.last?.id {
@@ -57,19 +57,19 @@ struct MenuBarView: View {
         Button {
           Task { await model.refreshManually() }
         } label: {
-          Label("Refresh", systemImage: "arrow.clockwise")
+          Label(model.text(.actionRefresh), systemImage: "arrow.clockwise")
         }
         .disabled(model.isRefreshing)
 
         Spacer()
 
-        Button("Control Center…") {
+        Button(model.text(.actionControlCenter)) {
           openWindow(id: "control-center")
           NSApplication.shared.activate(ignoringOtherApps: true)
         }
 
         Menu {
-          Button("Quit TokenLink") {
+          Button(model.text(.actionQuit)) {
             NSApplication.shared.terminate(nil)
           }
         } label: {
@@ -81,11 +81,13 @@ struct MenuBarView: View {
       .padding(12)
     }
     .frame(width: 350)
+    .environment(\.appLanguage, model.currentLanguage)
   }
 }
 
 struct ProviderQuotaRow: View {
   let row: ProviderRow
+  let language: AppLanguage
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
@@ -105,7 +107,7 @@ struct ProviderQuotaRow: View {
               .font(.caption)
               .foregroundStyle(.secondary)
             Spacer()
-            Text("\(Int(window.remainingPercent.rounded()))% left")
+            Text("\(Int(window.remainingPercent.rounded()))% \(L10n.text(.quotaLeft, language: language))")
               .font(.caption.weight(.semibold))
               .monospacedDigit()
           }
@@ -115,7 +117,7 @@ struct ProviderQuotaRow: View {
             .font(.caption2)
             .foregroundStyle(row.state.phase == .stale ? .orange : .secondary)
         } else {
-          Text(row.state.error?.message ?? "Waiting for the first quota snapshot.")
+          Text(row.state.error?.message ?? L10n.text(.quotaWaitingFirst, language: language))
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
@@ -126,15 +128,22 @@ struct ProviderQuotaRow: View {
 
   private func detailText(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
     if row.state.phase == .error {
-      return
-        "Expired cache · fetched \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))"
+      return String(
+        format: L10n.text(.quotaExpiredCacheFetched, language: language),
+        snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))
     }
     if row.state.phase == .stale {
-      return "Stale · fetched \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+      return String(
+        format: L10n.text(.quotaStaleFetched, language: language),
+        snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
     }
     if let resetsAt = window.resetsAt {
-      return "Resets \(ProviderPresentation.relative(resetsAt))"
+      return String(
+        format: L10n.text(.quotaResetsAt, language: language),
+        ProviderPresentation.relative(resetsAt))
     }
-    return "Updated \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+    return String(
+      format: L10n.text(.quotaUpdatedAt, language: language),
+      snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
   }
 }

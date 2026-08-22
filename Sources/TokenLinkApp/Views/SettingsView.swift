@@ -9,9 +9,9 @@ struct SettingsView: View {
     ScrollView {
       VStack(alignment: .leading, spacing: 22) {
         VStack(alignment: .leading, spacing: 6) {
-          Text("Settings & Diagnostics")
+          Text(model.text(.settingsTitle))
             .font(.largeTitle.bold())
-          Text("Tune refresh behavior and export a redacted support snapshot.")
+          Text(model.text(.settingsSubtitle))
             .foregroundStyle(.secondary)
         }
         generalCard
@@ -28,16 +28,35 @@ struct SettingsView: View {
       .frame(maxWidth: 820, alignment: .leading)
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-    .navigationTitle("Settings & Diagnostics")
+    .navigationTitle(model.text(.settingsTitle))
   }
 
   private var generalCard: some View {
     VStack(alignment: .leading, spacing: 16) {
-      Text("General")
+      Text(model.text(.settingsGeneral))
         .font(.headline)
-      LabeledContent("Refresh interval") {
+      LabeledContent(model.text(.settingsLanguage)) {
         Picker(
-          "Refresh interval",
+          model.text(.settingsLanguage),
+          selection: Binding(
+            get: { model.configuration.appLanguage ?? "" },
+            set: { preference in
+              do {
+                try model.setAppLanguage(preference.isEmpty ? nil : preference)
+              } catch { message = error.localizedDescription }
+            })
+        ) {
+          Text(model.text(.languageSystem)).tag("")
+          Text(model.text(.languageEnglish)).tag(AppLanguage.english.rawValue)
+          Text(model.text(.languageChinese)).tag(AppLanguage.simplifiedChinese.rawValue)
+          Text(model.text(.languageJapanese)).tag(AppLanguage.japanese.rawValue)
+        }
+        .labelsHidden()
+        .frame(width: 160)
+      }
+      LabeledContent(model.text(.settingsRefreshInterval)) {
+        Picker(
+          model.text(.settingsRefreshInterval),
           selection: Binding(
             get: { model.configuration.refreshMinutes },
             set: { minutes in
@@ -47,15 +66,15 @@ struct SettingsView: View {
             })
         ) {
           ForEach([1, 2, 5, 15, 30], id: \.self) { minutes in
-            Text("\(minutes) min").tag(minutes)
+            Text(String(format: model.text(.settingsMinutes), minutes)).tag(minutes)
           }
         }
         .labelsHidden()
         .frame(width: 140)
       }
-      LabeledContent("Launch at login") {
+      LabeledContent(model.text(.settingsLaunchAtLogin)) {
         Toggle(
-          "Launch at login",
+          model.text(.settingsLaunchAtLogin),
           isOn: Binding(
             get: { model.loginItemState == .enabled },
             set: { enabled in
@@ -69,7 +88,7 @@ struct SettingsView: View {
       }
       if model.loginItemState == .requiresApproval {
         Label(
-          "Approval is required in System Settings → General → Login Items.",
+          model.text(.settingsLoginApproval),
           systemImage: "exclamationmark.triangle"
         )
         .font(.caption)
@@ -81,11 +100,9 @@ struct SettingsView: View {
 
   private var privacyCard: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Label("Privacy boundary", systemImage: "lock.shield")
+      Label(model.text(.settingsPrivacyTitle), systemImage: "lock.shield")
         .font(.headline)
-      Text(
-        "API keys live in macOS Keychain. TokenLink may reuse the current Kimi Code CLI access token from its documented file, but never reads browser cookies, refresh tokens, or unrelated credential stores. Full Disk Access is not required."
-      )
+      Text(model.text(.settingsPrivacyBody))
       .font(.subheadline)
       .foregroundStyle(.secondary)
       .fixedSize(horizontal: false, vertical: true)
@@ -95,17 +112,15 @@ struct SettingsView: View {
 
   private var diagnosticsCard: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Diagnostics")
+      Text(model.text(.settingsDiagnostics))
         .font(.headline)
-      Text(
-        "Exports provider phases, percentages, timestamps, device state, and recent events. Paths, usernames, account labels, UUIDs, and secret-like fields are redacted before writing."
-      )
+      Text(model.text(.settingsDiagnosticsBody))
       .font(.subheadline)
       .foregroundStyle(.secondary)
       Button {
         exportDiagnostics()
       } label: {
-        Label("Export redacted diagnostics…", systemImage: "square.and.arrow.up")
+        Label(model.text(.settingsExportDiagnostics), systemImage: "square.and.arrow.up")
       }
     }
     .settingsCard()
@@ -113,10 +128,10 @@ struct SettingsView: View {
 
   private var eventCard: some View {
     VStack(alignment: .leading, spacing: 12) {
-      Text("Recent events")
+      Text(model.text(.settingsRecentEvents))
         .font(.headline)
       if model.events.isEmpty {
-        Text("No events recorded yet.")
+        Text(model.text(.settingsNoEvents))
           .foregroundStyle(.secondary)
       } else {
         ForEach(model.events.prefix(8)) { event in
@@ -136,13 +151,13 @@ struct SettingsView: View {
 
   private func exportDiagnostics() {
     let panel = NSSavePanel()
-    panel.title = "Export TokenLink Diagnostics"
+    panel.title = model.text(.settingsExportPanelTitle)
     panel.nameFieldStringValue = "tokenlink-diagnostics.json"
     panel.allowedContentTypes = [.json]
     guard panel.runModal() == .OK, let url = panel.url else { return }
     do {
       try model.exportDiagnostics(to: url)
-      message = "Diagnostics exported to \(url.lastPathComponent)."
+      message = String(format: model.text(.settingsExported), url.lastPathComponent)
     } catch {
       message = error.localizedDescription
     }

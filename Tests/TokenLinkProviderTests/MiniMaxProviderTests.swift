@@ -6,7 +6,7 @@ import TokenLinkCore
 
 private struct MiniMaxCredentials: CredentialReader {
   let key: String?
-  func apiKey(for provider: ProviderID) async throws -> String? { key }
+  func apiKey(forAccount account: String) async throws -> String? { key }
   func cliAccessToken(for provider: ProviderID) async throws -> String? { nil }
 }
 
@@ -81,4 +81,36 @@ private actor MiniMaxHTTPClient: HTTPClient {
     return
   }
   #expect(failure.kind == .authentication)
+}
+
+@Test func minimaxProviderMapsErrorEnvelopeToAuthenticationFailure() async {
+  let envelope = Data(#"{"base_resp":{"status_code":2049,"status_msg":"invalid api key"}}"#.utf8)
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: envelope, statusCode: 200))
+  let provider = MiniMaxProvider(
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "invalid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected authentication failure")
+    return
+  }
+  #expect(failure.kind == .authentication)
+  #expect(failure.message.contains("invalid api key"))
+}
+
+@Test func minimaxProviderSurfacesOtherServiceErrorsAsNetwork() async {
+  let envelope = Data(#"{"base_resp":{"status_code":1002,"status_msg":"rate limit"}}"#.utf8)
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: envelope, statusCode: 200))
+  let provider = MiniMaxProvider(
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "valid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected network failure")
+    return
+  }
+  #expect(failure.kind == .network)
+  #expect(failure.message.contains("rate limit"))
 }

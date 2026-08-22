@@ -11,13 +11,13 @@ private actor CountingRefresher: AppRefreshing {
 }
 
 private actor StateSequenceLoader {
-  private var states: [[ProviderID: ProviderState]]
+  private var states: [[UUID: ProviderState]]
 
-  init(_ states: [[ProviderID: ProviderState]]) {
+  init(_ states: [[UUID: ProviderState]]) {
     self.states = states
   }
 
-  func next() -> [ProviderID: ProviderState] {
+  func next() -> [UUID: ProviderState] {
     guard states.count > 1 else { return states.first ?? [:] }
     return states.removeFirst()
   }
@@ -144,11 +144,12 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   let transport = TestBLETransport(failuresBeforeSuccess: 1)
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
     now: { Date(timeIntervalSince1970: 200) },
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
 
@@ -168,10 +169,11 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   let transport = TestBLETransport()
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
   await model.requestRefresh(reason: "Test refresh")
@@ -199,10 +201,11 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   let transport = TestBLETransport(writeDelay: .milliseconds(150))
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
 
@@ -228,10 +231,11 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
     disconnectDelay: .milliseconds(150))
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
 
@@ -259,10 +263,11 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
     noncancellableWriteDelays: [.milliseconds(100), .milliseconds(250), .milliseconds(250)])
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
 
@@ -292,11 +297,12 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   let transport = TestBLETransport()
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let loader = StateSequenceLoader([
-    [.codex: ProviderState(phase: .healthy, snapshot: codex)],
+    [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)],
     [
-      .codex: ProviderState(
+      codexAccount.id: ProviderState(
         phase: .stale,
         snapshot: codex,
         error: .network("offline"))
@@ -324,10 +330,11 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   let transport = TestBLETransport()
   var configuration = AppConfiguration.default
   configuration.boundDeviceIdentifier = identifier
+  let codexAccount = configuration.defaultAccount(for: .codex)!
   let codex = snapshot(.codex, remaining: 72)
   let model = AppModel(
     refresher: CountingRefresher(),
-    stateLoader: { _ in [.codex: ProviderState(phase: .healthy, snapshot: codex)] },
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
     configuration: configuration,
     bluetoothTransport: transport)
 
@@ -337,6 +344,40 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   #expect(await transport.connectCount == 1)
   #expect(await transport.writes.count == 2)
   model.stop()
+}
+
+private final class RefresherBuilderLog: @unchecked Sendable {
+  var configurations: [AppConfiguration] = []
+  var refreshers: [CountingRefresher] = []
+}
+
+@MainActor @Test func regionChangeRebuildsRefresherAndRefreshesWithNewConfiguration() async throws {
+  let log = RefresherBuilderLog()
+  let initial = CountingRefresher()
+  let model = AppModel(
+    refresher: initial,
+    refresherBuilder: { configuration in
+      log.configurations.append(configuration)
+      let refresher = CountingRefresher()
+      log.refreshers.append(refresher)
+      return refresher
+    })
+
+  try model.setMiniMaxRegion(.china)
+  try model.setGLMRegion(.china)
+
+  #expect(log.configurations.map(\.miniMaxRegion) == [.china, .china])
+  #expect(log.configurations.map(\.glmRegion) == [.global, .china])
+  #expect(log.refreshers.count == 2)
+  #expect(model.configurationRestartRequired == false)
+
+  let replacement = try #require(log.refreshers.last)
+  for _ in 0..<50 {
+    if await replacement.count >= 1 { break }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+  #expect(await replacement.count >= 1)
+  #expect(await initial.count == 0)
 }
 
 @Test func diagnosticExporterRedactsEverySensitiveCategory() throws {
@@ -367,4 +408,113 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   ] {
     #expect(!output.contains(sensitive))
   }
+}
+
+private actor AppModelFakeKeychain: KeychainClient {
+  private var values: [String: Data] = [:]
+
+  func read(service: String, account: String) async throws -> Data? {
+    values[account]
+  }
+
+  func write(_ data: Data, service: String, account: String) async throws {
+    values[account] = data
+  }
+
+  func delete(service: String, account: String) async throws {
+    values[account] = nil
+  }
+
+  func value(for account: String) -> String? {
+    values[account].map { String(decoding: $0, as: UTF8.self) }
+  }
+}
+
+private struct NoCLITokenReader: KimiTokenReading {
+  func accessToken() async throws -> String? { nil }
+}
+
+@MainActor @Test func addingCodexAccountIsRejected() {
+  let model = AppModel(refresher: CountingRefresher())
+  #expect(throws: ProviderFailure.self) {
+    try model.addAccount(provider: .codex, label: "Second")
+  }
+}
+
+@MainActor @Test func addAndRemoveAccountRebuildRefresher() async throws {
+  let log = RefresherBuilderLog()
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    refresherBuilder: { configuration in
+      log.configurations.append(configuration)
+      return CountingRefresher()
+    })
+  let before = model.configuration.accounts.count
+
+  let account = try model.addAccount(provider: .kimi, label: "Work")
+  #expect(model.configuration.accounts.count == before + 1)
+  #expect(log.configurations.last?.accounts.count == before + 1)
+
+  try await model.removeAccount(id: account.id)
+  #expect(model.configuration.accounts.count == before)
+}
+
+@MainActor @Test func removingDefaultAccountPromotesSuccessorKey() async throws {
+  let client = AppModelFakeKeychain()
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLITokenReader())
+  let model = AppModel(refresher: CountingRefresher(), vault: vault)
+  let defaultAccount = try #require(model.configuration.defaultAccount(for: .minimax))
+  try await model.setAPIKey("default-key", for: defaultAccount.id)
+  let second = try model.addAccount(provider: .minimax, label: "Second")
+  try await model.setAPIKey("second-key", for: second.id)
+
+  #expect(await client.value(for: "minimax") == "default-key")
+  #expect(await client.value(for: "minimax.\(second.id.uuidString)") == "second-key")
+
+  try await model.removeAccount(id: defaultAccount.id)
+
+  #expect(await client.value(for: "minimax") == "second-key")
+  #expect(await client.value(for: "minimax.\(second.id.uuidString)") == nil)
+  #expect(model.configuration.defaultAccount(for: .minimax)?.id == second.id)
+}
+
+@MainActor @Test func accountGroupsListEnabledAccountsPerProvider() throws {
+  let model = AppModel(refresher: CountingRefresher())
+  let second = try model.addAccount(provider: .kimi, label: "Work")
+
+  let kimiGroup = try #require(model.accountGroups.first { $0.provider == .kimi })
+  #expect(kimiGroup.accounts.count == 2)
+  #expect(kimiGroup.accounts.first?.isDefault == true)
+  #expect(kimiGroup.accounts.last?.isDefault == false)
+  #expect(kimiGroup.accounts.last?.id == second.id)
+  #expect(kimiGroup.accounts.last?.label == "Work")
+  // Provider-level projection stays one row per provider for the current UI.
+  #expect(model.orderedProviderRows.map(\.id) == ProviderID.allCases)
+}
+
+@MainActor @Test func keyHintMasksStoredKeyForAccount() async throws {
+  let client = AppModelFakeKeychain()
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLITokenReader())
+  let model = AppModel(refresher: CountingRefresher(), vault: vault)
+  let account = try #require(model.configuration.defaultAccount(for: .glm))
+  try await model.setAPIKey("glm-secret-key-value", for: account.id)
+
+  #expect(await model.keyHint(for: account.id) == "glm-secr…alue")
+  #expect(await model.keyHint(for: UUID()) == nil)
+}
+
+@MainActor @Test func credentialStatesTrackEnvironmentFallback() async {
+  let client = AppModelFakeKeychain()
+  let vault = KeychainVault(
+    client: client,
+    kimiTokenReader: NoCLITokenReader(),
+    environment: { $0 == "MINIMAX_API_KEY" ? "env-key" : nil })
+  let model = AppModel(refresher: CountingRefresher(), vault: vault)
+
+  await model.refreshCredentialStates()
+
+  #expect(model.credentialConfigured[.minimax] == true)
+  #expect(model.credentialConfigured[.glm] == false)
+  let minimax = model.configuration.defaultAccount(for: .minimax)
+  #expect(minimax.flatMap { model.credentialSourceByAccount[$0.id] } == .environmentVariable)
 }

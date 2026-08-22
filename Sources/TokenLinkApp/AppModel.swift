@@ -26,6 +26,27 @@ public struct ProviderRow: Identifiable, Equatable, Sendable {
   public let state: ProviderState
 }
 
+public struct AccountRow: Identifiable, Equatable, Sendable {
+  public let id: UUID
+  public let provider: ProviderID
+  public let label: String
+  public let isDefault: Bool
+  public let state: ProviderState
+}
+
+public struct ProviderAccountGroup: Identifiable, Equatable, Sendable {
+  public var id: ProviderID { provider }
+  public let provider: ProviderID
+  public let displayName: String
+  public let accounts: [AccountRow]
+
+  public init(provider: ProviderID, displayName: String, accounts: [AccountRow]) {
+    self.provider = provider
+    self.displayName = displayName
+    self.accounts = accounts
+  }
+}
+
 public struct ProviderHighlight: Equatable, Sendable {
   public let provider: ProviderID
   public let window: QuotaWindow
@@ -46,20 +67,24 @@ public struct AppEvent: Identifiable, Equatable, Sendable {
 @MainActor
 @Observable
 public final class AppModel {
-  public private(set) var states: [ProviderID: ProviderState]
+  public private(set) var states: [UUID: ProviderState]
   public private(set) var devicePhase: DevicePhase
   public private(set) var events: [AppEvent] = []
   public private(set) var isRefreshing = false
   public private(set) var isDiscovering = false
   public private(set) var discoveredDeviceIdentifiers: [UUID] = []
   public private(set) var credentialConfigured: [ProviderID: Bool] = [:]
+  public private(set) var credentialConfiguredByAccount: [UUID: Bool] = [:]
+  public private(set) var credentialSourceByAccount: [UUID: CredentialSource] = [:]
   public private(set) var loginItemState: LoginItemState = .disabled
   public private(set) var configurationRestartRequired = false
   public var configuration: AppConfiguration
 
-  @ObservationIgnored private let refresher: any AppRefreshing
+  @ObservationIgnored private var refresher: any AppRefreshing
+  @ObservationIgnored private let refresherBuilder:
+    (@Sendable (AppConfiguration) -> any AppRefreshing)?
   @ObservationIgnored private let stateLoader:
-    @Sendable (TimeInterval) async -> [ProviderID: ProviderState]
+    @Sendable (TimeInterval) async -> [UUID: ProviderState]
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private let configurationStore: ConfigurationStore?
   @ObservationIgnored private let vault: KeychainVault?
@@ -81,8 +106,9 @@ public final class AppModel {
 
   public init(
     refresher: any AppRefreshing,
+    refresherBuilder: (@Sendable (AppConfiguration) -> any AppRefreshing)? = nil,
     now: @escaping @Sendable () -> Date = { Date() },
-    stateLoader: @escaping @Sendable (TimeInterval) async -> [ProviderID: ProviderState] = { _ in
+    stateLoader: @escaping @Sendable (TimeInterval) async -> [UUID: ProviderState] = { _ in
       [:]
     },
     configuration: AppConfiguration = .default,
@@ -92,6 +118,7 @@ public final class AppModel {
     loginController: LoginItemController? = nil
   ) {
     self.refresher = refresher
+    self.refresherBuilder = refresherBuilder
     self.now = now
     self.stateLoader = stateLoader
     self.configuration = configuration
@@ -116,10 +143,13 @@ public final class AppModel {
 
   public static func preview(snapshots: [QuotaSnapshot]) -> AppModel {
     let model = AppModel(refresher: NoopRefresher())
-    model.states = Dictionary(
-      uniqueKeysWithValues: snapshots.map {
-        ($0.provider, ProviderState(phase: .healthy, snapshot: $0))
-      })
+    var keyed: [UUID: ProviderState] = [:]
+    for snapshot in snapshots {
+      guard let account = model.configuration.defaultAccount(for: snapshot.provider)
+      else { continue }
+      keyed[account.id] = ProviderState(phase: .healthy, snapshot: snapshot)
+    }
+    model.states = keyed
     return model
   }
 
@@ -129,35 +159,14 @@ public final class AppModel {
     let vault = KeychainVault()
     let http = URLSessionHTTPClient()
     let store = ProviderStore()
-    var providers: [any QuotaProvider] = []
-
-    if configuration.enabledProviders.contains(.codex) {
-      providers.append(
-        CodexProvider(
-          executable: resolveCodexExecutable(
-            configuredPath: configuration.codexPath)))
+    let makeCoordinator: @Sendable (AppConfiguration) -> RefreshCoordinator = { configuration in
+      RefreshCoordinator(
+        providers: makeProviders(configuration: configuration, http: http, vault: vault),
+        store: store)
     }
-    if configuration.enabledProviders.contains(.kimi) {
-      providers.append(KimiProvider(http: http, credentials: vault))
-    }
-    if configuration.enabledProviders.contains(.minimax) {
-      providers.append(
-        MiniMaxProvider(
-          region: configuration.miniMaxRegion,
-          http: http,
-          credentials: vault))
-    }
-    if configuration.enabledProviders.contains(.glm) {
-      providers.append(
-        GLMProvider(
-          region: configuration.glmRegion,
-          http: http,
-          credentials: vault))
-    }
-
-    let coordinator = RefreshCoordinator(providers: providers, store: store)
     return AppModel(
-      refresher: coordinator,
+      refresher: makeCoordinator(configuration),
+      refresherBuilder: makeCoordinator,
       stateLoader: { refreshIntervalSeconds in
         await store.allStates(refreshIntervalSeconds: refreshIntervalSeconds)
       },
@@ -168,13 +177,76 @@ public final class AppModel {
       loginController: LoginItemController())
   }
 
-  public var orderedProviderRows: [ProviderRow] {
+  nonisolated private static func makeProviders(
+    configuration: AppConfiguration,
+    http: any HTTPClient,
+    vault: any CredentialReader
+  ) -> [AccountProvider] {
+    var providers: [AccountProvider] = []
+    for account in configuration.accounts where account.enabled {
+      let isDefault = configuration.isDefaultAccount(account)
+      // Codex relies on the local CLI sign-in and stays single-instance.
+      if account.provider == .codex, !isDefault { continue }
+      let provider: any QuotaProvider
+      switch account.provider {
+      case .codex:
+        provider = CodexProvider(
+          executable: resolveCodexExecutable(
+            configuredPath: configuration.codexPath))
+      case .kimi, .minimax, .glm:
+        guard let spec = ProviderRegistry.spec(for: account.provider) else { continue }
+        let region: String?
+        switch account.provider {
+        case .minimax: region = configuration.miniMaxRegion.rawValue
+        case .glm: region = configuration.glmRegion.rawValue
+        default: region = nil
+        }
+        provider = SpecDrivenProvider(
+          spec: spec,
+          region: region,
+          credentialAccount: KeychainVault.keychainAccountName(
+            provider: account.provider,
+            accountID: account.id,
+            isDefault: isDefault),
+          http: http,
+          credentials: vault)
+      }
+      providers.append(AccountProvider(accountID: account.id, provider: provider))
+    }
+    return providers
+  }
+
+  /// Enabled accounts grouped by provider, in `ProviderID.allCases` order.
+  public var accountGroups: [ProviderAccountGroup] {
     ProviderID.allCases.compactMap { provider in
-      guard configuration.enabledProviders.contains(provider) else { return nil }
-      return ProviderRow(
-        id: provider,
+      let rows =
+        configuration.accounts
+        .filter { $0.provider == provider && $0.enabled }
+        .map { account in
+          AccountRow(
+            id: account.id,
+            provider: provider,
+            label: account.label,
+            isDefault: configuration.isDefaultAccount(account),
+            state: states[account.id] ?? ProviderState(phase: .disabled))
+        }
+      guard !rows.isEmpty else { return nil }
+      return ProviderAccountGroup(
+        provider: provider,
         displayName: Self.displayName(for: provider),
-        state: states[provider] ?? ProviderState(phase: .disabled))
+        accounts: rows)
+    }
+  }
+
+  /// Minimal single-account projection used by the current UI: one row per
+  /// provider, backed by its default account.
+  public var orderedProviderRows: [ProviderRow] {
+    accountGroups.compactMap { group in
+      guard let row = group.accounts.first(where: \.isDefault) else { return nil }
+      return ProviderRow(
+        id: group.provider,
+        displayName: group.displayName,
+        state: row.state)
     }
   }
 
@@ -195,16 +267,34 @@ public final class AppModel {
   }
 
   public var deviceStatusText: String {
-    switch devicePhase {
-    case .unbound: "Not bound"
-    case .disconnected: "Disconnected"
-    case .scanning: "Scanning"
-    case .connecting: "Connecting"
-    case .connected: "Connected"
-    case .syncing: "Syncing"
-    case .synced: "Synced"
-    case .stale: "Sync stale"
-    }
+    let key: L10n.Key =
+      switch devicePhase {
+      case .unbound: .deviceUnbound
+      case .disconnected: .deviceDisconnected
+      case .scanning: .deviceScanning
+      case .connecting: .deviceConnecting
+      case .connected: .deviceConnected
+      case .syncing: .deviceSyncing
+      case .synced: .deviceSynced
+      case .stale: .deviceStale
+      }
+    return L10n.text(key, language: currentLanguage)
+  }
+
+  /// Effective UI language: explicit preference wins, otherwise the system.
+  public var currentLanguage: AppLanguage {
+    AppLanguage.resolve(preference: configuration.appLanguage)
+  }
+
+  public func text(_ key: L10n.Key) -> String {
+    L10n.text(key, language: currentLanguage)
+  }
+
+  /// Persists an `AppLanguage` raw value (nil = follow the system) and applies
+  /// it immediately through the observable configuration.
+  public func setAppLanguage(_ preference: String?) throws {
+    configuration.appLanguage = preference
+    try saveConfiguration()
   }
 
   public func start() async {
@@ -257,7 +347,10 @@ public final class AppModel {
     isRefreshing = true
     await refresher.refresh()
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
-    if bridge != nil, states[.codex]?.phase == .healthy {
+    if bridge != nil,
+      let codexAccount = configuration.defaultAccount(for: .codex),
+      states[codexAccount.id]?.phase == .healthy
+    {
       await syncCodex(allowStale: false, attempts: 2, automatic: true)
     } else if case .synced = devicePhase {
       devicePhase = .stale
@@ -266,29 +359,130 @@ public final class AppModel {
     record(reason)
   }
 
+  /// Writes (or clears, when empty) the key of the provider's default account.
   public func saveAPIKey(_ value: String, for provider: ProviderID) async throws {
-    guard let vault else { return }
-    if value.isEmpty {
-      try await vault.deleteAPIKey(for: provider)
-      credentialConfigured[provider] = false
-    } else {
-      try await vault.setAPIKey(value, for: provider)
-      credentialConfigured[provider] = true
-    }
-    record("Updated \(Self.displayName(for: provider)) credentials")
+    guard let account = configuration.defaultAccount(for: provider) else { return }
+    try await setAPIKey(value, for: account.id)
   }
 
   public func deleteAPIKey(for provider: ProviderID) async throws {
     try await saveAPIKey("", for: provider)
   }
 
+  public func setAPIKey(_ value: String, for accountID: UUID) async throws {
+    guard let vault,
+      let account = configuration.accounts.first(where: { $0.id == accountID })
+    else { return }
+    let name = KeychainVault.keychainAccountName(
+      provider: account.provider,
+      accountID: account.id,
+      isDefault: configuration.isDefaultAccount(account))
+    if value.isEmpty {
+      try await vault.deleteAPIKey(forAccount: name)
+    } else {
+      try await vault.setAPIKey(value, forAccount: name)
+    }
+    await refreshCredentialStates()
+    record("Updated \(Self.displayName(for: account.provider)) credentials")
+  }
+
+  /// Display-only masked hint (head/tail) of the stored key; never the key.
+  public func keyHint(for accountID: UUID) async -> String? {
+    guard let vault,
+      let account = configuration.accounts.first(where: { $0.id == accountID })
+    else { return nil }
+    return try? await vault.keyHint(
+      for: account,
+      isDefault: configuration.isDefaultAccount(account))
+  }
+
+  /// Adds an additional account for a provider. Codex is backed by the local
+  /// CLI sign-in and stays single-account.
+  @discardableResult
+  public func addAccount(provider: ProviderID, label: String) throws -> ProviderAccount {
+    guard provider != .codex else {
+      throw ProviderFailure.configuration(
+        "Codex uses the local CLI sign-in and supports a single account.")
+    }
+    let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let account = ProviderAccount(
+      provider: provider,
+      label: trimmed.isEmpty ? Self.displayName(for: provider) : trimmed)
+    configuration.accounts.append(account)
+    try saveConfiguration()
+    rebuildRefresher(reason: "Account added; refreshing")
+    Task { await refreshCredentialStates() }
+    return account
+  }
+
+  /// Removes an account and its stored key. When the default account is
+  /// removed, the next account is promoted and its key moved to the default
+  /// Keychain name so it keeps working.
+  public func removeAccount(id: UUID) async throws {
+    guard let index = configuration.accounts.firstIndex(where: { $0.id == id })
+    else { return }
+    let account = configuration.accounts[index]
+    let wasDefault = configuration.isDefaultAccount(account)
+    if let vault {
+      try await vault.deleteAPIKey(for: account, isDefault: wasDefault)
+    }
+    configuration.accounts.remove(at: index)
+    if wasDefault, let vault,
+      let successor = configuration.defaultAccount(for: account.provider)
+    {
+      let successorName = KeychainVault.keychainAccountName(
+        provider: successor.provider, accountID: successor.id, isDefault: false)
+      if let key = try await vault.apiKey(forAccount: successorName) {
+        try await vault.setAPIKey(key, forAccount: account.provider.rawValue)
+        try await vault.deleteAPIKey(forAccount: successorName)
+      }
+    }
+    try saveConfiguration()
+    rebuildRefresher(reason: "Account removed; refreshing")
+    await refreshCredentialStates()
+    record("Removed \(Self.displayName(for: account.provider)) account")
+  }
+
   public func refreshCredentialStates() async {
     guard let vault else { return }
-    for provider in ProviderID.allCases where provider != .codex {
-      let apiKey = (try? await vault.apiKey(for: provider)) ?? nil
-      let cliToken = (try? await vault.cliAccessToken(for: provider)) ?? nil
-      credentialConfigured[provider] = apiKey != nil || cliToken != nil
+    var byAccount: [UUID: Bool] = [:]
+    var sources: [UUID: CredentialSource] = [:]
+    for account in configuration.accounts where account.provider != .codex {
+      let name = KeychainVault.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: configuration.isDefaultAccount(account))
+      let key = (try? await vault.apiKey(forAccount: name)) ?? nil
+      if let key, !key.isEmpty {
+        byAccount[account.id] = true
+        sources[account.id] = .apiKey
+        continue
+      }
+      if account.provider == .kimi {
+        let token = (try? await vault.cliAccessToken(for: .kimi)) ?? nil
+        if let token, !token.isEmpty {
+          byAccount[account.id] = true
+          sources[account.id] = .cliCredential
+          continue
+        }
+      }
+      let envKey = (try? await vault.environmentAPIKey(for: account.provider)) ?? nil
+      if envKey != nil {
+        byAccount[account.id] = true
+        sources[account.id] = .environmentVariable
+      } else {
+        byAccount[account.id] = false
+      }
     }
+    credentialConfiguredByAccount = byAccount
+    credentialSourceByAccount = sources
+    var byProvider: [ProviderID: Bool] = [:]
+    for provider in ProviderID.allCases where provider != .codex {
+      byProvider[provider] =
+        configuration.defaultAccount(for: provider).map { byAccount[$0.id] == true }
+        ?? false
+    }
+    credentialConfigured = byProvider
   }
 
   public func discoverDevices() async {
@@ -354,9 +548,22 @@ public final class AppModel {
 
   public func setProvider(_ provider: ProviderID, enabled: Bool) throws {
     if enabled {
-      configuration.enabledProviders.insert(provider)
+      if configuration.accounts.contains(where: { $0.provider == provider }) {
+        for index in configuration.accounts.indices
+        where configuration.accounts[index].provider == provider {
+          configuration.accounts[index].enabled = true
+        }
+      } else {
+        configuration.accounts.append(
+          ProviderAccount(
+            provider: provider,
+            label: Self.displayName(for: provider)))
+      }
     } else {
-      configuration.enabledProviders.remove(provider)
+      for index in configuration.accounts.indices
+      where configuration.accounts[index].provider == provider {
+        configuration.accounts[index].enabled = false
+      }
     }
     configurationRestartRequired = true
     try saveConfiguration()
@@ -371,14 +578,25 @@ public final class AppModel {
 
   public func setMiniMaxRegion(_ region: MiniMaxRegion) throws {
     configuration.miniMaxRegion = region
-    configurationRestartRequired = true
     try saveConfiguration()
+    rebuildRefresher()
   }
 
   public func setGLMRegion(_ region: GLMRegion) throws {
     configuration.glmRegion = region
-    configurationRestartRequired = true
     try saveConfiguration()
+    rebuildRefresher()
+  }
+
+  private func rebuildRefresher(
+    reason: String = "Region change applied; refreshing with the new endpoint"
+  ) {
+    guard let refresherBuilder else { return }
+    refresher = refresherBuilder(configuration)
+    record(reason)
+    Task {
+      await requestRefresh(reason: reason)
+    }
   }
 
   public func setRefreshMinutes(_ minutes: Int) throws {
@@ -455,7 +673,8 @@ public final class AppModel {
       return
     }
     guard let bridge,
-      let state = states[.codex],
+      let codexAccount = configuration.defaultAccount(for: .codex),
+      let state = states[codexAccount.id],
       state.phase == .healthy || (allowStale && state.phase == .stale),
       let snapshot = state.snapshot,
       let payload = try? LegacyWatchProjection.encode(snapshot: snapshot, now: now())
@@ -619,15 +838,10 @@ public final class AppModel {
   }
 
   public static func displayName(for provider: ProviderID) -> String {
-    switch provider {
-    case .codex: "Codex"
-    case .kimi: "Kimi"
-    case .minimax: "MiniMax"
-    case .glm: "GLM"
-    }
+    ProviderRegistry.displayName(for: provider)
   }
 
-  private static func resolveCodexExecutable(configuredPath: String?) -> URL {
+  nonisolated private static func resolveCodexExecutable(configuredPath: String?) -> URL {
     if let configuredPath, FileManager.default.isExecutableFile(atPath: configuredPath) {
       return URL(filePath: configuredPath)
     }

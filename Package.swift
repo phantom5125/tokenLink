@@ -16,7 +16,8 @@ let package = Package(
     .target(name: "TokenLinkDevice", dependencies: ["TokenLinkCore"]),
     .executableTarget(
       name: "TokenLinkApp",
-      dependencies: ["TokenLinkCore", "TokenLinkProviders", "TokenLinkDevice"]),
+      dependencies: ["TokenLinkCore", "TokenLinkProviders", "TokenLinkDevice"],
+      resources: [.process("Resources")]),
     .testTarget(name: "TokenLinkCoreTests", dependencies: ["TokenLinkCore"]),
     .testTarget(
       name: "TokenLinkProviderTests",

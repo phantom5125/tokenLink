@@ -16,7 +16,7 @@ struct OverviewView: View {
         }
         LazyVGrid(columns: columns, spacing: 16) {
           ForEach(model.orderedProviderRows) { row in
-            ProviderOverviewCard(row: row)
+            ProviderOverviewCard(row: row, language: model.currentLanguage)
           }
         }
         watchCard
@@ -25,20 +25,20 @@ struct OverviewView: View {
       .frame(maxWidth: 980, alignment: .leading)
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
-    .navigationTitle("Overview")
+    .navigationTitle(model.text(.routeOverview))
   }
 
   private var pageHeader: some View {
     HStack(alignment: .top) {
       VStack(alignment: .leading, spacing: 6) {
-        Text("Coding quota, at a glance")
+        Text(model.text(.overviewTitle))
           .font(.largeTitle.bold())
-        Text("A local control plane for your coding plans and M5Stack StopWatch.")
+        Text(model.text(.overviewSubtitle))
           .foregroundStyle(.secondary)
       }
       Spacer()
       if model.isRefreshing {
-        ProgressView("Refreshing")
+        ProgressView(model.text(.phaseRefreshing))
           .controlSize(.small)
       }
     }
@@ -48,13 +48,13 @@ struct OverviewView: View {
     HStack(spacing: 18) {
       ProviderMark(provider: highlight.provider, size: 54)
       VStack(alignment: .leading, spacing: 4) {
-        Text("Most constrained window")
+        Text(model.text(.overviewMostConstrained))
           .font(.caption.weight(.semibold))
           .foregroundStyle(.secondary)
           .textCase(.uppercase)
         Text("\(AppModel.displayName(for: highlight.provider)) · \(highlight.window.label)")
           .font(.title2.weight(.semibold))
-        Text("Plan work around the quota with the least headroom.")
+        Text(model.text(.overviewMostConstrainedHint))
           .font(.subheadline)
           .foregroundStyle(.secondary)
       }
@@ -62,7 +62,7 @@ struct OverviewView: View {
       Text("\(Int(highlight.window.remainingPercent.rounded()))%")
         .font(.system(size: 42, weight: .bold, design: .rounded))
         .monospacedDigit()
-      Text("left")
+      Text(model.text(.quotaLeft))
         .foregroundStyle(.secondary)
     }
     .padding(22)
@@ -92,7 +92,7 @@ struct OverviewView: View {
       VStack(alignment: .leading, spacing: 4) {
         Text("M5Stack StopWatch")
           .font(.headline)
-        Text("Firmware v1 compatibility · Codex primary window only")
+        Text(model.text(.overviewWatchSubtitle))
           .font(.subheadline)
           .foregroundStyle(.secondary)
       }
@@ -110,6 +110,7 @@ struct OverviewView: View {
 
 private struct ProviderOverviewCard: View {
   let row: ProviderRow
+  let language: AppLanguage
 
   var body: some View {
     VStack(alignment: .leading, spacing: 15) {
@@ -135,7 +136,7 @@ private struct ProviderOverviewCard: View {
               .monospacedDigit()
           }
           Spacer()
-          Text("remaining")
+          Text(L10n.text(.quotaRemaining, language: language))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -146,7 +147,7 @@ private struct ProviderOverviewCard: View {
           .foregroundStyle(row.state.phase == .error ? .red : .secondary)
       } else {
         Spacer(minLength: 8)
-        Text(row.state.error?.message ?? "No quota snapshot yet")
+        Text(row.state.error?.message ?? L10n.text(.quotaNoSnapshot, language: language))
           .font(.subheadline)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
@@ -164,13 +165,17 @@ private struct ProviderOverviewCard: View {
 
   private func detail(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
     if row.state.phase == .error {
-      return
-        "Expired cache from \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))"
+      return String(
+        format: L10n.text(.quotaExpiredCacheFrom, language: language),
+        snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))
     }
     if row.state.phase == .stale {
-      return "Stale · fetched \(snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))"
+      return String(
+        format: L10n.text(.quotaStaleFetched, language: language),
+        snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
     }
-    return window.resetsAt.map { "Resets \(ProviderPresentation.relative($0))" }
-      ?? "Reset time unavailable"
+    return window.resetsAt.map {
+      String(format: L10n.text(.quotaResetsAt, language: language), ProviderPresentation.relative($0))
+    } ?? L10n.text(.quotaResetUnavailable, language: language)
   }
 }
