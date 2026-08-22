@@ -149,3 +149,6 @@ vite.config.ts.timestamp-*
 *.xcodeproj/
 *.xcworkspace/
 .DS_Store
+
+# Local agent tooling
+.local/
