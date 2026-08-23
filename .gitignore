@@ -152,3 +152,4 @@ vite.config.ts.timestamp-*
 
 # Local agent tooling
 .local/
+TokenLink.app/
