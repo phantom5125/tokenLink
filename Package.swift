@@ -26,6 +26,7 @@ let package = Package(
         .library(name: "TokenLinkCore", targets: ["TokenLinkCore"]),
         .library(name: "TokenLinkProviders", targets: ["TokenLinkProviders"]),
         .library(name: "TokenLinkDevice", targets: ["TokenLinkDevice"]),
+        .executable(name: "tokenlink", targets: ["TokenLinkApp"]),
     ],
     targets: [
         .target(name: "TokenLinkCore"),
@@ -45,6 +46,14 @@ let package = Package(
         .testTarget(
             name: "TokenLinkDeviceTests",
             dependencies: ["TokenLinkCore", "TokenLinkDevice"],
+            swiftSettings: testSwiftSettings,
+            linkerSettings: testLinkerSettings),
+        .executableTarget(
+            name: "TokenLinkApp",
+            dependencies: ["TokenLinkCore", "TokenLinkProviders", "TokenLinkDevice"]),
+        .testTarget(
+            name: "TokenLinkAppTests",
+            dependencies: ["TokenLinkApp", "TokenLinkCore", "TokenLinkProviders", "TokenLinkDevice"],
             swiftSettings: testSwiftSettings,
             linkerSettings: testLinkerSettings),
     ],
