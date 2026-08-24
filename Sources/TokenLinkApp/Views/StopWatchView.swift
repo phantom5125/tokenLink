@@ -12,7 +12,7 @@ struct StopWatchView: View {
           Text("StopWatch")
             .font(.largeTitle.bold())
           Text(model.text(.watchSubtitle))
-          .foregroundStyle(.secondary)
+            .foregroundStyle(.secondary)
         }
 
         compatibilityNotice
@@ -41,8 +41,8 @@ struct StopWatchView: View {
         Text(model.text(.watchCompatTitle))
           .font(.headline)
         Text(model.text(.watchCompatBody))
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
       }
     }
     .padding(18)

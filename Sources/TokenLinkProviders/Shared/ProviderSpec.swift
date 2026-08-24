@@ -21,6 +21,9 @@ public struct ProviderSpec: Sendable {
   /// Resolves the official console page where users obtain an API key.
   public let keyHelpURL: @Sendable (_ region: String?) -> URL
   public let authStyle: ProviderAuthStyle
+  /// Additional static headers sent on every request (e.g. Anthropic's
+  /// `anthropic-beta` opt-in). Empty for most providers.
+  public let extraHeaders: [String: String]
   public let allowedHosts: [String]
   /// Explicit allowlist of environment variables consulted as a credential
   /// fallback, in priority order. Empty when the provider has none.
@@ -41,6 +44,7 @@ public struct ProviderSpec: Sendable {
     endpoint: @escaping @Sendable (_ region: String?) -> URL,
     keyHelpURL: @escaping @Sendable (_ region: String?) -> URL,
     authStyle: ProviderAuthStyle,
+    extraHeaders: [String: String] = [:],
     allowedHosts: [String],
     credentialEnvVars: [String],
     allowsCLICredential: Bool = false,
@@ -53,6 +57,7 @@ public struct ProviderSpec: Sendable {
     self.endpoint = endpoint
     self.keyHelpURL = keyHelpURL
     self.authStyle = authStyle
+    self.extraHeaders = extraHeaders
     self.allowedHosts = allowedHosts
     self.credentialEnvVars = credentialEnvVars
     self.allowsCLICredential = allowsCLICredential
@@ -67,6 +72,7 @@ public enum ProviderRegistry {
     .kimi: kimi,
     .minimax: minimax,
     .glm: glm,
+    .claude: claude,
   ]
 
   /// Providers with a hand-written adapter (local subprocess, no API key).
@@ -160,5 +166,24 @@ public enum ProviderRegistry {
     },
     errorMapper: { error in
       error is GLMParseError ? .decoding("GLM usage could not be read.") : nil
+    })
+
+  public static let claude = ProviderSpec(
+    id: .claude,
+    displayName: "Claude",
+    endpoint: { _ in URL(string: "https://api.anthropic.com/api/oauth/usage")! },
+    keyHelpURL: { _ in URL(string: "https://claude.ai")! },
+    authStyle: .bearer,
+    extraHeaders: ["anthropic-beta": "oauth-2025-04-20"],
+    allowedHosts: ["api.anthropic.com"],
+    credentialEnvVars: ["CLAUDE_CODE_OAUTH_TOKEN"],
+    allowsCLICredential: true,
+    missingCredentialMessage:
+      "Sign in with Claude Code CLI or set CLAUDE_CODE_OAUTH_TOKEN.",
+    parse: { data, fetchedAt in
+      try ClaudeParser.parse(data: data, fetchedAt: fetchedAt)
+    },
+    errorMapper: { error in
+      error is ClaudeParseError ? .decoding("Claude usage could not be read.") : nil
     })
 }

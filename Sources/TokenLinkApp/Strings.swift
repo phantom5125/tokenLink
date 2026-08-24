@@ -52,6 +52,7 @@ public enum L10n {
     case quotaResetsAt = "quota.resetsAt"
     case quotaUpdatedAt = "quota.updatedAt"
     case quotaResetUnavailable = "quota.resetUnavailable"
+    case quotaBurnEta = "quota.burnEta"
     // Phases
     case phaseDisabled = "phase.disabled"
     case phaseMissingCredential = "phase.missingCredential"
@@ -107,6 +108,13 @@ public enum L10n {
     case settingsRecentEvents = "settings.recentEvents"
     case settingsNoEvents = "settings.noEvents"
     case settingsLanguage = "settings.language"
+    case settingsNotifications = "settings.notifications"
+    case notifyLowQuotaTitle = "notify.lowQuotaTitle"
+    case notifyLowQuotaBody = "notify.lowQuotaBody"
+    case notifyAuthFailureTitle = "notify.authFailureTitle"
+    case notifyAuthFailureBody = "notify.authFailureBody"
+    case notifyResetTitle = "notify.resetTitle"
+    case notifyResetBody = "notify.resetBody"
     case languageSystem = "language.system"
     case languageEnglish = "language.en"
     case languageChinese = "language.zhHans"
@@ -149,6 +157,8 @@ public enum L10n {
     case subtitleKimi = "subtitle.kimi"
     case subtitleMinimax = "subtitle.minimax"
     case subtitleGLM = "subtitle.glm"
+    case subtitleClaude = "subtitle.claude"
+    case providersClaudeNote = "providers.claudeNote"
   }
 
   public static func text(_ key: Key, language: AppLanguage) -> String {
@@ -224,6 +234,11 @@ public enum L10n {
     .quotaResetUnavailable: [
       .english: "Reset time unavailable", .simplifiedChinese: "重置时间未知",
       .japanese: "リセット時刻は不明です",
+    ],
+    .quotaBurnEta: [
+      .english: "Runs out in ~%@ at this pace",
+      .simplifiedChinese: "按当前速度约 %@ 后耗尽",
+      .japanese: "このペースではあと約 %@ で枯渇",
     ],
     .phaseDisabled: [.english: "Disabled", .simplifiedChinese: "已停用", .japanese: "無効"],
     .phaseMissingCredential: [
@@ -330,7 +345,8 @@ public enum L10n {
       .japanese: "近くのデバイスを検出",
     ],
     .watchDiscoverNote: [
-      .english: "Discovery starts only when you press Scan. Results are not retained after binding.",
+      .english:
+        "Discovery starts only when you press Scan. Results are not retained after binding.",
       .simplifiedChinese: "只有按下“扫描”才会开始发现设备，绑定后不保留结果。",
       .japanese: "検出は「スキャン」を押したときだけ開始されます。結果はバインド後に保持されません。",
     ],
@@ -414,6 +430,36 @@ public enum L10n {
       .japanese: "記録されたイベントはまだありません。",
     ],
     .settingsLanguage: [.english: "Language", .simplifiedChinese: "语言", .japanese: "言語"],
+    .settingsNotifications: [
+      .english: "Notifications", .simplifiedChinese: "系统通知",
+      .japanese: "通知",
+    ],
+    .notifyLowQuotaTitle: [
+      .english: "Quota running low", .simplifiedChinese: "额度即将耗尽",
+      .japanese: "クォータが残りわずか",
+    ],
+    .notifyLowQuotaBody: [
+      .english: "%@ has %d%% remaining in its most constrained window.",
+      .simplifiedChinese: "%@ 最紧张的窗口只剩 %d%%。",
+      .japanese: "%@ の最も厳しいウィンドウの残りは %d%% です。",
+    ],
+    .notifyAuthFailureTitle: [
+      .english: "Credential rejected", .simplifiedChinese: "凭据失效",
+      .japanese: "認証情報が拒否されました",
+    ],
+    .notifyAuthFailureBody: [
+      .english: "%@ rejected its stored credential. Update it in Control Center.",
+      .simplifiedChinese: "%@ 拒绝了已保存的凭据，请在控制中心更新。",
+      .japanese: "%@ が保存済みの認証情報を拒否しました。コントロールセンターで更新してください。",
+    ],
+    .notifyResetTitle: [
+      .english: "Quota window reset", .simplifiedChinese: "额度窗口已重置",
+      .japanese: "クォータウィンドウがリセットされました",
+    ],
+    .notifyResetBody: [
+      .english: "%@ · %@ has reset.", .simplifiedChinese: "%@ 的 %@ 已重置。",
+      .japanese: "%@ の %@ がリセットされました。",
+    ],
     .languageSystem: [
       .english: "System", .simplifiedChinese: "跟随系统", .japanese: "システムに従う",
     ],
@@ -451,7 +497,8 @@ public enum L10n {
     .providersCodexNote: [
       .english: "Uses the local `codex app-server`; no Codex API key is stored by TokenLink.",
       .simplifiedChinese: "使用本机 Codex CLI 登录态（`codex app-server`），TokenLink 不保存 Codex API key。",
-      .japanese: "ローカルの Codex CLI ログイン状態（`codex app-server`）を使用します。TokenLink は Codex API キーを保存しません。",
+      .japanese:
+        "ローカルの Codex CLI ログイン状態（`codex app-server`）を使用します。TokenLink は Codex API キーを保存しません。",
     ],
     .providersCredential: [.english: "Credential", .simplifiedChinese: "凭据", .japanese: "認証情報"],
     .providersConfigured: [
@@ -511,7 +558,8 @@ public enum L10n {
       .english:
         "Most users need only one account. Multiple accounts are for running several plans at once; keep track of which quota belongs to which account.",
       .simplifiedChinese: "大多数用户只需一个账户。多账户用于同时挂多个套餐，请注意区分额度归属。",
-      .japanese: "ほとんどのユーザーは 1 つのアカウントで十分です。複数アカウントは複数プランを同時に運用するためのものです。どのクォータがどのアカウントのものか管理してください。",
+      .japanese:
+        "ほとんどのユーザーは 1 つのアカウントで十分です。複数アカウントは複数プランを同時に運用するためのものです。どのクォータがどのアカウントのものか管理してください。",
     ],
     .providersAccountLabel: [
       .english: "Account label", .simplifiedChinese: "账户名称",
@@ -556,6 +604,19 @@ public enum L10n {
     .subtitleGLM: [
       .english: "Coding Plan quota monitor", .simplifiedChinese: "Coding Plan 额度监控",
       .japanese: "Coding Plan クォータモニター",
+    ],
+    .subtitleClaude: [
+      .english: "Claude Code CLI sign-in",
+      .simplifiedChinese: "Claude Code CLI 登录态",
+      .japanese: "Claude Code CLI ログイン状態",
+    ],
+    .providersClaudeNote: [
+      .english:
+        "Uses the local Claude Code CLI sign-in (OAuth usage endpoint). Anthropic pay-as-you-go keys do not report subscription quota, so TokenLink does not store one.",
+      .simplifiedChinese:
+        "使用本机 Claude Code CLI 登录态（OAuth 用量接口）。Anthropic 按量付费 key 查询不到订阅额度，因此 TokenLink 不保存 key。",
+      .japanese:
+        "ローカルの Claude Code CLI ログイン状態（OAuth 使用量エンドポイント）を使用します。従量課金キーではサブスクリプションのクォータを取得できないため、TokenLink はキーを保存しません。",
     ],
   ]
 }

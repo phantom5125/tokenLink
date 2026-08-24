@@ -72,6 +72,20 @@ struct SettingsView: View {
         .labelsHidden()
         .frame(width: 140)
       }
+      LabeledContent(model.text(.settingsNotifications)) {
+        Toggle(
+          model.text(.settingsNotifications),
+          isOn: Binding(
+            get: { model.configuration.notificationsEnabled },
+            set: { enabled in
+              do { try model.setNotificationsEnabled(enabled) } catch {
+                message = error.localizedDescription
+              }
+            })
+        )
+        .toggleStyle(.switch)
+        .labelsHidden()
+      }
       LabeledContent(model.text(.settingsLaunchAtLogin)) {
         Toggle(
           model.text(.settingsLaunchAtLogin),
@@ -103,9 +117,9 @@ struct SettingsView: View {
       Label(model.text(.settingsPrivacyTitle), systemImage: "lock.shield")
         .font(.headline)
       Text(model.text(.settingsPrivacyBody))
-      .font(.subheadline)
-      .foregroundStyle(.secondary)
-      .fixedSize(horizontal: false, vertical: true)
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
     }
     .settingsCard()
   }
@@ -115,8 +129,8 @@ struct SettingsView: View {
       Text(model.text(.settingsDiagnostics))
         .font(.headline)
       Text(model.text(.settingsDiagnosticsBody))
-      .font(.subheadline)
-      .foregroundStyle(.secondary)
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
       Button {
         exportDiagnostics()
       } label: {

@@ -46,6 +46,9 @@ public struct SpecDrivenProvider: QuotaProvider {
       case .rawAuthorization:
         request.setValue(credential.value, forHTTPHeaderField: "Authorization")
       }
+      for (field, value) in spec.extraHeaders {
+        request.setValue(value, forHTTPHeaderField: field)
+      }
       let response = try await http.data(
         for: request,
         policy: EndpointPolicy(allowedHosts: spec.allowedHosts))

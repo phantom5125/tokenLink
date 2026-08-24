@@ -79,12 +79,15 @@ public final class AppModel {
   public private(set) var loginItemState: LoginItemState = .disabled
   public private(set) var configurationRestartRequired = false
   public var configuration: AppConfiguration
+  /// Pace projections keyed by account id, refreshed together with states.
+  public private(set) var burnEstimates: [UUID: BurnRateEstimate] = [:]
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
     (@Sendable (AppConfiguration) -> any AppRefreshing)?
   @ObservationIgnored private let stateLoader:
     @Sendable (TimeInterval) async -> [UUID: ProviderState]
+  @ObservationIgnored private let estimateLoader: @Sendable () async -> [UUID: BurnRateEstimate]
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private let configurationStore: ConfigurationStore?
   @ObservationIgnored private let vault: KeychainVault?
@@ -102,6 +105,8 @@ public final class AppModel {
   @ObservationIgnored private var networkWasAvailable = false
   @ObservationIgnored private var lastManualRefresh: Date?
   @ObservationIgnored private var started = false
+  @ObservationIgnored private var notificationPolicy = NotificationPolicy()
+  @ObservationIgnored private let notificationManager: (any NotificationManaging)?
   @ObservationIgnored private var isChangingBinding = false
 
   public init(
@@ -111,21 +116,25 @@ public final class AppModel {
     stateLoader: @escaping @Sendable (TimeInterval) async -> [UUID: ProviderState] = { _ in
       [:]
     },
+    estimateLoader: @escaping @Sendable () async -> [UUID: BurnRateEstimate] = { [:] },
     configuration: AppConfiguration = .default,
     configurationStore: ConfigurationStore? = nil,
     vault: KeychainVault? = nil,
     bluetoothTransport: (any BLETransport)? = nil,
-    loginController: LoginItemController? = nil
+    loginController: LoginItemController? = nil,
+    notificationManager: (any NotificationManaging)? = nil
   ) {
     self.refresher = refresher
     self.refresherBuilder = refresherBuilder
     self.now = now
     self.stateLoader = stateLoader
+    self.estimateLoader = estimateLoader
     self.configuration = configuration
     self.configurationStore = configurationStore
     self.vault = vault
     self.bluetoothTransport = bluetoothTransport
     self.loginController = loginController
+    self.notificationManager = notificationManager
     self.states = [:]
     self.devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
     self.scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
@@ -170,11 +179,16 @@ public final class AppModel {
       stateLoader: { refreshIntervalSeconds in
         await store.allStates(refreshIntervalSeconds: refreshIntervalSeconds)
       },
+      estimateLoader: { await store.allBurnEstimates() },
       configuration: configuration,
       configurationStore: configurationStore,
       vault: vault,
       bluetoothTransport: CoreBluetoothTransport(),
-      loginController: LoginItemController())
+      loginController: LoginItemController(),
+      // UNUserNotificationCenter requires an app bundle; stay silent when
+      // running unpackaged (e.g. `swift run`).
+      notificationManager: Bundle.main.bundleURL.pathExtension == "app"
+        ? SystemNotificationManager() : NullNotificationManager())
   }
 
   nonisolated private static func makeProviders(
@@ -185,15 +199,15 @@ public final class AppModel {
     var providers: [AccountProvider] = []
     for account in configuration.accounts where account.enabled {
       let isDefault = configuration.isDefaultAccount(account)
-      // Codex relies on the local CLI sign-in and stays single-instance.
-      if account.provider == .codex, !isDefault { continue }
+      // Codex and Claude rely on local CLI sign-ins and stay single-instance.
+      if account.provider == .codex || account.provider == .claude, !isDefault { continue }
       let provider: any QuotaProvider
       switch account.provider {
       case .codex:
         provider = CodexProvider(
           executable: resolveCodexExecutable(
             configuredPath: configuration.codexPath))
-      case .kimi, .minimax, .glm:
+      case .kimi, .minimax, .glm, .claude:
         guard let spec = ProviderRegistry.spec(for: account.provider) else { continue }
         let region: String?
         switch account.provider {
@@ -248,6 +262,13 @@ public final class AppModel {
         displayName: group.displayName,
         state: row.state)
     }
+  }
+
+  /// Pace projection for a provider's default account (nil when the data is
+  /// too thin or the window is not burning).
+  public func burnEstimate(for provider: ProviderID) -> BurnRateEstimate? {
+    guard let account = configuration.defaultAccount(for: provider) else { return nil }
+    return burnEstimates[account.id]
   }
 
   public var highlight: ProviderHighlight? {
@@ -346,7 +367,10 @@ public final class AppModel {
     await ensureBridgeObservation()
     isRefreshing = true
     await refresher.refresh()
+    let previousStates = states
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
+    burnEstimates = await estimateLoader()
+    await postNotifications(previousStates: previousStates)
     if bridge != nil,
       let codexAccount = configuration.defaultAccount(for: .codex),
       states[codexAccount.id]?.phase == .healthy
@@ -357,6 +381,33 @@ public final class AppModel {
     }
     isRefreshing = false
     record(reason)
+  }
+
+  private func postNotifications(previousStates: [UUID: ProviderState]) async {
+    guard configuration.notificationsEnabled, let notificationManager else { return }
+    _ = previousStates  // transitions are tracked inside the policy's latches
+    let strings = NotificationPolicy.Strings(
+      lowQuotaTitle: text(.notifyLowQuotaTitle),
+      lowQuotaBody: text(.notifyLowQuotaBody),
+      authFailureTitle: text(.notifyAuthFailureTitle),
+      authFailureBody: text(.notifyAuthFailureBody),
+      resetTitle: text(.notifyResetTitle),
+      resetBody: text(.notifyResetBody))
+    let accounts = configuration.accounts
+    let notifications = notificationPolicy.evaluate(
+      current: states,
+      nameForAccount: { accountID in
+        accounts.first { $0.id == accountID }.map {
+          Self.displayName(for: $0.provider)
+        } ?? "?"
+      },
+      strings: strings,
+      now: now())
+    guard !notifications.isEmpty else { return }
+    await notificationManager.requestAuthorizationIfNeeded()
+    for notification in notifications {
+      await notificationManager.post(notification)
+    }
   }
 
   /// Writes (or clears, when empty) the key of the provider's default account.
@@ -373,6 +424,13 @@ public final class AppModel {
     guard let vault,
       let account = configuration.accounts.first(where: { $0.id == accountID })
     else { return }
+    // Claude only uses the local CLI OAuth token or an env var; Anthropic
+    // pay-as-you-go keys do not work for subscription quota, so there is
+    // nothing to store.
+    guard account.provider != .claude else {
+      throw ProviderFailure.configuration(
+        "Claude uses the Claude Code CLI sign-in; TokenLink does not store a key.")
+    }
     let name = KeychainVault.keychainAccountName(
       provider: account.provider,
       accountID: account.id,
@@ -400,9 +458,9 @@ public final class AppModel {
   /// CLI sign-in and stays single-account.
   @discardableResult
   public func addAccount(provider: ProviderID, label: String) throws -> ProviderAccount {
-    guard provider != .codex else {
+    guard provider != .codex, provider != .claude else {
       throw ProviderFailure.configuration(
-        "Codex uses the local CLI sign-in and supports a single account.")
+        "Codex and Claude use local CLI sign-ins and support a single account.")
     }
     let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
     let account = ProviderAccount(
@@ -458,8 +516,8 @@ public final class AppModel {
         sources[account.id] = .apiKey
         continue
       }
-      if account.provider == .kimi {
-        let token = (try? await vault.cliAccessToken(for: .kimi)) ?? nil
+      if ProviderRegistry.spec(for: account.provider)?.allowsCLICredential == true {
+        let token = (try? await vault.cliAccessToken(for: account.provider)) ?? nil
         if let token, !token.isEmpty {
           byAccount[account.id] = true
           sources[account.id] = .cliCredential
@@ -615,6 +673,11 @@ public final class AppModel {
   public func setLoginItemEnabled(_ enabled: Bool) throws {
     guard let loginController else { return }
     loginItemState = try loginController.setEnabled(enabled)
+  }
+
+  public func setNotificationsEnabled(_ enabled: Bool) throws {
+    configuration.notificationsEnabled = enabled
+    try saveConfiguration()
   }
 
   public func diagnosticObject() -> [String: Any] {

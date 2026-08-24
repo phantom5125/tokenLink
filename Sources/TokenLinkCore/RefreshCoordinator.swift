@@ -19,6 +19,9 @@ public struct AccountProvider: Sendable {
 
 public actor ProviderStore {
   private var states: [UUID: ProviderState] = [:]
+  /// Recent per-window samples for burn-rate projection, keyed by account and
+  /// window id. Pruned to the estimator's max age on insert.
+  private var samples: [UUID: [String: [BurnRateEstimator.Sample]]] = [:]
   private let now: @Sendable () -> Date
 
   public init(now: @escaping @Sendable () -> Date = { Date() }) {
@@ -32,6 +35,7 @@ public actor ProviderStore {
     switch result {
     case .success(let snapshot):
       states[accountID] = .init(phase: .healthy, snapshot: snapshot)
+      recordSamples(of: snapshot, accountID: accountID)
     case .failure(let failure):
       let old = states[accountID]?.snapshot
       let phase: ProviderPhase =
@@ -40,6 +44,41 @@ public actor ProviderStore {
         : .stale
       states[accountID] = .init(phase: phase, snapshot: old, error: failure)
     }
+  }
+
+  private func recordSamples(of snapshot: QuotaSnapshot, accountID: UUID) {
+    var byWindow = samples[accountID] ?? [:]
+    for window in snapshot.windows {
+      var entries = byWindow[window.id] ?? []
+      entries.append(.init(date: snapshot.fetchedAt, remaining: window.remainingPercent))
+      entries.removeAll {
+        snapshot.fetchedAt.timeIntervalSince($0.date) > BurnRateEstimator.maxSampleAge
+      }
+      byWindow[window.id] = entries
+    }
+    samples[accountID] = byWindow
+  }
+
+  /// Pace projection for the account's most constrained window; nil when the
+  /// data is too thin or the window is not burning.
+  public func burnEstimate(for accountID: UUID) -> BurnRateEstimate? {
+    guard let snapshot = states[accountID]?.snapshot,
+      let window = snapshot.mostConstrainedWindow
+    else { return nil }
+    return BurnRateEstimator.estimate(
+      windowID: window.id,
+      samples: samples[accountID]?[window.id] ?? [],
+      now: now())
+  }
+
+  public func allBurnEstimates() -> [UUID: BurnRateEstimate] {
+    var result: [UUID: BurnRateEstimate] = [:]
+    for accountID in states.keys {
+      if let estimate = burnEstimate(for: accountID) {
+        result[accountID] = estimate
+      }
+    }
+    return result
   }
 
   public func markRefreshing(_ accountID: UUID) {

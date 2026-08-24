@@ -19,6 +19,8 @@ private actor FakeKeychainClient: KeychainClient {
     return values[address]
   }
 
+  func readByService(service: String) async throws -> Data? { nil }
+
   func write(_ data: Data, service: String, account: String) async throws {
     let address = Address(service: service, account: account)
     lastAddress = address
@@ -38,6 +40,9 @@ private struct NoCLIToken: KimiTokenReading {
 
 private struct FailingKeychainClient: KeychainClient {
   func read(service: String, account: String) async throws -> Data? {
+    throw KeychainClientError(status: -1)
+  }
+  func readByService(service: String) async throws -> Data? {
     throw KeychainClientError(status: -1)
   }
   func write(_ data: Data, service: String, account: String) async throws {
@@ -142,4 +147,45 @@ private struct FailingKeychainClient: KeychainClient {
 
   #expect(try await vault.keyHint(for: account, isDefault: true) == "glm-secr…alue")
   #expect(try await vault.keyHint(forAccount: "kimi") == nil)
+}
+
+private actor ServiceOnlyKeychainClient: KeychainClient {
+  var byService: [String: Data] = [:]
+
+  func set(_ data: Data, forService service: String) { byService[service] = data }
+
+  func read(service: String, account: String) async throws -> Data? { nil }
+  func readByService(service: String) async throws -> Data? { byService[service] }
+  func write(_ data: Data, service: String, account: String) async throws {}
+  func delete(service: String, account: String) async throws {}
+}
+
+@Test func claudeCLIReaderReturnsValidAccessToken() async throws {
+  let client = ServiceOnlyKeychainClient()
+  await client.set(
+    Data(
+      #"{"claudeAiOauth":{"accessToken":"oauth-token","refreshToken":"never-read","expiresAt":4102444800000}}"#
+        .utf8),
+    forService: "Claude Code-credentials")
+  let reader = ClaudeCLICredentialReader(
+    client: client, now: { Date(timeIntervalSince1970: 1_787_130_000) })
+
+  #expect(try await reader.accessToken() == "oauth-token")
+}
+
+@Test func claudeCLIReaderRejectsExpiredToken() async throws {
+  let client = ServiceOnlyKeychainClient()
+  await client.set(
+    Data(
+      #"{"claudeAiOauth":{"accessToken":"old-token","expiresAt":1787130000000}}"#.utf8),
+    forService: "Claude Code-credentials")
+  let reader = ClaudeCLICredentialReader(
+    client: client, now: { Date(timeIntervalSince1970: 1_787_130_100) })
+
+  #expect(try await reader.accessToken() == nil)
+}
+
+@Test func claudeCLIReaderReturnsNilWithoutItem() async throws {
+  let reader = ClaudeCLICredentialReader(client: ServiceOnlyKeychainClient())
+  #expect(try await reader.accessToken() == nil)
 }

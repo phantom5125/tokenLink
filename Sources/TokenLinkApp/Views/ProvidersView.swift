@@ -87,6 +87,8 @@ struct ProvidersView: View {
 
       if provider == .codex {
         codexSection
+      } else if provider == .claude {
+        claudeSection
       } else {
         let group = model.accountGroups.first { $0.provider == provider }
         ForEach(group?.accounts ?? []) { account in
@@ -130,6 +132,23 @@ struct ProvidersView: View {
         .frame(maxWidth: 460)
       }
       Text(model.text(.providersCodexNote))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  /// Claude is read-only: the credential comes from the Claude Code CLI's
+  /// Keychain item or `CLAUDE_CODE_OAUTH_TOKEN`, never from a pasted key.
+  private var claudeSection: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      if let account = model.accountGroups.first(where: { $0.provider == .claude })?
+        .accounts.first
+      {
+        LabeledContent(model.text(.providersCredential)) {
+          credentialStatus(account)
+        }
+      }
+      Text(model.text(.providersClaudeNote))
         .font(.caption)
         .foregroundStyle(.secondary)
     }
@@ -372,6 +391,7 @@ struct ProvidersView: View {
     case .kimi: .subtitleKimi
     case .minimax: .subtitleMinimax
     case .glm: .subtitleGLM
+    case .claude: .subtitleClaude
     }
   }
 }

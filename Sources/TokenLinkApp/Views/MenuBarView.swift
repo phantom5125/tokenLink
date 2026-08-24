@@ -41,9 +41,13 @@ struct MenuBarView: View {
       } else {
         VStack(spacing: 0) {
           ForEach(model.orderedProviderRows) { row in
-            ProviderQuotaRow(row: row, language: model.currentLanguage)
-              .padding(.horizontal, 16)
-              .padding(.vertical, 11)
+            ProviderQuotaRow(
+              row: row,
+              language: model.currentLanguage,
+              estimate: model.burnEstimate(for: row.id)
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
             if row.id != model.orderedProviderRows.last?.id {
               Divider().padding(.leading, 64)
             }
@@ -88,6 +92,7 @@ struct MenuBarView: View {
 struct ProviderQuotaRow: View {
   let row: ProviderRow
   let language: AppLanguage
+  var estimate: BurnRateEstimate?
 
   var body: some View {
     HStack(alignment: .top, spacing: 12) {
@@ -107,15 +112,22 @@ struct ProviderQuotaRow: View {
               .font(.caption)
               .foregroundStyle(.secondary)
             Spacer()
-            Text("\(Int(window.remainingPercent.rounded()))% \(L10n.text(.quotaLeft, language: language))")
-              .font(.caption.weight(.semibold))
-              .monospacedDigit()
+            Text(
+              "\(Int(window.remainingPercent.rounded()))% \(L10n.text(.quotaLeft, language: language))"
+            )
+            .font(.caption.weight(.semibold))
+            .monospacedDigit()
           }
           ProgressView(value: window.remainingPercent, total: 100)
             .tint(ProviderPresentation.color(for: row.id))
           Text(detailText(snapshot: snapshot, window: window))
             .font(.caption2)
             .foregroundStyle(row.state.phase == .stale ? .orange : .secondary)
+          if let estimate, estimate.windowID == window.id, row.state.phase == .healthy {
+            Text(burnText(estimate))
+              .font(.caption2)
+              .foregroundStyle(.secondary)
+          }
         } else {
           Text(row.state.error?.message ?? L10n.text(.quotaWaitingFirst, language: language))
             .font(.caption)
@@ -124,6 +136,12 @@ struct ProviderQuotaRow: View {
         }
       }
     }
+  }
+
+  private func burnText(_ estimate: BurnRateEstimate) -> String {
+    String(
+      format: L10n.text(.quotaBurnEta, language: language),
+      ProviderPresentation.relative(estimate.depletesAt))
   }
 
   private func detailText(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {

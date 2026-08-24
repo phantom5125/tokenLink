@@ -417,6 +417,8 @@ private actor AppModelFakeKeychain: KeychainClient {
     values[account]
   }
 
+  func readByService(service: String) async throws -> Data? { nil }
+
   func write(_ data: Data, service: String, account: String) async throws {
     values[account] = data
   }

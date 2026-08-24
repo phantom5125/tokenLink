@@ -16,7 +16,10 @@ struct OverviewView: View {
         }
         LazyVGrid(columns: columns, spacing: 16) {
           ForEach(model.orderedProviderRows) { row in
-            ProviderOverviewCard(row: row, language: model.currentLanguage)
+            ProviderOverviewCard(
+              row: row,
+              language: model.currentLanguage,
+              estimate: model.burnEstimate(for: row.id))
           }
         }
         watchCard
@@ -111,6 +114,7 @@ struct OverviewView: View {
 private struct ProviderOverviewCard: View {
   let row: ProviderRow
   let language: AppLanguage
+  var estimate: BurnRateEstimate?
 
   var body: some View {
     VStack(alignment: .leading, spacing: 15) {
@@ -164,18 +168,28 @@ private struct ProviderOverviewCard: View {
   }
 
   private func detail(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
+    let base: String
     if row.state.phase == .error {
-      return String(
+      base = String(
         format: L10n.text(.quotaExpiredCacheFrom, language: language),
         snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))
-    }
-    if row.state.phase == .stale {
-      return String(
+    } else if row.state.phase == .stale {
+      base = String(
         format: L10n.text(.quotaStaleFetched, language: language),
         snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
+    } else {
+      base =
+        window.resetsAt.map {
+          String(
+            format: L10n.text(.quotaResetsAt, language: language),
+            ProviderPresentation.relative($0))
+        } ?? L10n.text(.quotaResetUnavailable, language: language)
     }
-    return window.resetsAt.map {
-      String(format: L10n.text(.quotaResetsAt, language: language), ProviderPresentation.relative($0))
-    } ?? L10n.text(.quotaResetUnavailable, language: language)
+    guard let estimate, estimate.windowID == window.id, row.state.phase == .healthy
+    else { return base }
+    let burn = String(
+      format: L10n.text(.quotaBurnEta, language: language),
+      ProviderPresentation.relative(estimate.depletesAt))
+    return "\(base) · \(burn)"
   }
 }

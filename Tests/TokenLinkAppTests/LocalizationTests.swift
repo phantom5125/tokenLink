@@ -18,11 +18,17 @@ private actor LocalizationStubRefresher: AppRefreshing {
 }
 
 @Test func languageResolutionPrefersExplicitChoiceThenSystem() {
-  #expect(AppLanguage.resolve(preference: "ja", preferredLanguages: ["zh-Hans"]) == .japanese)
-  #expect(AppLanguage.resolve(preference: nil, preferredLanguages: ["zh-Hans-CN"]) == .simplifiedChinese)
-  #expect(AppLanguage.resolve(preference: nil, preferredLanguages: ["en-US", "ja-JP"]) == .japanese)
+  #expect(
+    AppLanguage.resolve(preference: "ja", preferredLanguages: ["zh-Hans"]) == .japanese)
+  #expect(
+    AppLanguage.resolve(preference: nil, preferredLanguages: ["zh-Hans-CN"])
+      == .simplifiedChinese)
+  #expect(
+    AppLanguage.resolve(preference: nil, preferredLanguages: ["en-US", "ja-JP"])
+      == .japanese)
   #expect(AppLanguage.resolve(preference: nil, preferredLanguages: ["en-US"]) == .english)
-  #expect(AppLanguage.resolve(preference: "bogus", preferredLanguages: ["en-US"]) == .english)
+  #expect(
+    AppLanguage.resolve(preference: "bogus", preferredLanguages: ["en-US"]) == .english)
 }
 
 @MainActor @Test func appLanguagePersistsThroughConfigurationStore() throws {

@@ -1,8 +1,10 @@
 # TokenLink
 
+**English** | [简体中文](README.zh-Hans.md)
+
 TokenLink is a native macOS menu-bar control plane for coding-plan quota and an
-M5Stack StopWatch companion. Version 0.1 shows Codex, Kimi, MiniMax, and GLM in
-one local interface while preserving compatibility with the existing
+M5Stack StopWatch companion. Version 0.1 shows Codex, Claude, Kimi, MiniMax,
+and GLM in one local interface while preserving compatibility with the existing
 `codex-micro-stopwatch` firmware.
 
 > Status: early development. Provider APIs can change without notice. The Mac
@@ -18,6 +20,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 - Native `MenuBarExtra` plus a four-route Control Center: Overview, Providers,
   StopWatch, and Settings & Diagnostics.
 - Normalizes several quota windows without inventing plan limits.
+- Projects burn rate per window ("runs out in ~3h at this pace") from recent
+  local samples — no extra API calls.
+- Sends macOS notifications when a window runs low, a window resets, or a
+  stored credential is rejected (toggle in Settings).
 - Keeps last-known-good snapshots and marks them stale when refresh fails.
 - Stores explicit API keys in macOS Keychain under service
   `io.github.phantom5125.tokenlink.provider` and stable provider accounts.
@@ -60,15 +66,15 @@ environment variable) — and never reads a key back into the UI. Each provider
 section links to the official console where you can create a key.
 
 Credentials resolve in this order: an explicit key in Keychain, then the
-provider's documented local CLI credential (Kimi only), then a small allowlist
-of environment variables (`KIMI_CODE_API_KEY`/`KIMI_API_KEY`,
-`MINIMAX_API_KEY`, `ZAI_API_KEY`/`ZHIPU_API_KEY`/`GLM_API_KEY`/`BIGMODEL_API_KEY`).
-The environment fallback exists mainly for testing.
+provider's documented local CLI credential (Kimi and Claude), then a small
+allowlist of environment variables (`KIMI_CODE_API_KEY`/`KIMI_API_KEY`,
+`MINIMAX_API_KEY`, `ZAI_API_KEY`/`ZHIPU_API_KEY`/`GLM_API_KEY`/`BIGMODEL_API_KEY`,
+`CLAUDE_CODE_OAUTH_TOKEN`). The environment fallback exists mainly for testing.
 
 Multiple accounts per provider are supported as an advanced, not-recommended
 option: use **Add account (advanced)** in a provider section to attach another
-plan with its own label and key. Codex stays single-account because it uses the
-local CLI sign-in.
+plan with its own label and key. Codex and Claude stay single-account because
+they use the local CLI sign-in.
 
 The app UI is available in English, 中文（简体）, and 日本語; choose under
 **Settings & Diagnostics → Language** or follow the system language.
@@ -86,6 +92,14 @@ You can store a Kimi Coding API key in Keychain. If no explicit key exists,
 TokenLink can read the current, non-expired access token from
 `~/.kimi-code/credentials/kimi-code.json`. It reads no sibling files, browser
 cookies, or refresh token, and it never refreshes or writes the CLI credential.
+
+### Claude
+
+TokenLink reads the OAuth usage endpoint used by Claude Code's own `/usage`
+display, reusing the Claude Code CLI's local sign-in (its Keychain credential
+item, read-only; expired tokens are ignored and the refresh token is never
+read). Anthropic pay-as-you-go API keys do not report subscription quota, so
+there is intentionally no key field for Claude.
 
 ### MiniMax
 
@@ -171,7 +185,7 @@ accounts `kimi`, `minimax`, or `glm`.
 ```text
 TokenLinkApp        SwiftUI/AppKit state, settings, Keychain, diagnostics
   ├─ TokenLinkCore       provider-neutral quota and refresh state
-  ├─ TokenLinkProviders  Codex/Kimi/MiniMax/GLM adapters and host policy
+  ├─ TokenLinkProviders  Codex/Claude/Kimi/MiniMax/GLM adapters and host policy
   └─ TokenLinkDevice     v1 projection, binding, and CoreBluetooth transport
 ```
 

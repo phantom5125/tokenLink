@@ -5,6 +5,9 @@ import TokenLinkProviders
 
 public protocol KeychainClient: Sendable {
   func read(service: String, account: String) async throws -> Data?
+  /// Reads an item matched by service only (no account constraint), used for
+  /// credentials owned by other apps such as Claude Code.
+  func readByService(service: String) async throws -> Data?
   func write(_ data: Data, service: String, account: String) async throws
   func delete(service: String, account: String) async throws
 }
@@ -17,6 +20,22 @@ public struct SystemKeychainClient: KeychainClient {
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
+      kSecReturnData as String: true,
+      kSecMatchLimit as String: kSecMatchLimitOne,
+    ]
+    var result: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &result)
+    if status == errSecItemNotFound { return nil }
+    guard status == errSecSuccess, let data = result as? Data else {
+      throw KeychainClientError(status: status)
+    }
+    return data
+  }
+
+  public func readByService(service: String) async throws -> Data? {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassGenericPassword,
+      kSecAttrService as String: service,
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
@@ -78,23 +97,71 @@ public protocol KimiTokenReading: Sendable {
 
 extension KimiCLICredentialReader: KimiTokenReading {}
 
+public protocol ClaudeTokenReading: Sendable {
+  func accessToken() async throws -> String?
+}
+
+/// Reads the Claude Code CLI OAuth credential from the macOS Keychain item
+/// the CLI maintains (service `Claude Code-credentials`). Only the current
+/// access token is returned; the refresh token is never decoded or exposed.
+public struct ClaudeCLICredentialReader: ClaudeTokenReading {
+  public static let service = "Claude Code-credentials"
+
+  private let client: any KeychainClient
+  private let now: @Sendable () -> Date
+
+  public init(
+    client: any KeychainClient = SystemKeychainClient(),
+    now: @escaping @Sendable () -> Date = { Date() }
+  ) {
+    self.client = client
+    self.now = now
+  }
+
+  public func accessToken() async throws -> String? {
+    guard let data = try await client.readByService(service: Self.service) else { return nil }
+    let credential = try JSONDecoder().decode(ClaudeKeychainCredential.self, from: data)
+    guard let oauth = credential.claudeAiOauth, !oauth.accessToken.isEmpty else { return nil }
+    if let expiresAt = oauth.expiresAt,
+      Date(timeIntervalSince1970: expiresAt / 1_000) <= now()
+    {
+      return nil
+    }
+    return oauth.accessToken
+  }
+}
+
+/// Deliberately omits `refreshToken`: it is never read out of the item.
+private struct ClaudeKeychainCredential: Decodable {
+  let claudeAiOauth: OAuth?
+
+  struct OAuth: Decodable {
+    let accessToken: String
+    /// Milliseconds since 1970.
+    let expiresAt: Double?
+  }
+}
+
 public struct KeychainVault: CredentialReader, Sendable {
   public static let service = "io.github.phantom5125.tokenlink.provider"
 
   private let client: any KeychainClient
   private let kimiTokenReader: any KimiTokenReading
+  private let claudeTokenReader: any ClaudeTokenReading
   private let environment: @Sendable (String) -> String?
 
   public init(
     client: any KeychainClient = SystemKeychainClient(),
     kimiTokenReader: any KimiTokenReading = KimiCLICredentialReader(
       homeURL: FileManager.default.homeDirectoryForCurrentUser),
+    claudeTokenReader: (any ClaudeTokenReading)? = nil,
     environment: @escaping @Sendable (String) -> String? = {
       ProcessInfo.processInfo.environment[$0]
     }
   ) {
     self.client = client
     self.kimiTokenReader = kimiTokenReader
+    self.claudeTokenReader = claudeTokenReader ?? ClaudeCLICredentialReader(client: client)
     self.environment = environment
   }
 
@@ -136,8 +203,14 @@ public struct KeychainVault: CredentialReader, Sendable {
   }
 
   public func cliAccessToken(for provider: ProviderID) async throws -> String? {
-    guard provider == .kimi else { return nil }
-    return try await kimiTokenReader.accessToken()
+    switch provider {
+    case .kimi:
+      return try await kimiTokenReader.accessToken()
+    case .claude:
+      return try await claudeTokenReader.accessToken()
+    default:
+      return nil
+    }
   }
 
   /// Reads only the environment variables declared in the provider's spec.

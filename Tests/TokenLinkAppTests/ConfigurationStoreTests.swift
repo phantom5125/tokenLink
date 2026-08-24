@@ -76,10 +76,13 @@ import TokenLinkProviders
 
   let loaded = try store.load()
 
-  #expect(loaded.accounts.map(\.provider) == ProviderID.allCases)
+  #expect(loaded.accounts.map(\.provider) == [.codex, .kimi, .minimax, .glm])
   #expect(loaded.accounts.allSatisfy { $0.enabled })
   #expect(loaded.accounts.map(\.label) == ["Codex", "Kimi", "MiniMax", "GLM"])
-  #expect(loaded.enabledProviders == Set(ProviderID.allCases))
+  // Claude did not exist when the legacy config was written; migration must
+  // not silently enable a provider the user never opted into.
+  #expect(loaded.enabledProviders == [.codex, .kimi, .minimax, .glm])
+  #expect(!loaded.enabledProviders.contains(.claude))
   #expect(loaded.refreshMinutes == 5)
   #expect(loaded.miniMaxRegion == .china)
   #expect(loaded.glmRegion == .global)
@@ -100,5 +103,5 @@ import TokenLinkProviders
   let loaded = try store.load()
   #expect(loaded == expected)
   #expect(loaded.accounts.contains(extra))
-  #expect(loaded.enabledProviders == [.kimi, .minimax, .glm])
+  #expect(loaded.enabledProviders == [.kimi, .minimax, .glm, .claude])
 }

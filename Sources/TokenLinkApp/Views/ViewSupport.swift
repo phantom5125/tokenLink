@@ -19,6 +19,7 @@ enum ProviderPresentation {
     case .kimi: "moon.stars.fill"
     case .minimax: "sparkles"
     case .glm: "cube.transparent.fill"
+    case .claude: "sun.max.fill"
     }
   }
 
@@ -28,6 +29,7 @@ enum ProviderPresentation {
     case .kimi: Color(red: 0.48, green: 0.55, blue: 0.98)
     case .minimax: Color(red: 0.95, green: 0.49, blue: 0.32)
     case .glm: Color(red: 0.30, green: 0.66, blue: 0.95)
+    case .claude: Color(red: 0.85, green: 0.55, blue: 0.35)
     }
   }
 

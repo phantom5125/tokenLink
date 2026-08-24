@@ -3,6 +3,7 @@ public enum ProviderID: String, Codable, CaseIterable, Sendable {
   case kimi
   case minimax
   case glm
+  case claude
 }
 
 public struct ProviderDescriptor: Equatable, Sendable {

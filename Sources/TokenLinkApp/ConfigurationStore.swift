@@ -32,6 +32,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   public var glmRegion: GLMRegion
   /// nil = follow the system language; otherwise an `AppLanguage` raw value.
   public var appLanguage: String?
+  /// macOS notifications for low quota, resets, and credential failures.
+  public var notificationsEnabled: Bool
 
   /// Derived from enabled accounts; kept for readable call sites.
   public var enabledProviders: Set<ProviderID> {
@@ -45,7 +47,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     codexPath: String?,
     miniMaxRegion: MiniMaxRegion,
     glmRegion: GLMRegion,
-    appLanguage: String? = nil
+    appLanguage: String? = nil,
+    notificationsEnabled: Bool = true
   ) {
     self.accounts = accounts
     self.refreshMinutes = min(60, max(1, refreshMinutes))
@@ -54,6 +57,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     self.miniMaxRegion = miniMaxRegion
     self.glmRegion = glmRegion
     self.appLanguage = appLanguage
+    self.notificationsEnabled = notificationsEnabled
   }
 
   public init(
@@ -108,6 +112,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     case glmRegion
     case appLanguage
     case legacyEnabledProviders = "enabledProviders"
+    case notificationsEnabled
   }
 
   public init(from decoder: Decoder) throws {
@@ -134,7 +139,9 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       miniMaxRegion: try container.decodeIfPresent(MiniMaxRegion.self, forKey: .miniMaxRegion)
         ?? .global,
       glmRegion: try container.decodeIfPresent(GLMRegion.self, forKey: .glmRegion) ?? .global,
-      appLanguage: try container.decodeIfPresent(String.self, forKey: .appLanguage))
+      appLanguage: try container.decodeIfPresent(String.self, forKey: .appLanguage),
+      notificationsEnabled: try container.decodeIfPresent(
+        Bool.self, forKey: .notificationsEnabled) ?? true)
   }
 
   public func encode(to encoder: Encoder) throws {
@@ -146,6 +153,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     try container.encode(miniMaxRegion, forKey: .miniMaxRegion)
     try container.encode(glmRegion, forKey: .glmRegion)
     try container.encodeIfPresent(appLanguage, forKey: .appLanguage)
+    try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
   }
 }
 
