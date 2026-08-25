@@ -206,7 +206,9 @@ public final class AppModel {
       case .codex:
         provider = CodexProvider(
           executable: resolveCodexExecutable(
-            configuredPath: configuration.codexPath))
+            configuredPath: configuration.codexPath),
+          transport: ProcessAppServerTransport(
+            extraEnvironment: SystemProxyEnvironment.current()))
       case .kimi, .minimax, .glm, .claude:
         guard let spec = ProviderRegistry.spec(for: account.provider) else { continue }
         let region: String?

@@ -59,8 +59,13 @@ public actor ProcessAppServerTransport: AppServerTransport {
   private var readerTasks: [Task<Void, Never>] = []
   private let responses = JSONLResponseBuffer()
   private let stderrTail = BoundedTextBuffer(limit: 2_000)
+  /// Extra variables merged over the inherited environment, e.g. proxy
+  /// settings for CLI HTTP stacks that ignore macOS system proxy preferences.
+  private let extraEnvironment: [String: String]
 
-  public init() {}
+  public init(extraEnvironment: [String: String] = [:]) {
+    self.extraEnvironment = extraEnvironment
+  }
 
   public func start(executable: URL) async throws {
     if process != nil { await stop() }
@@ -71,6 +76,11 @@ public actor ProcessAppServerTransport: AppServerTransport {
     let stderr = Pipe()
     process.executableURL = executable
     process.arguments = ["app-server", "--listen", "stdio://"]
+    if !extraEnvironment.isEmpty {
+      process.environment = ProcessInfo.processInfo.environment.merging(extraEnvironment) {
+        _, new in new
+      }
+    }
     process.standardInput = stdin
     process.standardOutput = stdout
     process.standardError = stderr
