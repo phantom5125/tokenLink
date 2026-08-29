@@ -1,16 +1,38 @@
 import Foundation
 import Testing
+import TokenLinkCore
 
-@testable import TokenLinkCore
 @testable import TokenLinkProviders
 
+private struct MiniMaxCredentials: CredentialReader {
+  let key: String?
+  func apiKey(forAccount account: String) async throws -> String? { key }
+  func cliAccessToken(for provider: ProviderID) async throws -> String? { nil }
+}
+
+private actor MiniMaxHTTPClient: HTTPClient {
+  let response: HTTPResponse
+  private(set) var request: URLRequest?
+
+  init(response: HTTPResponse) { self.response = response }
+
+  func data(for request: URLRequest, policy: EndpointPolicy) async throws -> HTTPResponse {
+    _ = try policy.validate(try #require(request.url))
+    self.request = request
+    return response
+  }
+}
+
 @Test func parsesMiniMaxFiveHourAndWeeklyWindows() throws {
+  let fetchedAt = Date(timeIntervalSince1970: 1_787_130_000)
   let snapshot = try MiniMaxParser.parse(
     data: Fixture.load("minimax-remains.json"),
-    fetchedAt: Date(timeIntervalSince1970: 1_787_130_000))
+    fetchedAt: fetchedAt)
   #expect(snapshot.provider == .minimax)
   #expect(snapshot.windows.map(\.remainingPercent) == [60, 92])
   #expect(snapshot.windows.map(\.id) == ["5h", "weekly"])
+  #expect(snapshot.windows[0].resetsAt == fetchedAt.addingTimeInterval(7_200))
+  #expect(snapshot.windows[1].resetsAt == fetchedAt.addingTimeInterval(172_800))
 }
 
 @Test func rejectsMiniMaxErrorEnvelope() {
@@ -20,51 +42,75 @@ import Testing
   }
 }
 
-private struct StubHTTPClient: HTTPClient {
-  let data: Data
-  let statusCode: Int
-  func data(for request: URLRequest, policy: EndpointPolicy) async throws -> HTTPResponse {
-    HTTPResponse(data: data, statusCode: statusCode)
-  }
+@Test func minimaxRegionsUseOnlyOfficialHTTPSHosts() throws {
+  #expect(
+    MiniMaxRegion.global.endpoint.absoluteString == "https://www.minimax.io/v1/token_plan/remains")
+  #expect(
+    MiniMaxRegion.china.endpoint.absoluteString
+      == "https://www.minimaxi.com/v1/token_plan/remains")
+  let policy = EndpointPolicy(allowedHosts: ["www.minimax.io", "www.minimaxi.com"])
+  #expect(try policy.validate(MiniMaxRegion.global.endpoint).host == "www.minimax.io")
+  #expect(try policy.validate(MiniMaxRegion.china.endpoint).host == "www.minimaxi.com")
 }
 
-private struct StubCredentials: CredentialReader {
-  let apiKey: String?
-  func apiKey(for provider: ProviderID) async throws -> String? { apiKey }
-  func cliAccessToken(for provider: ProviderID) async throws -> String? { nil }
-}
-
-@Test func miniMaxProviderReportsMissingCredential() async {
-  let http = StubHTTPClient(data: Data(), statusCode: 200)
+@Test func minimaxProviderUsesSelectedRegionAndBearerKey() async throws {
+  let http = MiniMaxHTTPClient(
+    response: HTTPResponse(
+      data: try Fixture.load("minimax-remains.json"), statusCode: 200))
   let provider = MiniMaxProvider(
-    region: .global, http: http, credentials: StubCredentials(apiKey: nil))
-  let result = await provider.fetch()
-  switch result {
-  case .success: Issue.record("expected failure")
-  case .failure(let failure):
-    #expect(failure.kind == .missingCredential)
-  }
+    region: .china,
+    http: http,
+    credentials: MiniMaxCredentials(key: "minimax-key"),
+    now: { Date(timeIntervalSince1970: 1_787_130_000) })
+
+  _ = try await provider.fetch().get()
+
+  #expect(await http.request?.url == MiniMaxRegion.china.endpoint)
+  #expect(await http.request?.value(forHTTPHeaderField: "Authorization") == "Bearer minimax-key")
 }
 
-@Test func miniMaxProviderMapsAuthenticationFailure() async {
-  let http = StubHTTPClient(data: Data(), statusCode: 401)
+@Test func minimaxProviderMapsForbiddenToAuthenticationFailure() async {
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: Data(), statusCode: 403))
   let provider = MiniMaxProvider(
-    region: .global, http: http, credentials: StubCredentials(apiKey: "expired"))
-  let result = await provider.fetch()
-  switch result {
-  case .success: Issue.record("expected failure")
-  case .failure(let failure):
-    #expect(failure.kind == .authentication)
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "invalid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected authentication failure")
+    return
   }
+  #expect(failure.kind == .authentication)
 }
 
-@Test func miniMaxProviderParsesFixtureAcrossBothRegions() async throws {
-  let http = StubHTTPClient(data: try Fixture.load("minimax-remains.json"), statusCode: 200)
+@Test func minimaxProviderMapsErrorEnvelopeToAuthenticationFailure() async {
+  let envelope = Data(#"{"base_resp":{"status_code":2049,"status_msg":"invalid api key"}}"#.utf8)
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: envelope, statusCode: 200))
   let provider = MiniMaxProvider(
-    region: .china, http: http, credentials: StubCredentials(apiKey: "key"))
-  let result = await provider.fetch()
-  let snapshot = try result.get()
-  #expect(snapshot.provider == .minimax)
-  #expect(snapshot.windows.count == 2)
-  #expect(snapshot.planLabel == "MiniMax-M2.5")
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "invalid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected authentication failure")
+    return
+  }
+  #expect(failure.kind == .authentication)
+  #expect(failure.message.contains("invalid api key"))
+}
+
+@Test func minimaxProviderSurfacesOtherServiceErrorsAsNetwork() async {
+  let envelope = Data(#"{"base_resp":{"status_code":1002,"status_msg":"rate limit"}}"#.utf8)
+  let http = MiniMaxHTTPClient(response: HTTPResponse(data: envelope, statusCode: 200))
+  let provider = MiniMaxProvider(
+    region: .global,
+    http: http,
+    credentials: MiniMaxCredentials(key: "valid"))
+
+  guard case .failure(let failure) = await provider.fetch() else {
+    Issue.record("Expected network failure")
+    return
+  }
+  #expect(failure.kind == .network)
+  #expect(failure.message.contains("rate limit"))
 }

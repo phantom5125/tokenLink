@@ -1,226 +1,1115 @@
 import AppKit
 import Foundation
 import Network
+import OSLog
+import Observation
 import TokenLinkCore
 import TokenLinkDevice
 import TokenLinkProviders
 
-/// UI 触发刷新的抽象，测试里用计数 fake 替代真实网络。
+private let tokenLinkEventLogger = Logger(
+  subsystem: "io.github.phantom5125.tokenlink",
+  category: "events")
+
 public protocol AppRefreshing: Sendable {
   func refresh() async
 }
 
 extension RefreshCoordinator: AppRefreshing {
-  public func refresh() async { await refreshAll() }
+  public func refresh() async {
+    await refreshAll()
+  }
 }
 
-@MainActor @Observable
+private struct NoopRefresher: AppRefreshing {
+  func refresh() async {}
+}
+
+public struct ProviderRow: Identifiable, Equatable, Sendable {
+  public let id: ProviderID
+  public let displayName: String
+  public let state: ProviderState
+}
+
+public struct AccountRow: Identifiable, Equatable, Sendable {
+  public let id: UUID
+  public let provider: ProviderID
+  public let label: String
+  public let isDefault: Bool
+  public let state: ProviderState
+}
+
+public struct ProviderAccountGroup: Identifiable, Equatable, Sendable {
+  public var id: ProviderID { provider }
+  public let provider: ProviderID
+  public let displayName: String
+  public let accounts: [AccountRow]
+
+  public init(provider: ProviderID, displayName: String, accounts: [AccountRow]) {
+    self.provider = provider
+    self.displayName = displayName
+    self.accounts = accounts
+  }
+}
+
+public struct ProviderHighlight: Equatable, Sendable {
+  public let provider: ProviderID
+  public let window: QuotaWindow
+}
+
+public struct AppEvent: Identifiable, Equatable, Sendable {
+  public let id: String
+  public let date: Date
+  public let message: String
+
+  init(date: Date, message: String) {
+    self.id = "\(date.timeIntervalSince1970)-\(message)"
+    self.date = date
+    self.message = message
+  }
+}
+
+@MainActor
+@Observable
 public final class AppModel {
-  public struct ProviderRow: Identifiable, Equatable, Sendable {
-    public let provider: ProviderID
-    public let phase: ProviderPhase
-    public let snapshot: QuotaSnapshot?
-    public let error: ProviderFailure?
-    public var id: ProviderID { provider }
-  }
-
-  public struct Highlight: Equatable, Sendable {
-    public let provider: ProviderID
-    public let window: QuotaWindow
-  }
-
-  public private(set) var rows: [ProviderRow] = []
-  public private(set) var devicePhase: DevicePhase = .unbound
-  public private(set) var events: [String] = []
+  public private(set) var states: [UUID: ProviderState]
+  public private(set) var devicePhase: DevicePhase
+  public private(set) var events: [AppEvent] = []
+  public private(set) var isRefreshing = false
+  public private(set) var isDiscovering = false
+  public private(set) var discoveredDeviceIdentifiers: [UUID] = []
+  public private(set) var credentialConfigured: [ProviderID: Bool] = [:]
+  public private(set) var credentialConfiguredByAccount: [UUID: Bool] = [:]
+  public private(set) var credentialSourceByAccount: [UUID: CredentialSource] = [:]
+  public private(set) var loginItemState: LoginItemState = .disabled
+  public private(set) var configurationRestartRequired = false
   public var configuration: AppConfiguration
+  /// Pace projections keyed by account id, refreshed together with states.
+  public private(set) var burnEstimates: [UUID: BurnRateEstimate] = [:]
+  /// Beta: locally observed token usage per provider (empty unless enabled).
+  public private(set) var localUsageSummaries: [LocalUsageSummary] = []
+  public private(set) var isScanningLocalUsage = false
 
-  private let refresher: (any AppRefreshing)?
-  private let store: ProviderStore?
-  private let vault: KeychainVault?
-  private let configurationStore: ConfigurationStore?
-  private var deviceBridge: DeviceBridge?
-  private let makeBridge: (@Sendable (UUID?) -> DeviceBridge)?
-  private let now: () -> Date
-  private var lastManualRefresh: Date?
-  private var schedulerTask: Task<Void, Never>?
-  private var pathMonitor: NWPathMonitor?
+  @ObservationIgnored private var refresher: any AppRefreshing
+  @ObservationIgnored private let refresherBuilder:
+    (@Sendable (AppConfiguration) -> any AppRefreshing)?
+  @ObservationIgnored private let stateLoader:
+    @Sendable (TimeInterval) async -> [UUID: ProviderState]
+  @ObservationIgnored private let estimateLoader: @Sendable () async -> [UUID: BurnRateEstimate]
+  @ObservationIgnored private let now: @Sendable () -> Date
+  @ObservationIgnored private let configurationStore: ConfigurationStore?
+  @ObservationIgnored private let vault: KeychainVault?
+  @ObservationIgnored private let bluetoothTransport: (any BLETransport)?
+  @ObservationIgnored private let loginController: LoginItemController?
+  @ObservationIgnored private var bridge: DeviceBridge?
+  @ObservationIgnored private var scheduler: RefreshScheduler
+  @ObservationIgnored private var wakeObserver: NSObjectProtocol?
+  @ObservationIgnored private var pathMonitor: NWPathMonitor?
+  @ObservationIgnored private var bridgeEventTask: Task<Void, Never>?
+  @ObservationIgnored private var watchSyncTask: Task<Void, Never>?
+  @ObservationIgnored private var watchSyncToken: UUID?
+  @ObservationIgnored private var bindingGeneration: UInt64 = 0
+  @ObservationIgnored private var hasSeenNetworkState = false
+  @ObservationIgnored private var networkWasAvailable = false
+  @ObservationIgnored private var lastManualRefresh: Date?
+  @ObservationIgnored private var started = false
+  @ObservationIgnored private var notificationPolicy = NotificationPolicy()
+  @ObservationIgnored private let notificationManager: (any NotificationManaging)?
+  @ObservationIgnored private let localUsageObserver: LocalUsageObserver?
+  @ObservationIgnored private let workItemStore: WorkItemStore
+  @ObservationIgnored private let codexWorkItemTracker: CodexWorkItemTracker?
+  @ObservationIgnored private var watchCommandTask: Task<Void, Never>?
+  /// Current watch work items (cache of the actor store for UI binding).
+  public private(set) var workItems: [WorkItem] = []
+  /// Last payload actually sent to the watch (already redacted by design).
+  public private(set) var lastWatchPayloadSummary: String?
+  /// Protocol negotiated with the currently connected watch.
+  public private(set) var negotiatedWatchProtocol: NegotiatedProtocol?
+  @ObservationIgnored private var isChangingBinding = false
 
-  private static let manualThrottleSeconds: TimeInterval = 10
-
-  public init(refresher: any AppRefreshing, now: @escaping () -> Date = Date.init) {
-    self.refresher = refresher
-    self.now = now
-    self.store = nil
-    self.vault = nil
-    self.configurationStore = nil
-    self.makeBridge = nil
-    self.configuration = AppConfiguration()
-  }
-
-  private init(
-    refresher: (any AppRefreshing)?,
-    store: ProviderStore?,
-    vault: KeychainVault?,
-    configurationStore: ConfigurationStore?,
-    configuration: AppConfiguration,
-    makeBridge: (@Sendable (UUID?) -> DeviceBridge)?,
-    now: @escaping () -> Date
+  public init(
+    refresher: any AppRefreshing,
+    refresherBuilder: (@Sendable (AppConfiguration) -> any AppRefreshing)? = nil,
+    now: @escaping @Sendable () -> Date = { Date() },
+    stateLoader: @escaping @Sendable (TimeInterval) async -> [UUID: ProviderState] = { _ in
+      [:]
+    },
+    estimateLoader: @escaping @Sendable () async -> [UUID: BurnRateEstimate] = { [:] },
+    configuration: AppConfiguration = .default,
+    configurationStore: ConfigurationStore? = nil,
+    vault: KeychainVault? = nil,
+    bluetoothTransport: (any BLETransport)? = nil,
+    loginController: LoginItemController? = nil,
+    notificationManager: (any NotificationManaging)? = nil,
+    localUsageObserver: LocalUsageObserver? = nil,
+    workItemStore: WorkItemStore = WorkItemStore(),
+    codexWorkItemTracker: CodexWorkItemTracker? = nil
   ) {
     self.refresher = refresher
-    self.store = store
-    self.vault = vault
-    self.configurationStore = configurationStore
-    self.configuration = configuration
-    self.makeBridge = makeBridge
+    self.refresherBuilder = refresherBuilder
     self.now = now
-    self.deviceBridge = makeBridge?(configuration.boundDeviceIdentifier)
+    self.stateLoader = stateLoader
+    self.estimateLoader = estimateLoader
+    self.configuration = configuration
+    self.configurationStore = configurationStore
+    self.vault = vault
+    self.bluetoothTransport = bluetoothTransport
+    self.loginController = loginController
+    self.notificationManager = notificationManager
+    self.localUsageObserver = localUsageObserver
+    self.workItemStore = workItemStore
+    self.codexWorkItemTracker = codexWorkItemTracker
+    self.states = [:]
     self.devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
+    self.scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
+    if let identifier = configuration.boundDeviceIdentifier,
+      let bluetoothTransport
+    {
+      self.bridge = DeviceBridge(
+        transport: bluetoothTransport,
+        boundIdentifier: identifier)
+    }
+    if let loginController {
+      self.loginItemState = loginController.state
+    }
   }
 
-  /// 预览/测试用模型：不做任何网络与设备访问。
   public static func preview(snapshots: [QuotaSnapshot]) -> AppModel {
-    let model = AppModel(
-      refresher: nil, store: nil, vault: nil, configurationStore: nil,
-      configuration: AppConfiguration(), makeBridge: nil, now: Date.init)
-    model.rows = snapshots.map {
-      ProviderRow(provider: $0.provider, phase: .healthy, snapshot: $0, error: nil)
+    let model = AppModel(refresher: NoopRefresher())
+    var keyed: [UUID: ProviderState] = [:]
+    for snapshot in snapshots {
+      guard let account = model.configuration.defaultAccount(for: snapshot.provider)
+      else { continue }
+      keyed[account.id] = ProviderState(phase: .healthy, snapshot: snapshot)
     }
+    model.states = keyed
     return model
   }
 
-  /// 真实装配：配置目录、Keychain、四个 Provider、刷新协调器与蓝牙桥。
   public static func live() -> AppModel {
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[
-      0]
-    let configurationStore = ConfigurationStore(directory: support.appending(path: "TokenLink"))
-    let configuration = configurationStore.load()
+    let configurationStore = try? ConfigurationStore.applicationSupport()
+    let configuration = (try? configurationStore?.load()) ?? .default
     let vault = KeychainVault()
     let http = URLSessionHTTPClient()
-    let codexURL =
-      configuration.codexPath.map { URL(fileURLWithPath: $0) }
-      ?? URL(fileURLWithPath: "/opt/homebrew/bin/codex")
-    let providers: [any QuotaProvider] = [
-      CodexProvider(executable: codexURL, transport: ProcessAppServerTransport()),
-      KimiProvider(http: http, credentials: vault),
-      MiniMaxProvider(region: configuration.miniMaxRegion, http: http, credentials: vault),
-      GLMProvider(region: configuration.glmRegion, http: http, credentials: vault),
-    ]
     let store = ProviderStore()
-    let coordinator = RefreshCoordinator(providers: providers, store: store)
+    let makeCoordinator: @Sendable (AppConfiguration) -> RefreshCoordinator = { configuration in
+      RefreshCoordinator(
+        providers: makeProviders(configuration: configuration, http: http, vault: vault),
+        store: store)
+    }
     return AppModel(
-      refresher: coordinator, store: store, vault: vault,
-      configurationStore: configurationStore, configuration: configuration,
-      makeBridge: { DeviceBridge(transport: CoreBluetoothTransport(), boundIdentifier: $0) },
-      now: Date.init)
+      refresher: makeCoordinator(configuration),
+      refresherBuilder: makeCoordinator,
+      stateLoader: { refreshIntervalSeconds in
+        await store.allStates(refreshIntervalSeconds: refreshIntervalSeconds)
+      },
+      estimateLoader: { await store.allBurnEstimates() },
+      configuration: configuration,
+      configurationStore: configurationStore,
+      vault: vault,
+      bluetoothTransport: CoreBluetoothTransport(),
+      loginController: LoginItemController(),
+      // UNUserNotificationCenter requires an app bundle; stay silent when
+      // running unpackaged (e.g. `swift run`).
+      notificationManager: Bundle.main.bundleURL.pathExtension == "app"
+        ? SystemNotificationManager() : NullNotificationManager(),
+      localUsageObserver: LocalUsageObserver(),
+      codexWorkItemTracker: CodexWorkItemTracker(
+        executable: CodexExecutableResolver.resolve(configuredPath: configuration.codexPath),
+        transport: ProcessAppServerTransport(
+          extraEnvironment: SystemProxyEnvironment.current())))
   }
 
-  /// 所有行里剩余量最低的健康/可接受陈旧窗口，用于菜单栏高亮。
-  public var highlight: Highlight? {
-    rows.compactMap { row -> Highlight? in
-      guard row.phase == .healthy || row.phase == .stale,
-        let snapshot = row.snapshot,
-        let window = snapshot.mostConstrainedWindow
-      else { return nil }
-      return Highlight(provider: row.provider, window: window)
-    }.min { $0.window.remainingPercent < $1.window.remainingPercent }
+  nonisolated private static func makeProviders(
+    configuration: AppConfiguration,
+    http: any HTTPClient,
+    vault: any CredentialReader
+  ) -> [AccountProvider] {
+    var providers: [AccountProvider] = []
+    for account in configuration.accounts where account.enabled {
+      let isDefault = configuration.isDefaultAccount(account)
+      // Codex and Claude rely on local CLI sign-ins and stay single-instance.
+      if account.provider == .codex || account.provider == .claude, !isDefault { continue }
+      let provider: any QuotaProvider
+      switch account.provider {
+      case .codex:
+        provider = CodexProvider(
+          executable: CodexExecutableResolver.resolve(
+            configuredPath: configuration.codexPath),
+          transport: ProcessAppServerTransport(
+            extraEnvironment: SystemProxyEnvironment.current()))
+      case .kimi, .minimax, .glm, .claude:
+        guard let spec = ProviderRegistry.spec(for: account.provider) else { continue }
+        let region: String?
+        switch account.provider {
+        case .minimax: region = configuration.miniMaxRegion.rawValue
+        case .glm: region = configuration.glmRegion.rawValue
+        default: region = nil
+        }
+        provider = SpecDrivenProvider(
+          spec: spec,
+          region: region,
+          credentialAccount: KeychainVault.keychainAccountName(
+            provider: account.provider,
+            accountID: account.id,
+            isDefault: isDefault),
+          http: http,
+          credentials: vault)
+      }
+      providers.append(AccountProvider(accountID: account.id, provider: provider))
+    }
+    return providers
+  }
+
+  /// Enabled accounts grouped by provider, in `ProviderID.allCases` order.
+  public var accountGroups: [ProviderAccountGroup] {
+    ProviderID.allCases.compactMap { provider in
+      let rows =
+        configuration.accounts
+        .filter { $0.provider == provider && $0.enabled }
+        .map { account in
+          AccountRow(
+            id: account.id,
+            provider: provider,
+            label: account.label,
+            isDefault: configuration.isDefaultAccount(account),
+            state: states[account.id] ?? ProviderState(phase: .disabled))
+        }
+      guard !rows.isEmpty else { return nil }
+      return ProviderAccountGroup(
+        provider: provider,
+        displayName: Self.displayName(for: provider),
+        accounts: rows)
+    }
+  }
+
+  /// Minimal single-account projection used by the current UI: one row per
+  /// provider, backed by its default account.
+  public var orderedProviderRows: [ProviderRow] {
+    accountGroups.compactMap { group in
+      guard let row = group.accounts.first(where: \.isDefault) else { return nil }
+      return ProviderRow(
+        id: group.provider,
+        displayName: group.displayName,
+        state: row.state)
+    }
+  }
+
+  /// Pace projection for a provider's default account (nil when the data is
+  /// too thin or the window is not burning).
+  public func burnEstimate(for provider: ProviderID) -> BurnRateEstimate? {
+    guard let account = configuration.defaultAccount(for: provider) else { return nil }
+    return burnEstimates[account.id]
+  }
+
+  public var highlight: ProviderHighlight? {
+    orderedProviderRows
+      .filter { $0.state.phase == .healthy }
+      .compactMap { row -> ProviderHighlight? in
+        guard let window = row.state.snapshot?.mostConstrainedWindow else { return nil }
+        return ProviderHighlight(provider: row.id, window: window)
+      }
+      .min { $0.window.remainingPercent < $1.window.remainingPercent }
   }
 
   public var menuBarLabel: String {
-    guard let highlight else { return "—" }
-    return "\(Int(highlight.window.remainingPercent))%"
+    guard let highlight else { return "TokenLink" }
+    return
+      "\(Self.displayName(for: highlight.provider)) \(Int(highlight.window.remainingPercent.rounded()))%"
+  }
+
+  public var deviceStatusText: String {
+    let key: L10n.Key =
+      switch devicePhase {
+      case .unbound: .deviceUnbound
+      case .disconnected: .deviceDisconnected
+      case .scanning: .deviceScanning
+      case .connecting: .deviceConnecting
+      case .connected: .deviceConnected
+      case .syncing: .deviceSyncing
+      case .synced: .deviceSynced
+      case .stale: .deviceStale
+      }
+    return L10n.text(key, language: currentLanguage)
+  }
+
+  /// Effective UI language: explicit preference wins, otherwise the system.
+  public var currentLanguage: AppLanguage {
+    AppLanguage.resolve(preference: configuration.appLanguage)
+  }
+
+  public func text(_ key: L10n.Key) -> String {
+    L10n.text(key, language: currentLanguage)
+  }
+
+  /// Persists an `AppLanguage` raw value (nil = follow the system) and applies
+  /// it immediately through the observable configuration.
+  public func setAppLanguage(_ preference: String?) throws {
+    configuration.appLanguage = preference
+    try saveConfiguration()
+  }
+
+  public func start() async {
+    guard !started else { return }
+    started = true
+    record("Starting")
+    await ensureBridgeObservation()
+    await requestRefresh(reason: "Started")
+    await refreshCredentialStates()
+    scheduler.start { [weak self] in
+      await self?.requestRefresh(reason: "Scheduled refresh")
+    }
+    observeWake()
+    observeNetwork()
+  }
+
+  public func stop() {
+    scheduler.stop()
+    if let wakeObserver {
+      NSWorkspace.shared.notificationCenter.removeObserver(wakeObserver)
+    }
+    wakeObserver = nil
+    pathMonitor?.cancel()
+    pathMonitor = nil
+    bindingGeneration &+= 1
+    watchSyncTask?.cancel()
+    watchSyncTask = nil
+    watchSyncToken = nil
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    watchCommandTask?.cancel()
+    watchCommandTask = nil
+    if let bridge {
+      Task { await bridge.stopObservingTransport() }
+    }
+    started = false
   }
 
   public func refreshManually() async {
-    let now = now()
-    if let last = lastManualRefresh,
-      now.timeIntervalSince(last) < Self.manualThrottleSeconds
+    let date = now()
+    if let lastManualRefresh,
+      date.timeIntervalSince(lastManualRefresh) < 10
     {
       return
     }
-    lastManualRefresh = now
-    await refresh()
+    lastManualRefresh = date
+    await requestRefresh(reason: "Manual refresh")
   }
 
-  func refresh() async {
-    guard let refresher else { return }
+  public func requestRefresh(reason: String) async {
+    guard !isRefreshing else { return }
+    await ensureBridgeObservation()
+    isRefreshing = true
     await refresher.refresh()
-    await reloadFromStore()
-    record("Refreshed provider quota")
+    let previousStates = states
+    states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
+    burnEstimates = await estimateLoader()
+    await postNotifications(previousStates: previousStates)
+    if let codexWorkItemTracker,
+      let codexAccount = configuration.defaultAccount(for: .codex),
+      states[codexAccount.id]?.phase == .healthy
+    {
+      if let failure = await codexWorkItemTracker.poll(into: workItemStore) {
+        record("Codex work items unavailable: \(failure.kind.rawValue)")
+      }
+      workItems = await workItemStore.items
+      let activeSessionCount = await workItemStore.activeSessionCount
+      record(
+        "Codex work items available: \(workItems.count); active sessions: \(activeSessionCount)")
+    }
+    if bridge != nil, hasWatchSyncCandidate(allowStale: false) {
+      await syncCodex(allowStale: false, attempts: 2, automatic: true)
+    } else if case .synced = devicePhase {
+      devicePhase = .stale
+    }
+    isRefreshing = false
+    record(reason)
   }
 
-  /// 启动周期刷新；唤醒与网络恢复时触发一次去抖刷新。
-  public func start() {
-    Task { await refresh() }
-    let scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
-    schedulerTask = scheduler.start { [weak self] in await self?.refresh() }
-    NotificationCenter.default.addObserver(
-      forName: NSWorkspace.didWakeNotification, object: nil, queue: nil
-    ) { [weak self] _ in
-      Task { @MainActor [weak self] in await self?.refresh() }
-    }
-    let monitor = NWPathMonitor()
-    monitor.pathUpdateHandler = { [weak self] path in
-      guard path.status == .satisfied else { return }
-      Task { @MainActor [weak self] in await self?.refresh() }
-    }
-    monitor.start(queue: DispatchQueue(label: "tokenlink.network"))
-    pathMonitor = monitor
-  }
-
-  private func reloadFromStore() async {
-    guard let store else { return }
-    let states = await store.allStates()
-    rows = ProviderID.allCases.map { id in
-      let state = states[id] ?? ProviderState(phase: .disabled)
-      return ProviderRow(
-        provider: id, phase: state.phase, snapshot: state.snapshot, error: state.error)
+  private func postNotifications(previousStates: [UUID: ProviderState]) async {
+    guard configuration.notificationsEnabled, let notificationManager else { return }
+    _ = previousStates  // transitions are tracked inside the policy's latches
+    let strings = NotificationPolicy.Strings(
+      lowQuotaTitle: text(.notifyLowQuotaTitle),
+      lowQuotaBody: text(.notifyLowQuotaBody),
+      authFailureTitle: text(.notifyAuthFailureTitle),
+      authFailureBody: text(.notifyAuthFailureBody),
+      resetTitle: text(.notifyResetTitle),
+      resetBody: text(.notifyResetBody))
+    let accounts = configuration.accounts
+    let notifications = notificationPolicy.evaluate(
+      current: states,
+      nameForAccount: { accountID in
+        accounts.first { $0.id == accountID }.map {
+          Self.displayName(for: $0.provider)
+        } ?? "?"
+      },
+      strings: strings,
+      now: now())
+    guard !notifications.isEmpty else { return }
+    await notificationManager.requestAuthorizationIfNeeded()
+    for notification in notifications {
+      await notificationManager.post(notification)
     }
   }
 
-  public func saveAPIKey(_ key: String, for provider: ProviderID) async throws {
-    guard let vault else { return }
-    try vault.setAPIKey(key, for: provider)
-    record("Saved API key for \(provider.rawValue)")
+  /// Writes (or clears, when empty) the key of the provider's default account.
+  public func saveAPIKey(_ value: String, for provider: ProviderID) async throws {
+    guard let account = configuration.defaultAccount(for: provider) else { return }
+    try await setAPIKey(value, for: account.id)
   }
 
   public func deleteAPIKey(for provider: ProviderID) async throws {
+    try await saveAPIKey("", for: provider)
+  }
+
+  public func setAPIKey(_ value: String, for accountID: UUID) async throws {
+    guard let vault,
+      let account = configuration.accounts.first(where: { $0.id == accountID })
+    else { return }
+    // Claude only uses the local CLI OAuth token or an env var; Anthropic
+    // pay-as-you-go keys do not work for subscription quota, so there is
+    // nothing to store.
+    guard account.provider != .claude else {
+      throw ProviderFailure.configuration(
+        "Claude uses the Claude Code CLI sign-in; TokenLink does not store a key.")
+    }
+    let name = KeychainVault.keychainAccountName(
+      provider: account.provider,
+      accountID: account.id,
+      isDefault: configuration.isDefaultAccount(account))
+    if value.isEmpty {
+      try await vault.deleteAPIKey(forAccount: name)
+    } else {
+      try await vault.setAPIKey(value, forAccount: name)
+    }
+    await refreshCredentialStates()
+    record("Updated \(Self.displayName(for: account.provider)) credentials")
+  }
+
+  /// Display-only masked hint (head/tail) of the stored key; never the key.
+  public func keyHint(for accountID: UUID) async -> String? {
+    guard let vault,
+      let account = configuration.accounts.first(where: { $0.id == accountID })
+    else { return nil }
+    return try? await vault.keyHint(
+      for: account,
+      isDefault: configuration.isDefaultAccount(account))
+  }
+
+  /// Adds an additional account for a provider. Codex is backed by the local
+  /// CLI sign-in and stays single-account.
+  @discardableResult
+  public func addAccount(provider: ProviderID, label: String) throws -> ProviderAccount {
+    guard provider != .codex, provider != .claude else {
+      throw ProviderFailure.configuration(
+        "Codex and Claude use local CLI sign-ins and support a single account.")
+    }
+    let trimmed = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let account = ProviderAccount(
+      provider: provider,
+      label: trimmed.isEmpty ? Self.displayName(for: provider) : trimmed)
+    configuration.accounts.append(account)
+    try saveConfiguration()
+    rebuildRefresher(reason: "Account added; refreshing")
+    Task { await refreshCredentialStates() }
+    return account
+  }
+
+  /// Removes an account and its stored key. When the default account is
+  /// removed, the next account is promoted and its key moved to the default
+  /// Keychain name so it keeps working.
+  public func removeAccount(id: UUID) async throws {
+    guard let index = configuration.accounts.firstIndex(where: { $0.id == id })
+    else { return }
+    let account = configuration.accounts[index]
+    let wasDefault = configuration.isDefaultAccount(account)
+    if let vault {
+      try await vault.deleteAPIKey(for: account, isDefault: wasDefault)
+    }
+    configuration.accounts.remove(at: index)
+    if wasDefault, let vault,
+      let successor = configuration.defaultAccount(for: account.provider)
+    {
+      let successorName = KeychainVault.keychainAccountName(
+        provider: successor.provider, accountID: successor.id, isDefault: false)
+      if let key = try await vault.apiKey(forAccount: successorName) {
+        try await vault.setAPIKey(key, forAccount: account.provider.rawValue)
+        try await vault.deleteAPIKey(forAccount: successorName)
+      }
+    }
+    try saveConfiguration()
+    rebuildRefresher(reason: "Account removed; refreshing")
+    await refreshCredentialStates()
+    record("Removed \(Self.displayName(for: account.provider)) account")
+  }
+
+  public func refreshCredentialStates() async {
     guard let vault else { return }
-    try vault.deleteAPIKey(for: provider)
-    record("Deleted API key for \(provider.rawValue)")
+    var byAccount: [UUID: Bool] = [:]
+    var sources: [UUID: CredentialSource] = [:]
+    for account in configuration.accounts where account.provider != .codex {
+      let name = KeychainVault.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: configuration.isDefaultAccount(account))
+      let key = (try? await vault.apiKey(forAccount: name)) ?? nil
+      if let key, !key.isEmpty {
+        byAccount[account.id] = true
+        sources[account.id] = .apiKey
+        continue
+      }
+      if ProviderRegistry.spec(for: account.provider)?.allowsCLICredential == true {
+        let token = (try? await vault.cliAccessToken(for: account.provider)) ?? nil
+        if let token, !token.isEmpty {
+          byAccount[account.id] = true
+          sources[account.id] = .cliCredential
+          continue
+        }
+      }
+      let envKey = (try? await vault.environmentAPIKey(for: account.provider)) ?? nil
+      if envKey != nil {
+        byAccount[account.id] = true
+        sources[account.id] = .environmentVariable
+      } else {
+        byAccount[account.id] = false
+      }
+    }
+    credentialConfiguredByAccount = byAccount
+    credentialSourceByAccount = sources
+    var byProvider: [ProviderID: Bool] = [:]
+    for provider in ProviderID.allCases where provider != .codex {
+      byProvider[provider] =
+        configuration.defaultAccount(for: provider).map { byAccount[$0.id] == true }
+        ?? false
+    }
+    credentialConfigured = byProvider
   }
 
-  public func bindDevice(_ identifier: UUID) {
+  public func discoverDevices() async {
+    guard let bluetoothTransport else { return }
+    isDiscovering = true
+    discoveredDeviceIdentifiers = []
+    devicePhase = .scanning
+    do {
+      discoveredDeviceIdentifiers = try await bluetoothTransport.discoveredIdentifiers()
+      devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
+      record("Bluetooth discovery completed")
+    } catch {
+      devicePhase = .disconnected
+      record("Bluetooth discovery failed")
+    }
+    isDiscovering = false
+  }
+
+  public func bindDevice(_ identifier: UUID) async throws {
+    guard let bluetoothTransport, !isChangingBinding else { return }
+    isChangingBinding = true
+    defer { isChangingBinding = false }
+    bindingGeneration &+= 1
+    let previousBridge = bridge
+    await cancelActiveWatchSync()
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    await previousBridge?.stopObservingTransport()
+    await previousBridge?.disconnect()
     configuration.boundDeviceIdentifier = identifier
-    try? configurationStore?.save(configuration)
-    deviceBridge = makeBridge?(identifier)
+    bridge = DeviceBridge(
+      transport: bluetoothTransport,
+      boundIdentifier: identifier)
     devicePhase = .disconnected
-    record("Bound StopWatch \(identifier.uuidString)")
+    try saveConfiguration()
+    await ensureBridgeObservation()
+    discoveredDeviceIdentifiers = []
+    record("Bound StopWatch")
   }
 
-  /// 只把 Codex primary 窗口编码进 v1 协议并写入手表。
+  public func unbindDevice() async throws {
+    guard !isChangingBinding else { return }
+    isChangingBinding = true
+    defer { isChangingBinding = false }
+    bindingGeneration &+= 1
+    let previousBridge = bridge
+    await cancelActiveWatchSync()
+    bridgeEventTask?.cancel()
+    bridgeEventTask = nil
+    await previousBridge?.stopObservingTransport()
+    await previousBridge?.disconnect()
+    bridge = nil
+    configuration.boundDeviceIdentifier = nil
+    devicePhase = .unbound
+    try saveConfiguration()
+    record("Unbound StopWatch")
+  }
+
   public func syncCodexNow() async {
-    guard let store, let bridge = deviceBridge else { return }
-    let state = await store.state(for: .codex)
-    guard let snapshot = state.snapshot,
-      state.phase == .healthy || state.phase == .stale
-    else {
-      record("No fresh Codex snapshot to sync")
+    await ensureBridgeObservation()
+    await syncCodex(allowStale: true, attempts: 2, automatic: false)
+  }
+
+  public func setProvider(_ provider: ProviderID, enabled: Bool) throws {
+    if enabled {
+      if configuration.accounts.contains(where: { $0.provider == provider }) {
+        for index in configuration.accounts.indices
+        where configuration.accounts[index].provider == provider {
+          configuration.accounts[index].enabled = true
+        }
+      } else {
+        configuration.accounts.append(
+          ProviderAccount(
+            provider: provider,
+            label: Self.displayName(for: provider)))
+      }
+    } else {
+      for index in configuration.accounts.indices
+      where configuration.accounts[index].provider == provider {
+        configuration.accounts[index].enabled = false
+      }
+    }
+    configurationRestartRequired = true
+    try saveConfiguration()
+  }
+
+  public func setCodexPath(_ path: String?) throws {
+    let trimmed = path?.trimmingCharacters(in: .whitespacesAndNewlines)
+    configuration.codexPath = (trimmed?.isEmpty == false) ? trimmed : nil
+    configurationRestartRequired = true
+    try saveConfiguration()
+  }
+
+  public func setMiniMaxRegion(_ region: MiniMaxRegion) throws {
+    configuration.miniMaxRegion = region
+    try saveConfiguration()
+    rebuildRefresher()
+  }
+
+  public func setGLMRegion(_ region: GLMRegion) throws {
+    configuration.glmRegion = region
+    try saveConfiguration()
+    rebuildRefresher()
+  }
+
+  private func rebuildRefresher(
+    reason: String = "Region change applied; refreshing with the new endpoint"
+  ) {
+    guard let refresherBuilder else { return }
+    refresher = refresherBuilder(configuration)
+    record(reason)
+    Task {
+      await requestRefresh(reason: reason)
+    }
+  }
+
+  public func setRefreshMinutes(_ minutes: Int) throws {
+    let replacement = RefreshScheduler(minutes: minutes)
+    configuration.refreshMinutes = replacement.minutes
+    scheduler.stop()
+    scheduler = replacement
+    if started {
+      scheduler.start { [weak self] in
+        await self?.requestRefresh(reason: "Scheduled refresh")
+      }
+    }
+    try saveConfiguration()
+  }
+
+  public func setLoginItemEnabled(_ enabled: Bool) throws {
+    guard let loginController else { return }
+    loginItemState = try loginController.setEnabled(enabled)
+  }
+
+  public func renameWorkItem(id: String, to name: String) async {
+    await workItemStore.rename(id: id, to: name)
+    workItems = await workItemStore.items
+    await syncCodex(allowStale: true, attempts: 2, automatic: false)
+  }
+
+  public func setWatchSyncedProvider(_ provider: ProviderID, enabled: Bool) throws {
+    if enabled {
+      configuration.watchSettings.syncedProviders.insert(provider)
+    } else {
+      configuration.watchSettings.syncedProviders.remove(provider)
+    }
+    try saveConfiguration()
+    scheduleWatchSettingsSync()
+  }
+
+  public func setWatchFaceTheme(_ theme: WatchFaceTheme) throws {
+    configuration.watchSettings.faceTheme = theme
+    try saveConfiguration()
+    scheduleWatchSettingsSync()
+  }
+
+  public func setWatchWakeMode(_ mode: WatchWakeMode) throws {
+    configuration.watchSettings.wakeMode = mode
+    try saveConfiguration()
+    scheduleWatchSettingsSync()
+  }
+
+  public func setWatchHourFormat(_ format: WatchHourFormat) throws {
+    configuration.watchSettings.hourFormat = format
+    try saveConfiguration()
+    scheduleWatchSettingsSync()
+  }
+
+  public func setNotificationsEnabled(_ enabled: Bool) throws {
+    configuration.notificationsEnabled = enabled
+    try saveConfiguration()
+  }
+
+  public func setFairPaceEnabled(_ enabled: Bool) throws {
+    configuration.fairPaceEnabled = enabled
+    try saveConfiguration()
+  }
+
+  public func setBetaLocalUsageEnabled(_ enabled: Bool) throws {
+    configuration.betaLocalUsageEnabled = enabled
+    try saveConfiguration()
+    if enabled {
+      Task { await scanLocalUsage() }
+    } else {
+      localUsageSummaries = []
+    }
+  }
+
+  /// Beta: scans local CLI transcripts (last 7 days) on a background task.
+  public func scanLocalUsage() async {
+    guard configuration.betaLocalUsageEnabled, let localUsageObserver,
+      !isScanningLocalUsage
+    else { return }
+    isScanningLocalUsage = true
+    let since = now().addingTimeInterval(-7 * 86_400)
+    localUsageSummaries = await Task.detached {
+      localUsageObserver.summarizeAll(since: since)
+    }.value
+    isScanningLocalUsage = false
+    record("Scanned local usage")
+  }
+
+  public func diagnosticObject() -> [String: Any] {
+    [
+      "generated_at": ISO8601DateFormatter().string(from: now()),
+      "configuration": [
+        "enabled_providers": configuration.enabledProviders.map(\.rawValue).sorted(),
+        "refresh_minutes": configuration.refreshMinutes,
+        "bound_device": configuration.boundDeviceIdentifier?.uuidString ?? "none",
+        "codex_path": configuration.codexPath ?? "automatic",
+        "minimax_region": configuration.miniMaxRegion.rawValue,
+        "glm_region": configuration.glmRegion.rawValue,
+      ],
+      "providers": orderedProviderRows.map { row in
+        let remaining: Any =
+          if let value = row.state.snapshot?
+            .mostConstrainedWindow?.remainingPercent
+          { value } else { NSNull() }
+        let fetchedAt: Any =
+          if let snapshot = row.state.snapshot {
+            ISO8601DateFormatter().string(from: snapshot.fetchedAt)
+          } else { NSNull() }
+        let errorKind: Any =
+          if let value = row.state.error?.kind.rawValue {
+            value
+          } else { NSNull() }
+        return [
+          "provider": row.id.rawValue,
+          "phase": row.state.phase.rawValue,
+          "remaining_percent": remaining,
+          "fetched_at": fetchedAt,
+          "error_kind": errorKind,
+        ] as [String: Any]
+      },
+      "device_phase": deviceStatusText,
+      "events": events.map { ["date": $0.date.timeIntervalSince1970, "message": $0.message] },
+    ]
+  }
+
+  public func exportDiagnostics(to url: URL) throws {
+    try DiagnosticExporter.write(diagnosticObject(), to: url)
+  }
+
+  private func saveConfiguration() throws {
+    try configurationStore?.save(configuration)
+  }
+
+  private func scheduleWatchSettingsSync() {
+    guard bridge != nil, hasWatchSyncCandidate(allowStale: true) else { return }
+    Task { @MainActor [weak self] in
+      await self?.syncCodex(allowStale: true, attempts: 2, automatic: false)
+    }
+  }
+
+  private func hasWatchSyncCandidate(allowStale: Bool) -> Bool {
+    configuration.watchSettings.syncedProviders.contains { provider in
+      guard let account = configuration.defaultAccount(for: provider), account.enabled,
+        let state = states[account.id]
+      else { return false }
+      return state.phase == .healthy || (allowStale && state.phase == .stale)
+    }
+  }
+
+  private func syncCodex(
+    allowStale: Bool,
+    attempts: Int,
+    automatic: Bool
+  ) async {
+    guard !isChangingBinding else { return }
+    if let active = watchSyncTask {
+      await active.value
       return
     }
-    do {
-      try await bridge.connect()
-      let data = try LegacyWatchProjection.encode(snapshot: snapshot, now: now())
-      try await bridge.sync(data, now: now())
-      devicePhase = await bridge.phase
-      record("Synced Codex quota to StopWatch")
-    } catch {
-      devicePhase = await bridge.phase
-      record("StopWatch sync failed: \(error.localizedDescription)")
+    guard let bridge else { return }
+
+    let generation = bindingGeneration
+    let boundedAttempts = min(2, max(1, attempts))
+    let task = Task { @MainActor [weak self] in
+      guard let self else { return }
+      await self.performWatchSync(
+        bridge: bridge,
+        generation: generation,
+        attempts: boundedAttempts,
+        automatic: automatic,
+        allowStale: allowStale)
+    }
+    let token = UUID()
+    watchSyncTask = task
+    watchSyncToken = token
+    await task.value
+    if watchSyncToken == token {
+      watchSyncTask = nil
+      watchSyncToken = nil
     }
   }
 
-  private func record(_ event: String) {
-    events.insert(event, at: 0)
-    if events.count > 50 { events.removeLast() }
+  /// Builds the next watch payload after the connection is up, so the
+  /// negotiated protocol reflects this connection. v1 watches only ever
+  /// receive the Codex legacy payload.
+  private func buildWatchDecisions(
+    bridge: DeviceBridge,
+    allowStale: Bool
+  ) async -> [WatchSyncPolicy.Decision] {
+    let negotiated = await bridge.negotiatedProtocol
+    var candidates: [(provider: ProviderID, snapshot: QuotaSnapshot)] = []
+    for provider in ProviderID.allCases {
+      guard configuration.watchSettings.syncedProviders.contains(provider),
+        let account = configuration.defaultAccount(for: provider),
+        account.enabled,
+        let state = states[account.id],
+        state.phase == .healthy || (allowStale && state.phase == .stale),
+        let snapshot = state.snapshot
+      else { continue }
+      candidates.append((provider, snapshot))
+    }
+    let items = await workItemStore.payloadItems()
+    let activeSessionCount = await workItemStore.activeSessionCount
+    let decisions = WatchSyncPolicy.payloads(
+      negotiated: negotiated,
+      candidates: candidates,
+      settings: configuration.watchSettings,
+      workItems: items,
+      activeSessionCount: activeSessionCount,
+      now: now())
+    guard !decisions.isEmpty else { return [] }
+    negotiatedWatchProtocol = negotiated
+    switch negotiated {
+    case .v1:
+      record("Negotiated StopWatch protocol v1")
+    case .v2:
+      record("Negotiated StopWatch protocol v2; sending \(decisions.count) providers")
+    }
+    lastWatchPayloadSummary =
+      decisions
+      .map { String(decoding: $0.data, as: UTF8.self) }
+      .joined(separator: "\n")
+    return decisions
   }
+
+  private func performWatchSync(
+    bridge: DeviceBridge,
+    generation: UInt64,
+    attempts: Int,
+    automatic: Bool,
+    allowStale: Bool
+  ) async {
+    for attempt in 0..<attempts {
+      guard !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) else { return }
+      if attempt > 0 {
+        await bridge.disconnect()
+        guard !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) else { return }
+        do {
+          try await Task.sleep(for: .milliseconds(100))
+        } catch {
+          return
+        }
+      }
+      do {
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
+        devicePhase = .connecting
+        try await bridge.connect()
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
+        devicePhase = await bridge.phase
+        switch devicePhase {
+        case .connected, .synced:
+          break
+        default:
+          continue
+        }
+        let decisions = await buildWatchDecisions(
+          bridge: bridge, allowStale: allowStale)
+        guard !decisions.isEmpty else { return }
+        devicePhase = .syncing
+        for decision in decisions {
+          try await bridge.sync(decision.data, now: now())
+        }
+        try Task.checkCancellation()
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
+        devicePhase = await bridge.phase
+        let names = decisions.map { Self.displayName(for: $0.provider) }
+          .joined(separator: ", ")
+        record(
+          automatic
+            ? "Automatically synced \(names) quota"
+            : "Synced \(names) quota to StopWatch")
+        return
+      } catch is CancellationError {
+        return
+      } catch {
+        guard isCurrentBinding(generation, bridge: bridge) else { return }
+        devicePhase = await bridge.phase
+        record("StopWatch sync attempt failed: \(Self.watchSyncFailureName(error))")
+        if attempt + 1 < attempts {
+          record("Retrying StopWatch sync")
+        }
+      }
+    }
+    if !Task.isCancelled, isCurrentBinding(generation, bridge: bridge) {
+      record("StopWatch sync failed")
+    }
+  }
+
+  private func ensureBridgeObservation() async {
+    guard bridgeEventTask == nil, let bridge else { return }
+    await bridge.startObservingTransport()
+    let generation = bindingGeneration
+    let workItemStore = workItemStore
+    let focusHandler = FocusHandler(
+      sessionProvider: { slot in
+        await workItemStore.item(forSlot: slot).map {
+          FocusSession(slot: $0.slot, source: $0.source, threadID: $0.id)
+        }
+      },
+      activator: SystemCodexDesktopActivator(),
+      onRefresh: { [weak self] in
+        await self?.requestRefresh(reason: "Watch requested refresh")
+      },
+      record: { [weak self] message in
+        await self?.record(message)
+      })
+    watchCommandTask = Task { @MainActor [weak self] in
+      for await command in bridge.commandStream {
+        guard !Task.isCancelled, let self else { return }
+        guard self.isCurrentBinding(generation, bridge: bridge) else { return }
+        await focusHandler.handle(command)
+      }
+    }
+    bridgeEventTask = Task { @MainActor [weak self] in
+      for await phase in bridge.phaseEvents() {
+        guard !Task.isCancelled, let self else { return }
+        guard self.isCurrentBinding(generation, bridge: bridge) else { return }
+        let wasEstablished: Bool
+        switch self.devicePhase {
+        case .connected, .syncing, .synced:
+          wasEstablished = true
+        default:
+          wasEstablished = false
+        }
+        self.devicePhase = phase
+        if phase == .disconnected, wasEstablished {
+          self.record("StopWatch disconnected")
+        }
+      }
+    }
+  }
+
+  private func cancelActiveWatchSync() async {
+    guard let active = watchSyncTask, let token = watchSyncToken else { return }
+    active.cancel()
+    await active.value
+    if watchSyncToken == token {
+      watchSyncTask = nil
+      watchSyncToken = nil
+    }
+  }
+
+  private func isCurrentBinding(_ generation: UInt64, bridge expectedBridge: DeviceBridge) -> Bool {
+    !isChangingBinding
+      && generation == bindingGeneration
+      && bridge === expectedBridge
+      && configuration.boundDeviceIdentifier != nil
+  }
+
+  private func record(_ message: String) {
+    tokenLinkEventLogger.notice("\(message, privacy: .public)")
+    events.insert(AppEvent(date: now(), message: message), at: 0)
+    if events.count > 30 { events.removeLast(events.count - 30) }
+  }
+
+  private static func watchSyncFailureName(_ error: Error) -> String {
+    guard let bluetooth = error as? BluetoothTransportError else {
+      return String(describing: type(of: error))
+    }
+    switch bluetooth {
+    case .unavailable: return "bluetooth unavailable"
+    case .operationInProgress: return "operation in progress"
+    case .timeout: return "timeout"
+    case .peripheralNotFound: return "bound device not found"
+    case .serviceNotFound: return "quota service not found"
+    case .characteristicNotFound: return "quota characteristic not found"
+    case .disconnected: return "device disconnected"
+    case .system: return "CoreBluetooth system error"
+    }
+  }
+
+  private func observeWake() {
+    wakeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+      forName: NSWorkspace.didWakeNotification,
+      object: nil,
+      queue: .main
+    ) { [weak self] _ in
+      Task { @MainActor in
+        await self?.requestRefresh(reason: "Wake refresh")
+      }
+    }
+  }
+
+  private func observeNetwork() {
+    let monitor = NWPathMonitor()
+    monitor.pathUpdateHandler = { [weak self] path in
+      let available = path.status == .satisfied
+      Task { @MainActor in
+        self?.handleNetworkState(available)
+      }
+    }
+    monitor.start(
+      queue: DispatchQueue(
+        label: "io.github.phantom5125.tokenlink.network"))
+    pathMonitor = monitor
+  }
+
+  private func handleNetworkState(_ available: Bool) {
+    if hasSeenNetworkState, available, !networkWasAvailable {
+      Task { @MainActor [weak self] in
+        try? await Task.sleep(for: .milliseconds(Int.random(in: 200...1_500)))
+        await self?.requestRefresh(reason: "Network restored")
+      }
+    }
+    hasSeenNetworkState = true
+    networkWasAvailable = available
+  }
+
+  public static func displayName(for provider: ProviderID) -> String {
+    ProviderRegistry.displayName(for: provider)
+  }
+
 }

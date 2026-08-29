@@ -1,114 +1,178 @@
+import AppKit
 import SwiftUI
 import TokenLinkCore
 
 struct MenuBarView: View {
-  let model: AppModel
+  @Bindable var model: AppModel
   @Environment(\.openWindow) private var openWindow
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        Text("StopWatch")
-          .font(.headline)
+    VStack(spacing: 0) {
+      HStack(spacing: 12) {
+        Image(systemName: "gauge.with.dots.needle.33percent")
+          .font(.title2.weight(.semibold))
+          .foregroundStyle(.tint)
+          .frame(width: 38, height: 38)
+          .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))
+        VStack(alignment: .leading, spacing: 2) {
+          Text("TokenLink")
+            .font(.headline)
+          Text("StopWatch · \(model.deviceStatusText)")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
         Spacer()
-        Text(deviceLabel)
-          .font(.caption)
-          .foregroundStyle(deviceColor)
+        if model.isRefreshing {
+          ProgressView()
+            .controlSize(.small)
+        }
       }
+      .padding(16)
 
-      ForEach(model.rows) { row in
-        ProviderQuotaRow(row: row)
+      Divider()
+
+      if model.orderedProviderRows.isEmpty {
+        ContentUnavailableView(
+          model.text(.menubarNoProviders),
+          systemImage: "gauge.open.with.lines.needle.33percent",
+          description: Text(model.text(.menubarEnableHint))
+        )
+        .frame(height: 170)
+      } else {
+        VStack(spacing: 0) {
+          ForEach(model.orderedProviderRows) { row in
+            ProviderQuotaRow(
+              row: row,
+              language: model.currentLanguage,
+              estimate: model.burnEstimate(for: row.id),
+              fairPaceEnabled: model.configuration.fairPaceEnabled
+            )
+            .padding(.horizontal, 16)
+            .padding(.vertical, 11)
+            if row.id != model.orderedProviderRows.last?.id {
+              Divider().padding(.leading, 64)
+            }
+          }
+        }
       }
 
       Divider()
 
-      HStack {
-        Button("Refresh") {
+      HStack(spacing: 8) {
+        Button {
           Task { await model.refreshManually() }
+        } label: {
+          Label(model.text(.actionRefresh), systemImage: "arrow.clockwise")
         }
+        .disabled(model.isRefreshing)
+
         Spacer()
-        Button("Control Center…") {
+
+        Button(model.text(.actionControlCenter)) {
           openWindow(id: "control-center")
+          NSApplication.shared.activate(ignoringOtherApps: true)
         }
+
+        Menu {
+          Button(model.text(.actionQuit)) {
+            NSApplication.shared.terminate(nil)
+          }
+        } label: {
+          Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
       }
+      .padding(12)
     }
-    .padding()
-    .frame(width: 300)
-  }
-
-  private var deviceLabel: String {
-    switch model.devicePhase {
-    case .unbound: return "Unbound"
-    case .disconnected: return "Disconnected"
-    case .scanning: return "Scanning…"
-    case .connecting: return "Connecting…"
-    case .connected: return "Connected"
-    case .syncing: return "Syncing…"
-    case .synced(let date): return "Synced \(date.formatted(date: .omitted, time: .shortened))"
-    case .stale: return "Stale"
-    }
-  }
-
-  private var deviceColor: Color {
-    switch model.devicePhase {
-    case .connected, .syncing, .synced: return .green
-    case .scanning, .connecting: return .orange
-    default: return .secondary
-    }
+    .frame(width: 350)
+    .environment(\.appLanguage, model.currentLanguage)
   }
 }
 
 struct ProviderQuotaRow: View {
-  let row: AppModel.ProviderRow
+  let row: ProviderRow
+  let language: AppLanguage
+  var estimate: BurnRateEstimate?
+  var fairPaceEnabled = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      HStack {
-        Circle()
-          .fill(indicatorColor)
-          .frame(width: 8, height: 8)
-        Text(row.provider.rawValue.capitalized)
-        Spacer()
-        if let window = row.snapshot?.mostConstrainedWindow {
-          Text("\(Int(window.remainingPercent))%")
-            .monospacedDigit()
-        } else {
-          Text(row.phase.rawValue)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-        }
-      }
-      if let window = row.snapshot?.mostConstrainedWindow {
-        ProgressView(value: window.remainingPercent, total: 100)
+    HStack(alignment: .top, spacing: 12) {
+      ProviderMark(provider: row.id, size: 36)
+      VStack(alignment: .leading, spacing: 7) {
         HStack {
-          Text(window.label)
-            .font(.caption2)
-            .foregroundStyle(.secondary)
+          Text(row.displayName)
+            .font(.subheadline.weight(.semibold))
           Spacer()
-          if let resetsAt = window.resetsAt {
-            Text("Resets \(resetsAt.formatted(date: .abbreviated, time: .shortened))")
+          PhaseBadge(phase: row.state.phase)
+        }
+        if let snapshot = row.state.snapshot,
+          let window = snapshot.mostConstrainedWindow
+        {
+          HStack(alignment: .firstTextBaseline) {
+            Text(window.label)
+              .font(.caption)
+              .foregroundStyle(.secondary)
+            Spacer()
+            Text(
+              "\(Int(window.remainingPercent.rounded()))% \(L10n.text(.quotaLeft, language: language))"
+            )
+            .font(.caption.weight(.semibold))
+            .monospacedDigit()
+          }
+          QuotaBar(
+            remainingPercent: window.remainingPercent,
+            tint: ProviderPresentation.color(for: row.id),
+            fairPacePercent: row.state.phase == .healthy
+              ? fairPaceReference(for: window) : nil)
+          Text(detailText(snapshot: snapshot, window: window))
+            .font(.caption2)
+            .foregroundStyle(row.state.phase == .stale ? .orange : .secondary)
+          if let estimate, estimate.windowID == window.id, row.state.phase == .healthy {
+            Text(burnText(estimate))
               .font(.caption2)
               .foregroundStyle(.secondary)
           }
-        }
-        // 陈旧行展示原始抓取时间，绝不假装是最新数据
-        if row.phase == .stale, let snapshot = row.snapshot {
-          Text(
-            "Stale · fetched \(snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))"
-          )
-          .font(.caption2)
-          .foregroundStyle(.orange)
+        } else {
+          Text(row.state.error?.message ?? L10n.text(.quotaWaitingFirst, language: language))
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
         }
       }
     }
   }
 
-  private var indicatorColor: Color {
-    switch row.phase {
-    case .healthy: return .green
-    case .stale: return .orange
-    case .refreshing: return .blue
-    default: return .gray
+  private func burnText(_ estimate: BurnRateEstimate) -> String {
+    String(
+      format: L10n.text(.quotaBurnEta, language: language),
+      ProviderPresentation.relative(estimate.depletesAt))
+  }
+
+  private func fairPaceReference(for window: QuotaWindow) -> Double? {
+    guard fairPaceEnabled else { return nil }
+    return FairPace.expectedRemaining(
+      windowID: window.id, resetsAt: window.resetsAt, now: Date())
+  }
+
+  private func detailText(snapshot: QuotaSnapshot, window: QuotaWindow) -> String {
+    if row.state.phase == .error {
+      return String(
+        format: L10n.text(.quotaExpiredCacheFetched, language: language),
+        snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened))
     }
+    if row.state.phase == .stale {
+      return String(
+        format: L10n.text(.quotaStaleFetched, language: language),
+        snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
+    }
+    if let resetsAt = window.resetsAt {
+      return String(
+        format: L10n.text(.quotaResetsAt, language: language),
+        ProviderPresentation.relative(resetsAt))
+    }
+    return String(
+      format: L10n.text(.quotaUpdatedAt, language: language),
+      snapshot.fetchedAt.formatted(date: .omitted, time: .shortened))
   }
 }

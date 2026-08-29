@@ -8,19 +8,27 @@ distributed builds do not receive guaranteed security updates.
 
 ## Secret handling
 
-TokenLink stores provider API keys exclusively in the macOS Keychain under the
-service `io.github.phantom5125.tokenlink.provider`, one account per provider.
-Keys are never written to `config.json`, logs, diagnostics, or Git.
+TokenLink stores explicit provider API keys exclusively in the macOS Keychain
+under service `io.github.phantom5125.tokenlink.provider` and stable per-account
+identifiers. Keys are never written to `config.json`, logs, diagnostics, or Git.
 
 - Configuration files contain no secrets; `scripts/privacy_scan.sh` runs in CI
   to keep it that way.
 - Diagnostics exported from the app are recursively redacted (usernames, home
   paths, Bluetooth identifiers, account labels, and any key matching
   `token|secret|authorization|api[_-]?key`).
-- The Kimi adapter may read the local Kimi Code CLI credential file read-only;
-  it never reads or writes the refresh token.
+- The Kimi adapter may read the documented local Kimi Code CLI credential file
+  read-only. The Claude adapter may read the Claude Code Keychain credential
+  read-only. Neither adapter reads or writes a refresh token.
 - The initial destination of each credential-bearing request is validated
   against its provider's HTTPS host allowlist before the request is sent.
+- Codex quota and task state reuse the local Codex CLI sign-in. The optional
+  usage observer reads only documented CLI session roots and summarizes token
+  counters locally.
+- Protocol v2 sends provider/window labels, quota values, display settings, and
+  up to three short visible Codex task titles/states to the explicitly bound
+  watch. It does not send credentials, account identifiers, raw prompts,
+  transcripts, response bodies, or audio.
 
 ## Reporting a vulnerability
 

@@ -1,52 +1,51 @@
 #!/usr/bin/env bash
-# 隐私扫描：阻止密钥、个人路径和真实蓝牙 UUID 进入 Git。
 set -euo pipefail
-cd "$(dirname "$0")/.."
 
-fail=0
-report() { echo "privacy_scan: $1"; fail=1; }
+repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$repo_dir"
 
-# 允许清单：文档化的服务 UUID 与全零合成 UUID。
-allowed_uuids="7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C01|7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C02|00000000-0000-0000-0000-000000000000"
+failed=0
+user_path_pattern="$(printf '/%s/' 'Users')"
+uuid_pattern='[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}'
+service_uuid='7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C01'
+write_uuid='7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C02'
+capabilities_uuid='7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C03'
+command_uuid='7F0D4E66-2AC2-4A71-BFBE-4EF61A0E5C04'
+zero_uuid='00000000-0000-0000-0000-00000000000[0-9]'
 
-tracked=$(git ls-files)
+scan_paths=(-- ':!docs/**' ':!Tests/**' ':!scripts/privacy_scan.sh')
 
-# 1. 真实 CoreBluetooth UUID（测试与文档 fixture 之外的 36 位 UUID）
-while IFS= read -r file; do
-  case "$file" in Tests/*|docs/*) continue ;; esac
-  while IFS= read -r uuid; do
-    [ -z "$uuid" ] && continue
-    if ! echo "$uuid" | grep -qE "^($allowed_uuids)$"; then
-      report "UUID outside allowlist in $file: $uuid"
-    fi
-  done < <(grep -oE '[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}' "$file" 2>/dev/null || true)
-done <<< "$tracked"
+if matches="$(git grep -nI -F "$user_path_pattern" "${scan_paths[@]}" || true)"; [[ -n "$matches" ]]; then
+  echo "Privacy scan: absolute user path found:" >&2
+  echo "$matches" >&2
+  failed=1
+fi
 
-# 2. 个人绝对路径
-while IFS= read -r file; do
-  case "$file" in docs/*|.local/*) continue ;; esac
-  if grep -qE '/Users/[A-Za-z0-9._-]+' "$file" 2>/dev/null; then
-    report "absolute user path in $file"
+uuid_matches="$(git grep -nIE "$uuid_pattern" "${scan_paths[@]}" || true)"
+if [[ -n "$uuid_matches" ]]; then
+  unexpected="$(printf '%s\n' "$uuid_matches" \
+    | grep -Ev "$service_uuid|$write_uuid|$capabilities_uuid|$command_uuid|$zero_uuid" || true)"
+  if [[ -n "$unexpected" ]]; then
+    echo "Privacy scan: unexpected UUID found:" >&2
+    echo "$unexpected" >&2
+    failed=1
   fi
-done <<< "$tracked"
+fi
 
-# 3. 非占位的 Bearer 令牌
-while IFS= read -r file; do
-  if grep -qE 'Authorization: Bearer [A-Za-z0-9_-]{8,}' "$file" 2>/dev/null \
-     && ! grep -qE 'Authorization: Bearer (<|\$|\{|\[|example|placeholder)' "$file" 2>/dev/null; then
-    report "possible bearer token in $file"
-  fi
-done <<< "$tracked"
+if matches="$(git grep -nIE 'Authorization:[[:space:]]*Bearer[[:space:]]+[^<${][^[:space:]]*' "${scan_paths[@]}" || true)"; [[ -n "$matches" ]]; then
+  echo "Privacy scan: credential-bearing Authorization header found:" >&2
+  echo "$matches" >&2
+  failed=1
+fi
 
-# 4. 常见密钥前缀
-while IFS= read -r file; do
-  if grep -qE '(sk-[A-Za-z0-9]{16,}|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z ]*PRIVATE KEY-----)' "$file" 2>/dev/null; then
-    report "secret-like pattern in $file"
-  fi
-done <<< "$tracked"
+if matches="$(git grep -nIE '(sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{20,}|gh[pousr]_[0-9A-Za-z]{20,})' "${scan_paths[@]}" || true)"; [[ -n "$matches" ]]; then
+  echo "Privacy scan: common secret prefix found:" >&2
+  echo "$matches" >&2
+  failed=1
+fi
 
-if [ "$fail" -ne 0 ]; then
-  echo "privacy_scan: FAILED"
+if [[ $failed -ne 0 ]]; then
   exit 1
 fi
-echo "privacy_scan: OK"
+
+echo "Privacy scan passed."

@@ -2,69 +2,303 @@ import Foundation
 import TokenLinkCore
 import TokenLinkProviders
 
-/// 非敏感应用配置。API Key 永远不进 JSON——它们只存在于 Keychain。
+public struct ProviderAccount: Codable, Equatable, Sendable, Identifiable {
+  public let id: UUID
+  public let provider: ProviderID
+  public var label: String
+  public var enabled: Bool
+
+  public init(
+    id: UUID = UUID(),
+    provider: ProviderID,
+    label: String,
+    enabled: Bool = true
+  ) {
+    self.id = id
+    self.provider = provider
+    self.label = label
+    self.enabled = enabled
+  }
+}
+
+public enum WatchFaceTheme: String, Codable, Sendable {
+  case data
+  case pet
+}
+
+public enum WatchWakeMode: String, Codable, Sendable {
+  case raise
+  case tap
+}
+
+public enum WatchHourFormat: String, Codable, Sendable {
+  case system
+  case h12
+  case h24
+}
+
+/// StopWatch v2 preferences. `syncedProviders` defaults to Codex only, which
+/// keeps v1 behavior identical for existing users.
+public struct WatchSettings: Codable, Equatable, Sendable {
+  public var syncedProviders: Set<ProviderID>
+  public var faceTheme: WatchFaceTheme
+  public var wakeMode: WatchWakeMode
+  public var hourFormat: WatchHourFormat
+
+  public init(
+    syncedProviders: Set<ProviderID> = [.codex],
+    faceTheme: WatchFaceTheme = .data,
+    wakeMode: WatchWakeMode = .raise,
+    hourFormat: WatchHourFormat = .system
+  ) {
+    self.syncedProviders = syncedProviders
+    self.faceTheme = faceTheme
+    self.wakeMode = wakeMode
+    self.hourFormat = hourFormat
+  }
+}
+
 public struct AppConfiguration: Codable, Equatable, Sendable {
-  public var enabledProviders: [ProviderID]
+  /// Accounts are the source of truth for provider enablement; ordered, and
+  /// the first account of each provider is its default account.
+  public var accounts: [ProviderAccount]
   public var refreshMinutes: Int
   public var boundDeviceIdentifier: UUID?
   public var codexPath: String?
   public var miniMaxRegion: MiniMaxRegion
   public var glmRegion: GLMRegion
+  /// nil = follow the system language; otherwise an `AppLanguage` raw value.
+  public var appLanguage: String?
+  /// macOS notifications for low quota, resets, and credential failures.
+  public var notificationsEnabled: Bool
+  /// Draws the fair-pace reference marker on quota bars (even-consumption
+  /// baseline, e.g. 6/7 remaining one day into a weekly window).
+  public var fairPaceEnabled: Bool
+  /// Beta: aggregate local CLI transcript token usage for cross-checking
+  /// provider-reported quota.
+  public var betaLocalUsageEnabled: Bool
+  /// StopWatch v2 preferences (theme, wake, hour format, synced providers).
+  public var watchSettings: WatchSettings
+
+  /// Derived from enabled accounts; kept for readable call sites.
+  public var enabledProviders: Set<ProviderID> {
+    Set(accounts.filter(\.enabled).map(\.provider))
+  }
 
   public init(
-    enabledProviders: [ProviderID] = ProviderID.allCases,
-    refreshMinutes: Int = 5,
-    boundDeviceIdentifier: UUID? = nil,
-    codexPath: String? = nil,
-    miniMaxRegion: MiniMaxRegion = .global,
-    glmRegion: GLMRegion = .china
+    accounts: [ProviderAccount],
+    refreshMinutes: Int,
+    boundDeviceIdentifier: UUID?,
+    codexPath: String?,
+    miniMaxRegion: MiniMaxRegion,
+    glmRegion: GLMRegion,
+    appLanguage: String? = nil,
+    notificationsEnabled: Bool = true,
+    fairPaceEnabled: Bool = false,
+    betaLocalUsageEnabled: Bool = false,
+    watchSettings: WatchSettings = WatchSettings()
   ) {
-    self.enabledProviders = enabledProviders
-    self.refreshMinutes = refreshMinutes
+    self.accounts = accounts
+    self.refreshMinutes = min(60, max(1, refreshMinutes))
     self.boundDeviceIdentifier = boundDeviceIdentifier
     self.codexPath = codexPath
     self.miniMaxRegion = miniMaxRegion
     self.glmRegion = glmRegion
+    self.appLanguage = appLanguage
+    self.notificationsEnabled = notificationsEnabled
+    self.fairPaceEnabled = fairPaceEnabled
+    self.betaLocalUsageEnabled = betaLocalUsageEnabled
+    self.watchSettings = watchSettings
+  }
+
+  public init(
+    enabledProviders: Set<ProviderID>,
+    refreshMinutes: Int,
+    boundDeviceIdentifier: UUID?,
+    codexPath: String?,
+    miniMaxRegion: MiniMaxRegion,
+    glmRegion: GLMRegion,
+    appLanguage: String? = nil
+  ) {
+    self.init(
+      accounts: Self.defaultAccounts(for: enabledProviders),
+      refreshMinutes: refreshMinutes,
+      boundDeviceIdentifier: boundDeviceIdentifier,
+      codexPath: codexPath,
+      miniMaxRegion: miniMaxRegion,
+      glmRegion: glmRegion,
+      appLanguage: appLanguage)
+  }
+
+  public static let `default` = AppConfiguration(
+    enabledProviders: Set(ProviderID.allCases),
+    refreshMinutes: 5,
+    boundDeviceIdentifier: nil,
+    codexPath: nil,
+    miniMaxRegion: .global,
+    glmRegion: .global)
+
+  public static func defaultAccounts(for providers: Set<ProviderID>) -> [ProviderAccount] {
+    ProviderID.allCases.filter(providers.contains).map { provider in
+      ProviderAccount(
+        provider: provider,
+        label: ProviderRegistry.displayName(for: provider))
+    }
+  }
+
+  public func defaultAccount(for provider: ProviderID) -> ProviderAccount? {
+    accounts.first { $0.provider == provider }
+  }
+
+  public func isDefaultAccount(_ account: ProviderAccount) -> Bool {
+    defaultAccount(for: account.provider)?.id == account.id
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case accounts
+    case refreshMinutes
+    case boundDeviceIdentifier
+    case codexPath
+    case miniMaxRegion
+    case glmRegion
+    case appLanguage
+    case legacyEnabledProviders = "enabledProviders"
+    case notificationsEnabled
+    case fairPaceEnabled
+    case betaLocalUsageEnabled
+    case watchSettings
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let accounts: [ProviderAccount]
+    if let decoded = try container.decodeIfPresent(
+      [ProviderAccount].self, forKey: .accounts)
+    {
+      accounts = decoded
+    } else if let legacy = try container.decodeIfPresent(
+      [ProviderID].self, forKey: .legacyEnabledProviders)
+    {
+      // Migrate pre-account configs: one default account per enabled provider.
+      accounts = Self.defaultAccounts(for: Set(legacy))
+    } else {
+      accounts = Self.defaultAccounts(for: Set(ProviderID.allCases))
+    }
+    self.init(
+      accounts: accounts,
+      refreshMinutes: try container.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 5,
+      boundDeviceIdentifier: try container.decodeIfPresent(
+        UUID.self, forKey: .boundDeviceIdentifier),
+      codexPath: try container.decodeIfPresent(String.self, forKey: .codexPath),
+      miniMaxRegion: try container.decodeIfPresent(MiniMaxRegion.self, forKey: .miniMaxRegion)
+        ?? .global,
+      glmRegion: try container.decodeIfPresent(GLMRegion.self, forKey: .glmRegion) ?? .global,
+      appLanguage: try container.decodeIfPresent(String.self, forKey: .appLanguage),
+      notificationsEnabled: try container.decodeIfPresent(
+        Bool.self, forKey: .notificationsEnabled) ?? true,
+      fairPaceEnabled: try container.decodeIfPresent(
+        Bool.self, forKey: .fairPaceEnabled) ?? false,
+      betaLocalUsageEnabled: try container.decodeIfPresent(
+        Bool.self, forKey: .betaLocalUsageEnabled) ?? false,
+      watchSettings: try container.decodeIfPresent(
+        WatchSettings.self, forKey: .watchSettings) ?? WatchSettings())
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(accounts, forKey: .accounts)
+    try container.encode(refreshMinutes, forKey: .refreshMinutes)
+    try container.encodeIfPresent(boundDeviceIdentifier, forKey: .boundDeviceIdentifier)
+    try container.encodeIfPresent(codexPath, forKey: .codexPath)
+    try container.encode(miniMaxRegion, forKey: .miniMaxRegion)
+    try container.encode(glmRegion, forKey: .glmRegion)
+    try container.encodeIfPresent(appLanguage, forKey: .appLanguage)
+    try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
+    try container.encode(fairPaceEnabled, forKey: .fairPaceEnabled)
+    try container.encode(betaLocalUsageEnabled, forKey: .betaLocalUsageEnabled)
+    try container.encode(watchSettings, forKey: .watchSettings)
   }
 }
 
-/// 原子写入的配置存储：写入 config.json.tmp 后整体替换，避免半截文件。
 public struct ConfigurationStore: Sendable {
-  public let directory: URL
-
-  public init(directory: URL) {
-    self.directory = directory
+  private let directory: URL
+  private let now: @Sendable () -> Date
+  private var configurationURL: URL {
+    directory.appending(path: "config.json", directoryHint: .notDirectory)
   }
 
-  private var configURL: URL { directory.appending(path: "config.json") }
+  public init(
+    directory: URL,
+    now: @escaping @Sendable () -> Date = { Date() }
+  ) {
+    self.directory = directory
+    self.now = now
+  }
 
-  public func load() -> AppConfiguration {
-    guard let data = try? Data(contentsOf: configURL) else { return AppConfiguration() }
+  public static func applicationSupport() throws -> ConfigurationStore {
+    let root = try FileManager.default.url(
+      for: .applicationSupportDirectory,
+      in: .userDomainMask,
+      appropriateFor: nil,
+      create: true)
+    return ConfigurationStore(
+      directory: root.appending(
+        path: "TokenLink",
+        directoryHint: .isDirectory))
+  }
+
+  public func load() throws -> AppConfiguration {
+    guard FileManager.default.fileExists(atPath: configurationURL.path) else {
+      return .default
+    }
     do {
+      let data = try Data(contentsOf: configurationURL)
       return try JSONDecoder().decode(AppConfiguration.self, from: data)
-    } catch {
-      // 损坏的配置不丢用户现场：改名保留，回退默认值。
-      let stamp = ISO8601DateFormatter().string(from: Date())
-        .replacingOccurrences(of: ":", with: "-")
-      let invalid = directory.appending(path: "config.json.invalid-\(stamp)")
-      try? FileManager.default.moveItem(at: configURL, to: invalid)
-      return AppConfiguration()
+    } catch is DecodingError {
+      let timestamp = Int(now().timeIntervalSince1970)
+      let invalidURL = directory.appending(
+        path: "config.json.invalid-\(timestamp)",
+        directoryHint: .notDirectory)
+      if FileManager.default.fileExists(atPath: invalidURL.path) {
+        try FileManager.default.removeItem(at: invalidURL)
+      }
+      try FileManager.default.moveItem(at: configurationURL, to: invalidURL)
+      return .default
     }
   }
 
   public func save(_ configuration: AppConfiguration) throws {
-    try FileManager.default.createDirectory(
-      at: directory, withIntermediateDirectories: true,
+    let fileManager = FileManager.default
+    try fileManager.createDirectory(
+      at: directory,
+      withIntermediateDirectories: true,
       attributes: [.posixPermissions: 0o700])
-    let data = try JSONEncoder().encode(configuration)
-    let temporary = directory.appending(path: "config.json.tmp")
-    try data.write(to: temporary, options: .atomic)
-    if FileManager.default.fileExists(atPath: configURL.path) {
-      _ = try FileManager.default.replaceItemAt(configURL, withItemAt: temporary)
-    } else {
-      try FileManager.default.moveItem(at: temporary, to: configURL)
+    try fileManager.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: directory.path)
+
+    let temporaryURL = directory.appending(
+      path: "config.json.tmp",
+      directoryHint: .notDirectory)
+    if fileManager.fileExists(atPath: temporaryURL.path) {
+      try fileManager.removeItem(at: temporaryURL)
     }
-    try FileManager.default.setAttributes(
-      [.posixPermissions: 0o600], ofItemAtPath: configURL.path)
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(configuration)
+    try data.write(to: temporaryURL, options: .withoutOverwriting)
+    try fileManager.setAttributes(
+      [.posixPermissions: 0o600],
+      ofItemAtPath: temporaryURL.path)
+
+    if fileManager.fileExists(atPath: configurationURL.path) {
+      _ = try fileManager.replaceItemAt(
+        configurationURL,
+        withItemAt: temporaryURL,
+        backupItemName: nil,
+        options: [])
+    } else {
+      try fileManager.moveItem(at: temporaryURL, to: configurationURL)
+    }
   }
 }
