@@ -1,38 +1,42 @@
-import Foundation
 import ServiceManagement
 
 public enum LoginItemState: Equatable, Sendable {
+  case disabled
   case enabled
   case requiresApproval
-  case notRegistered
+  case unavailable
 }
 
-/// 登录项控制的抽象，测试注入 fake，不触碰真实 SMAppService。
-public protocol LoginItemControlling: Sendable {
-  var status: LoginItemState { get }
-  @discardableResult func register() throws -> LoginItemState
-  func unregister() throws
+@MainActor
+public protocol LoginItemControlling: AnyObject {
+  var state: LoginItemState { get }
+  func setEnabled(_ enabled: Bool) throws -> LoginItemState
 }
 
-public struct LoginItemController: LoginItemControlling {
-  public init() {}
+@MainActor
+public final class LoginItemController: LoginItemControlling {
+  private let service: SMAppService
 
-  public var status: LoginItemState {
-    switch SMAppService.mainApp.status {
-    case .enabled: return .enabled
-    case .requiresApproval: return .requiresApproval
-    default: return .notRegistered
+  public init(service: SMAppService = .mainApp) {
+    self.service = service
+  }
+
+  public var state: LoginItemState {
+    switch service.status {
+    case .notRegistered: .disabled
+    case .enabled: .enabled
+    case .requiresApproval: .requiresApproval
+    case .notFound: .unavailable
+    @unknown default: .unavailable
     }
   }
 
-  /// `.requiresApproval` 不是失败：注册可能已排队，等用户在系统设置里批准。
-  @discardableResult
-  public func register() throws -> LoginItemState {
-    try SMAppService.mainApp.register()
-    return status
-  }
-
-  public func unregister() throws {
-    try SMAppService.mainApp.unregister()
+  public func setEnabled(_ enabled: Bool) throws -> LoginItemState {
+    if enabled {
+      try service.register()
+    } else {
+      try service.unregister()
+    }
+    return state
   }
 }

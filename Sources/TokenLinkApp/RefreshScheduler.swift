@@ -1,25 +1,39 @@
 import Foundation
 
-/// 周期刷新调度：只支持 1/2/5/15/30 分钟，其它值回落到 5 分钟。
-public struct RefreshScheduler: Sendable {
-  public static let allowedMinutes = [1, 2, 5, 15, 30]
-
+@MainActor
+public final class RefreshScheduler {
   public let minutes: Int
-  public var interval: Duration { .seconds(minutes * 60) }
+  public let interval: Duration
+  private var task: Task<Void, Never>?
 
   public init(minutes: Int) {
-    self.minutes = Self.allowedMinutes.contains(minutes) ? minutes : 5
+    let supported = [1, 2, 5, 15, 30]
+    self.minutes = supported.contains(minutes) ? minutes : 5
+    self.interval = .seconds(self.minutes * 60)
   }
 
-  /// 返回一个可取消的周期任务；调用方负责持有与取消。
-  public func start(_ action: @escaping @Sendable () async -> Void) -> Task<Void, Never> {
+  public func start(action: @escaping @MainActor @Sendable () async -> Void) {
+    stop()
     let interval = interval
-    return Task {
+    task = Task { @MainActor in
       while !Task.isCancelled {
-        try? await Task.sleep(for: interval)
+        do {
+          try await Task.sleep(for: interval)
+        } catch {
+          return
+        }
         guard !Task.isCancelled else { return }
         await action()
       }
     }
+  }
+
+  public func stop() {
+    task?.cancel()
+    task = nil
+  }
+
+  deinit {
+    task?.cancel()
   }
 }

@@ -16,7 +16,8 @@ import Testing
     ],
     source: .localAppServer, fetchedAt: now)
   let data = try LegacyWatchProjection.encode(snapshot: snapshot, now: now)
-  let object = try JSONSerialization.jsonObject(with: data) as! [String: Any]
+  let object = try #require(
+    JSONSerialization.jsonObject(with: data) as? [String: Any])
   #expect(object.keys.sorted() == ["remaining_percent", "reset_in_seconds"])
   #expect(object["remaining_percent"] as? Double == 72)
   #expect(object["reset_in_seconds"] as? Int == 900)
@@ -26,7 +27,11 @@ import Testing
   #expect(throws: WatchProjectionError.self) {
     try LegacyWatchProjection.encode(
       snapshot: .init(
-        provider: .kimi, planLabel: nil,
-        windows: [], source: .apiKey, fetchedAt: .distantPast), now: .now)
+        provider: .kimi,
+        planLabel: nil,
+        windows: [],
+        source: .apiKey,
+        fetchedAt: .distantPast),
+      now: .now)
   }
 }

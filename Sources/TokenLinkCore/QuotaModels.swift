@@ -3,6 +3,7 @@ import Foundation
 public enum CredentialSource: String, Codable, Sendable {
   case apiKey
   case cliCredential
+  case environmentVariable
   case localAppServer
 }
 
@@ -16,8 +17,13 @@ public struct QuotaWindow: Codable, Equatable, Identifiable, Sendable {
   public let resetsAt: Date?
 
   public init(
-    id: String, label: String, usedPercent: Double?, remainingPercent: Double,
-    remainingCount: Double?, limitCount: Double?, resetsAt: Date?
+    id: String,
+    label: String,
+    usedPercent: Double?,
+    remainingPercent: Double,
+    remainingCount: Double?,
+    limitCount: Double?,
+    resetsAt: Date?
   ) {
     self.id = id
     self.label = label
@@ -41,8 +47,11 @@ public struct QuotaSnapshot: Codable, Equatable, Sendable {
   }
 
   public init(
-    provider: ProviderID, planLabel: String?, windows: [QuotaWindow],
-    source: CredentialSource, fetchedAt: Date
+    provider: ProviderID,
+    planLabel: String?,
+    windows: [QuotaWindow],
+    source: CredentialSource,
+    fetchedAt: Date
   ) {
     self.provider = provider
     self.planLabel = planLabel

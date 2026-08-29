@@ -6,15 +6,42 @@ import Foundation
 
 public struct URLSessionHTTPClient: HTTPClient {
   private let session: URLSession
-  public init(session: URLSession = .shared) { self.session = session }
 
-  public func data(for request: URLRequest, policy: EndpointPolicy) async throws -> HTTPResponse {
-    guard let url = request.url else { throw ProviderHostError() }
+  public init(session: URLSession = .shared) {
+    self.session = session
+  }
+
+  public func data(
+    for request: URLRequest,
+    policy: EndpointPolicy
+  ) async throws -> HTTPResponse {
+    guard let url = request.url else {
+      throw ProviderHostError()
+    }
     _ = try policy.validate(url)
+
     var boundedRequest = request
     boundedRequest.timeoutInterval = 20
-    let (data, response) = try await session.data(for: boundedRequest)
-    guard let http = response as? HTTPURLResponse else { throw ProviderHostError() }
+    let (data, response) = try await session.data(
+      for: boundedRequest,
+      delegate: RedirectRejectingDelegate())
+    guard let http = response as? HTTPURLResponse else {
+      throw ProviderHostError()
+    }
     return HTTPResponse(data: data, statusCode: http.statusCode)
+  }
+}
+
+final class RedirectRejectingDelegate: NSObject, URLSessionTaskDelegate,
+  @unchecked Sendable
+{
+  func urlSession(
+    _ session: URLSession,
+    task: URLSessionTask,
+    willPerformHTTPRedirection response: HTTPURLResponse,
+    newRequest request: URLRequest,
+    completionHandler: @escaping (URLRequest?) -> Void
+  ) {
+    completionHandler(nil)
   }
 }

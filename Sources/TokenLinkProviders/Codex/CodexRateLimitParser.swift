@@ -1,83 +1,64 @@
 import Foundation
 import TokenLinkCore
 
-public enum CodexRateLimitParserError: Error, Equatable {
-  case invalidJSON
-  case missingPrimary
-  case missingUsedPercent
-  case invalidResetsAt
+public enum CodexRateLimitParseError: Error, Equatable {
+  case missingPrimaryWindow
 }
 
 public enum CodexRateLimitParser {
   public static func parse(data: Data, fetchedAt: Date) throws -> QuotaSnapshot {
-    let envelope = try JSONDecoder().decode(CodexRateLimitEnvelope.self, from: data)
-    let primary = try primaryUsedPercent(from: envelope)
-    let resetsAt = try primaryResetsAt(from: envelope)
-    let window = QuotaWindow(
-      id: "primary",
-      label: "Primary",
-      usedPercent: primary,
-      remainingPercent: 100 - primary,
-      remainingCount: nil,
-      limitCount: nil,
-      resetsAt: resetsAt)
+    let envelope = try JSONDecoder().decode(CodexEnvelope.self, from: data)
+    let window =
+      envelope.result.rateLimitsByLimitID?["codex"]?.primary
+      ?? envelope.result.rateLimits.flatMap { limit in
+        limit.limitID == "codex" ? limit.primary : nil
+      }
+    guard let window else {
+      throw CodexRateLimitParseError.missingPrimaryWindow
+    }
     return QuotaSnapshot(
       provider: .codex,
       planLabel: nil,
-      windows: [window],
+      windows: [
+        QuotaWindow(
+          id: "primary",
+          label: "Primary",
+          usedPercent: window.usedPercent,
+          remainingPercent: 100 - window.usedPercent,
+          remainingCount: nil,
+          limitCount: nil,
+          resetsAt: Date(timeIntervalSince1970: window.resetsAt))
+      ],
       source: .localAppServer,
       fetchedAt: fetchedAt)
   }
+}
 
-  private static func primaryUsedPercent(from envelope: CodexRateLimitEnvelope) throws -> Double {
-    if let direct = envelope.result?.rateLimitsByLimitId?["codex"]?.primary {
-      if let value = direct.usedPercent { return value }
-    }
-    if let legacy = envelope.result?.rateLimits, legacy.limitId == "codex",
-      let primary = legacy.primary, let value = primary.usedPercent
-    {
-      return value
-    }
-    throw CodexRateLimitParserError.missingUsedPercent
-  }
+private struct CodexEnvelope: Decodable {
+  let result: CodexResult
+}
 
-  private static func primaryResetsAt(from envelope: CodexRateLimitEnvelope) throws -> Date? {
-    let raw: Double?
-    if let direct = envelope.result?.rateLimitsByLimitId?["codex"]?.primary {
-      raw = direct.resetsAt
-    } else if let legacy = envelope.result?.rateLimits,
-      legacy.limitId == "codex",
-      let primary = legacy.primary
-    {
-      raw = primary.resetsAt
-    } else {
-      return nil
-    }
-    guard let raw else { return nil }
-    guard raw > 0 else { throw CodexRateLimitParserError.invalidResetsAt }
-    return Date(timeIntervalSince1970: raw)
+private struct CodexResult: Decodable {
+  let rateLimitsByLimitID: [String: CodexLimit]?
+  let rateLimits: CodexLimit?
+
+  enum CodingKeys: String, CodingKey {
+    case rateLimitsByLimitID = "rateLimitsByLimitId"
+    case rateLimits
   }
 }
 
-private struct CodexRateLimitEnvelope: Decodable {
-  let result: CodexRateLimitResult?
+private struct CodexLimit: Decodable {
+  let limitID: String?
+  let primary: CodexWindow?
 
-  struct CodexRateLimitResult: Decodable {
-    let rateLimitsByLimitId: [String: CodexLimitEntry]?
-    let rateLimits: CodexLegacyLimit?
+  enum CodingKeys: String, CodingKey {
+    case limitID = "limitId"
+    case primary
   }
+}
 
-  struct CodexLimitEntry: Decodable {
-    let primary: CodexPrimary?
-  }
-
-  struct CodexLegacyLimit: Decodable {
-    let limitId: String?
-    let primary: CodexPrimary?
-  }
-
-  struct CodexPrimary: Decodable {
-    let usedPercent: Double?
-    let resetsAt: Double?
-  }
+private struct CodexWindow: Decodable {
+  let usedPercent: Double
+  let resetsAt: Double
 }
