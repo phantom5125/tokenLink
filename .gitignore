@@ -146,6 +146,10 @@ vite.config.ts.timestamp-*
 .worktrees/
 .build/
 .swiftpm/
+.venv-pio/
+**/.pio/
+**/.pio-core/
+**/__pycache__/
 *.xcodeproj/
 *.xcworkspace/
 .DS_Store

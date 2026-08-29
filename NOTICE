@@ -9,9 +9,9 @@ TokenLink benefited from DeepSeek Harness (dsh), developed by DeepSeek AI and
 its contributors and made available under the MIT License:
 https://github.com/deepseek-ai/deepseek-harness
 
-TokenLink's M5Stack StopWatch protocol compatibility and firmware roadmap build
-on knowledge shared by codex-micro-stopwatch, copyright 2026 imliubo and
-codex-micro-4-stopwatch contributors, made available under the MIT License:
+The firmware under firmware/stopwatch-c152 is derived from work shared by
+codex-micro-stopwatch, copyright 2026 imliubo and codex-micro-4-stopwatch
+contributors, and remains available under its included MIT License and notice:
 https://github.com/digitsisyph/codex-micro-stopwatch
 
 TokenLink's provider architecture was inspired by CodexBar by Peter Steinberger

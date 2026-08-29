@@ -9,7 +9,8 @@ permissions:
   contents: read
 
 jobs:
-  build-test:
+  macos:
+    name: macOS app
     runs-on: macos-15
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
@@ -39,4 +40,31 @@ jobs:
           path: |
             dist/*.zip
             dist/*.sha256
+          if-no-files-found: error
+
+  firmware:
+    name: C152 firmware
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned PlatformIO
+        run: python -m pip install platformio==6.1.19
+      - name: Test release packager
+        run: python scripts/test_package_firmware_release.py
+      - name: Check Mac/firmware protocol contract
+        run: python scripts/check_firmware_contract.py
+      - name: Build and test C152 firmware
+        run: TOKENLINK_PIO="$(command -v pio)" bash scripts/test_firmware.sh
+      - name: Package C152 artifacts
+        run: TOKENLINK_PIO="$(command -v pio)" bash scripts/build_firmware_artifact.sh
+      - name: Verify release checksums
+        run: cd dist/firmware && sha256sum -c SHA256SUMS
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokenLink-StopWatch-C152
+          path: dist/firmware/*
           if-no-files-found: error

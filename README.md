@@ -20,11 +20,12 @@ M5Stack StopWatch companion. Version 0.2 shows Codex, Claude, Kimi, MiniMax,
 and GLM in one local interface, adds a negotiated watch protocol v2, and keeps
 the existing protocol-v1 firmware path byte-compatible.
 
-> Status: early development. Provider APIs can change without notice. The exact
-> v0.2 release candidate has been flashed to a C152 and exercised end to end with
-> the installed Mac app, including protocol-v2 negotiation, aggregate active count,
-> and three-provider sync. Physical touch/layout sign-off and long-duration power
-> behavior remain follow-up validation.
+> Status: early development. Provider APIs can change without notice. The v0.2
+> interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
+> active count, three-provider sync, and physical UI feedback. Version 0.2.1 moves
+> that firmware into this repository; the rebuilt migration image has passed its
+> C152 flash, serial boot, and live three-provider v2 regression. Long-duration
+> power behavior remains follow-up validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
 endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
@@ -32,6 +33,16 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-30 — C152 firmware moved into TokenLink.** The exact default wireless
+  source, simulator tests, partition layout, MIT/OFL notices, and a pinned
+  PlatformIO build now live under `firmware/stopwatch-c152`. A fresh checkout can
+  build both Mac and firmware release assets without another repository.
+- **2026-08-30 — The monorepo image passed its first real sync.** TokenLink 0.2.1
+  build 3 paired with the freshly flashed C152 image and delivered live Codex,
+  Kimi, and MiniMax protocol-v2 updates from the installed Mac app.
+- **2026-08-30 — Firmware releases became machine-readable.** TokenLink now
+  generates a merged C152 image, split-image archive, SHA-256 checksums, and a
+  product/protocol manifest that a future local firmware server can consume.
 - **2026-08-30 — The exact release candidate passed its first C152 end-to-end
   run.** Firmware revision `0d5bf6c`, archived with the TokenLink RC, booted after
   a hash-verified flash; TokenLink 0.2.0 negotiated v2 and sent live Codex, Kimi,
@@ -96,40 +107,62 @@ enabled independently.
 
 The package script includes SwiftPM resources, creates a release-mode app,
 applies an ad-hoc signature by default, and verifies the resulting bundle. A CI
-development artifact is also produced for each revision. The v0.2.0 RC download
-is Apple-Silicon-only and ad-hoc signed, so building from source remains the
-supported first-run path until a Developer ID-signed, notarized release exists.
+development artifact is also produced for each revision. The current Mac
+download is Apple-Silicon-only and ad-hoc signed, so building from source remains
+the supported first-run path until a Developer ID-signed, notarized release
+exists.
 
 ### With an M5Stack StopWatch C152
 
 1. Complete the Mac-only steps above.
-2. Download `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` and its `.sha256` from the
-   [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1).
-   The same TokenLink release contains a checksummed `-source.zip` if you prefer
-   to build the exact verified firmware revision yourself. Verify the checksum,
-   resolve and confirm the exact Espressif serial port, then flash the C152-only
-   merged image at offset `0x0`. The source archive contains the PlatformIO build
-   procedure; M5Stack documents the
-   [factory-recovery path](https://docs.m5stack.com/en/guide/restore_factory/stopwatch).
-3. In TokenLink, open **Control Center → StopWatch**, scan, select the exact
+2. Install the pinned firmware tool and build everything from this checkout:
+
+   ```bash
+   python3.12 -m venv .venv-pio
+   .venv-pio/bin/python -m pip install platformio==6.1.19
+   bash scripts/test_firmware.sh
+   bash scripts/build_firmware_artifact.sh
+   ```
+
+   The last command produces a C152-only merged image at offset `0x0`, a
+   split-image archive, manifest, and checksums in `dist/firmware/`. A tagged
+   [v0.2.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.1)
+   publishes the same asset classes for users who do not want to compile.
+3. Read M5Stack's
+   [factory-recovery path](https://docs.m5stack.com/en/guide/restore_factory/stopwatch),
+   identify the exact newly connected Espressif `/dev/cu.*` port, and confirm
+   that port immediately before flashing:
+
+   ```bash
+   bash scripts/pio.sh run -d firmware/stopwatch-c152 \
+     -e m5stack-stopwatch --target upload \
+     --upload-port /dev/cu.YOUR_CONFIRMED_C152_PORT
+
+   python3 firmware/stopwatch-c152/scripts/serial_probe.py \
+     /dev/cu.YOUR_CONFIRMED_C152_PORT --seconds 30 \
+     --expect CODEX_MICRO_STOPWATCH_READY
+   ```
+
+4. In TokenLink, open **Control Center → StopWatch**, scan, select the exact
    device, bind it, and press **Sync watch now**.
 
 Do not flash the C152 image to another M5Stack model, and do not expect the
-four-page UI from protocol-v1 firmware. The RC image is a development artifact;
-physical touch/layout and power sign-off are still pending.
+four-page UI from protocol-v1 firmware. Never copy a serial port from another
+user's command or documentation.
 
 ### Verify a source checkout
 
 ```bash
 swift build
 bash scripts/test.sh
+bash scripts/test_firmware.sh
 bash scripts/build_release_artifact.sh
+bash scripts/build_firmware_artifact.sh
 ```
 
-The last command writes a versioned `.zip` and SHA-256 checksum under `dist/`
-and verifies that the archive still contains its executable, Info.plist,
-resource bundle, and valid signature. Maintainer signing, notarization, and
-publication steps are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
+The two artifact commands write independently checksummed Mac and C152 assets
+under `dist/`. Maintainer signing, notarization, hardware gates, and publication
+steps are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Requirements
 
@@ -138,7 +171,8 @@ publication steps are documented in [`docs/RELEASING.md`](docs/RELEASING.md).
   build the app; the included test wrapper handles CLT installations whose
   Swift Testing search paths are incomplete)
 - A working `codex` CLI for Codex quota
-- Optional M5Stack StopWatch C152 running matching protocol-v2 firmware
+- Optional M5Stack StopWatch C152; building its firmware needs Python 3.12 and
+  the repository-pinned PlatformIO Core 6.1.19
 
 ## Provider setup
 
@@ -284,6 +318,10 @@ TokenLinkApp        SwiftUI/AppKit state, settings, Keychain, diagnostics
   ├─ TokenLinkCore       provider-neutral quota and refresh state
   ├─ TokenLinkProviders  Codex/Claude/Kimi/MiniMax/GLM adapters and host policy
   └─ TokenLinkDevice     v1/v2 projection, negotiation, commands, CoreBluetooth
+
+firmware/
+  ├─ catalog.json              product/build/protocol registry
+  └─ stopwatch-c152/           PlatformIO C152 firmware, UI, and native tests
 ```
 
 Each provider owns a fixture-tested parser and emits a shared `QuotaSnapshot`.
@@ -294,12 +332,14 @@ v2 projections and never receives provider credentials.
 
 The Mac side implements payload projection, capability negotiation, v1 fallback,
 provider rotation, three visible work-item slots, a full active-task count,
-settings, payload preview, and a watch-to-Mac command channel. The companion
-firmware work — four watch pages, touch focus commands, optional pet theme, and
-raise-to-wake — lives in the separate `codex-micro-stopwatch` project. The exact
-release candidate now has a verified C152 flash, boot, protocol-v2 exchange, and
-multi-provider sync; physical layout/touch review and the 24-hour power soak are
-not yet signed off.
+settings, payload preview, and a watch-to-Mac command channel. The matching
+four-page C152 firmware, touch focus commands, optional pet theme, raise-to-wake,
+and host-native tests now live in `firmware/stopwatch-c152`. The firmware subtree
+is independently licensed under MIT and speaks the same v1/v2 contract used by
+`TokenLinkDevice`. The previous release candidate has a verified C152 flash,
+boot, protocol-v2 exchange, multi-provider sync, and user-observed UI iteration;
+the v0.2.1 rebuild now has its own flash, boot, and live-sync regression record.
+Physical UI confirmation and the 24-hour power soak remain separate gates.
 
 ## Contributing
 
@@ -310,6 +350,8 @@ issue proposal. See [CONTRIBUTING.md](CONTRIBUTING.md), the
 
 ## License and acknowledgements
 
-TokenLink is licensed under the [Apache License 2.0](LICENSE). Required
-attributions and development acknowledgements are in [NOTICE](NOTICE), and
-brand-use boundaries are in [TRADEMARKS.md](TRADEMARKS.md).
+TokenLink's Mac and shared source are licensed under the
+[Apache License 2.0](LICENSE). The imported C152 firmware retains its own
+[MIT license](firmware/stopwatch-c152/LICENSE) and Space Mono retains its OFL.
+Required attributions are in [NOTICE](NOTICE), and brand-use boundaries are in
+[TRADEMARKS.md](TRADEMARKS.md).

@@ -1,5 +1,9 @@
 # TokenLink macOS 管控中枢 v0.1 设计规范
 
+> **v0.2.1 迁移说明：** 本文提到的 `codex-micro-stopwatch` 是早期兼容性来源，不是
+> 当前构建依赖。默认 C152 固件现位于 `firmware/stopwatch-c152`，并在子树内保留
+> MIT attribution；Mac 与固件从同一个 TokenLink tag 构建。
+
 **历史快照：** 本文记录 2026-08-19 的 v0.1 设计决策，其中许可证和
 文件名以当时状态为准；当前许可证、通知与贡献规则以仓库根目录文件为准。
 

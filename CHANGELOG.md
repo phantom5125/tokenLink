@@ -4,6 +4,21 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## 0.2.1 — 2026-08-30
+
+- Moved the exact default wireless M5Stack StopWatch C152 firmware source into
+  `firmware/stopwatch-c152`, retaining its MIT and Space Mono OFL notices.
+- Added a repository-local, pinned PlatformIO build; nine native firmware tests;
+  an explicit 16 MB partition table; and CI coverage independent of any external
+  firmware checkout.
+- Added deterministic C152 release packaging: a merged image, a split-image
+  archive, firmware/server manifests, and SHA-256 checksums.
+- Added one-tag release automation for both the macOS development artifact and
+  C152 assets. The Mac archive remains ad-hoc signed until Developer ID signing
+  and notarization are configured.
+- Documented a single-repository Quick Start for Mac-only users, C152 builders,
+  and future protocol-compatible firmware targets.
+
 ## 0.2.0 — 2026-08-30
 
 - Added Claude quota, multiple provider accounts, three UI languages, burn-rate

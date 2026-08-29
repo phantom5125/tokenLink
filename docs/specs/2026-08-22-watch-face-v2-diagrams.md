@@ -45,7 +45,7 @@ flowchart TB
     end
   end
 
-  subgraph Watch["手表固件 codex-micro-stopwatch（C152）"]
+  subgraph Watch["TokenLink firmware/stopwatch-c152（C152）"]
     FACE["表盘页面<br/>P0 主页 · P1 额度 · P2 会话 · P3 系统"]
     PET["宠物主题（可选，默认关）"]
     INPUT["左右键 · 中央触摸盘 · 全屏滑动"]

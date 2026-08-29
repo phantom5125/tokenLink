@@ -1,0 +1,83 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  macos:
+    name: macOS development artifact
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tag version
+        run: |
+          version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/Info.plist)"
+          test "v$version" = "$GITHUB_REF_NAME"
+      - name: Build and verify Mac archive
+        run: bash scripts/build_release_artifact.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-release
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error
+
+  firmware:
+    name: C152 firmware artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install pinned PlatformIO
+        run: python -m pip install platformio==6.1.19
+      - name: Verify tag version
+        run: |
+          version="$(sed -n 's/.*kFirmwareVersion\[\] = "\([0-9][0-9.]*\)-tokenlink".*/\1/p' firmware/stopwatch-c152/include/CodexMicroBle.h)"
+          test "v$version" = "$GITHUB_REF_NAME"
+      - name: Build, test, and package C152 firmware
+        run: |
+          export TOKENLINK_PIO="$(command -v pio)"
+          python scripts/test_package_firmware_release.py
+          python scripts/check_firmware_contract.py
+          bash scripts/test_firmware.sh
+          bash scripts/build_firmware_artifact.sh
+      - name: Verify release checksums
+        run: cd dist/firmware && sha256sum -c SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-release
+          path: dist/firmware/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish GitHub prerelease
+    needs: [macos, firmware]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: "*-release"
+          path: release-assets
+          merge-multiple: true
+      - name: Publish checksummed assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          release-assets/*
+          --verify-tag
+          --prerelease
+          --title "TokenLink ${GITHUB_REF_NAME#v}"
+          --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
