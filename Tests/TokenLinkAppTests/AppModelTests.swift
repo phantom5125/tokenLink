@@ -11,6 +11,37 @@ private actor CountingRefresher: AppRefreshing {
   func refresh() async { count += 1 }
 }
 
+private actor AppCostProbe {
+  private(set) var authoritativeCalls = 0
+  private(set) var estimateCalls = 0
+
+  func authoritative(
+    _ source: AuthoritativeCostSource
+  ) -> Result<AuthoritativeCostSnapshot, ProviderFailure> {
+    authoritativeCalls += 1
+    return .success(
+      AuthoritativeCostSnapshot(
+        provider: source.provider,
+        balances: [AccountBalance(currency: "USD", available: 50)],
+        fetchedAt: Date(timeIntervalSince1970: 1_000)))
+  }
+
+  func estimate(_ provider: ProviderID) -> Result<EstimatedCostSnapshot, ProviderFailure> {
+    estimateCalls += 1
+    let date = Date(timeIntervalSince1970: 1_000)
+    return .success(
+      EstimatedCostSnapshot(
+        provider: provider,
+        period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+        lineItems: [],
+        totals: [],
+        unknownModelIDs: [],
+        catalogVersion: "test",
+        catalogEffectiveDate: date,
+        scannedAt: date))
+  }
+}
+
 private actor StateSequenceLoader {
   private var states: [[UUID: ProviderState]]
 
@@ -881,4 +912,128 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
   await model.refreshCredentialStates()
   #expect(await claudeReader.readCount == 1)
   #expect(model.configuration.claudeCredentialAccessAuthorized == false)
+}
+
+@MainActor @Test func costOnlyProvidersNeverEnterQuotaOrWatchPipelines() throws {
+  // Catches an all-provider enumeration leaking cost-only accounts into quota or BLE.
+  var configuration = AppConfiguration.default
+  let openRouter = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  let deepSeek = ProviderAccount(provider: .deepseek, label: "DeepSeek")
+  configuration.accounts += [openRouter, deepSeek]
+  configuration.watchSettings.syncedProviders.formUnion([.openrouter, .deepseek])
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration)
+
+  #expect(
+    AppModel.quotaAccounts(in: configuration).map(\.provider)
+      == [.codex, .kimi, .minimax, .glm])
+  #expect(model.orderedProviderRows.map(\.id) == [.codex, .kimi, .minimax, .glm])
+  #expect(model.accountGroups.allSatisfy { $0.provider != .openrouter && $0.provider != .deepseek })
+  #expect(model.costAccountGroups.map(\.provider) == [.openrouter, .deepseek])
+  #expect(!model.enabledWatchProviders.contains(.openrouter))
+  #expect(!model.enabledWatchProviders.contains(.deepseek))
+  #expect(model.enabledWatchProviders == [.codex])
+  #expect(model.watchEligibleProviders == [.codex, .kimi, .minimax, .glm])
+  #expect(throws: ProviderFailure.self) {
+    try model.setWatchSyncedProvider(.openrouter, enabled: true)
+  }
+}
+
+@MainActor @Test func disabledCostsStartNoWorkThroughQuotaRefreshes() async {
+  // Catches app start, scheduler setup, or quota refresh accidentally triggering cost I/O.
+  var configuration = AppConfiguration.default
+  let account = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  configuration.accounts.append(account)
+  let probe = AppCostProbe()
+  let dashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: account.id, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { Date(timeIntervalSince1970: 1_000) }),
+    authoritativeLoader: { await probe.authoritative($0) },
+    estimateLoader: { await probe.estimate($0) },
+    now: { Date(timeIntervalSince1970: 1_000) })
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.start()
+  await model.refreshManually()
+  model.stop()
+
+  #expect(await probe.authoritativeCalls == 0)
+  #expect(await probe.estimateCalls == 0)
+  #expect(model.costDashboard.authoritativeRows.isEmpty)
+}
+
+@MainActor @Test func betaCostsEnableExplicitLoadDisableAndPreserveCredential() async throws {
+  // Catches eager scans on enable, lost metric defaults, or credential deletion on disable.
+  var configuration = AppConfiguration.default
+  let account = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  configuration.accounts.append(account)
+  let keychain = AppModelFakeKeychain()
+  let vault = KeychainVault(client: keychain, kimiTokenReader: NoCLITokenReader())
+  let probe = AppCostProbe()
+  let dashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: account.id, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { Date(timeIntervalSince1970: 1_000) }),
+    authoritativeLoader: { await probe.authoritative($0) },
+    estimateLoader: { await probe.estimate($0) },
+    now: { Date(timeIntervalSince1970: 1_000) })
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault,
+    costDashboard: dashboard)
+  try await model.setAPIKey("management-key", for: account.id)
+
+  try await model.setBetaCostsEnabled(true)
+  #expect(model.configuration.betaCostsEnabled)
+  #expect(model.configuration.menuBarCostMetric == .localEstimate(.codex))
+  #expect(await probe.authoritativeCalls == 0)
+  #expect(await probe.estimateCalls == 0)
+
+  await model.loadCostsIfNeeded()
+  #expect(await probe.authoritativeCalls == 1)
+  #expect(await probe.estimateCalls == 1)
+  #expect(model.costDashboard.authoritativeRows.count == 1)
+  try model.setMenuBarCostMetric(
+    .authoritativeBalance(accountID: account.id, currency: "USD"))
+
+  try await model.setBetaCostsEnabled(false)
+  #expect(model.configuration.menuBarCostMetric == .none)
+  #expect(model.costDashboard.authoritativeRows.isEmpty)
+  #expect(await keychain.value(for: "openrouter") == "management-key")
+  await model.refreshCosts(force: true)
+  #expect(await probe.authoritativeCalls == 1)
+}
+
+@MainActor @Test func costAccountRemovalPromotesNamespacedCredential() async throws {
+  // Catches cost-only accounts bypassing the existing default-key promotion semantics.
+  var configuration = AppConfiguration.default
+  let defaultAccount = ProviderAccount(provider: .deepseek, label: "DeepSeek")
+  configuration.accounts.append(defaultAccount)
+  let keychain = AppModelFakeKeychain()
+  let vault = KeychainVault(client: keychain, kimiTokenReader: NoCLITokenReader())
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault)
+  try await model.setAPIKey("default-cost-key", for: defaultAccount.id)
+  let second = try model.addAccount(provider: .deepseek, label: "Work")
+  try await model.setAPIKey("work-cost-key", for: second.id)
+
+  try await model.removeAccount(id: defaultAccount.id)
+
+  #expect(await keychain.value(for: "deepseek") == "work-cost-key")
+  #expect(await keychain.value(for: "deepseek.\(second.id.uuidString)") == nil)
+  #expect(model.configuration.defaultAccount(for: .deepseek)?.id == second.id)
 }

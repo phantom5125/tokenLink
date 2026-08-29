@@ -44,6 +44,19 @@ struct ProvidersView: View {
           providerSection(provider)
         }
 
+        VStack(alignment: .leading, spacing: 5) {
+          Text("Authoritative cost providers (Beta)")
+            .font(.title2.bold())
+          Text("Opt-in provider balances. Cost refresh remains separate from quota refresh.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .padding(.top, 8)
+
+        ForEach(ProviderRegistry.authoritativeCostProviderIDs, id: \.self) { provider in
+          costProviderSection(provider)
+        }
+
         if let message {
           Text(message)
             .font(.caption)
@@ -109,6 +122,80 @@ struct ProvidersView: View {
     .padding(14)
     .frame(maxWidth: .infinity, alignment: .leading)
     .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
+  }
+
+  @ViewBuilder
+  private func costProviderSection(_ provider: ProviderID) -> some View {
+    VStack(alignment: .leading, spacing: 16) {
+      HStack(spacing: 12) {
+        ProviderMark(provider: provider, size: 42)
+        VStack(alignment: .leading, spacing: 2) {
+          Text(AppModel.displayName(for: provider))
+            .font(.headline)
+          Text("Authoritative balance · Beta")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Toggle(
+          model.text(.providersEnabled),
+          isOn: Binding(
+            get: { model.configuration.enabledProviders.contains(provider) },
+            set: { enabled in
+              do { try model.setProvider(provider, enabled: enabled) } catch {
+                message = error.localizedDescription
+              }
+            })
+        )
+        .toggleStyle(.switch)
+        .labelsHidden()
+      }
+
+      Divider()
+      let group = model.costAccountGroups.first { $0.provider == provider }
+      ForEach(group?.accounts ?? []) { account in
+        accountRow(account)
+        if account.id != group?.accounts.last?.id {
+          Divider()
+        }
+      }
+      costCredentialHelp(provider)
+      addAccountSection(provider)
+    }
+    .padding(20)
+    .background(.background, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+    .overlay {
+      RoundedRectangle(cornerRadius: 16, style: .continuous)
+        .strokeBorder(.quaternary)
+    }
+  }
+
+  @ViewBuilder
+  private func costCredentialHelp(_ provider: ProviderID) -> some View {
+    switch provider {
+    case .openrouter:
+      Text(
+        "Use an explicit Management Key for account credits; a regular API key may provide only current-key spend."
+      )
+      .font(.caption)
+      .foregroundStyle(.secondary)
+      Link(
+        model.text(.providersGetKey),
+        destination: URL(string: "https://openrouter.ai/settings/keys")!
+      )
+      .font(.caption)
+    case .deepseek:
+      Text("Use an explicit DeepSeek API key for authoritative multi-currency balances.")
+        .font(.caption)
+        .foregroundStyle(.secondary)
+      Link(
+        model.text(.providersGetKey),
+        destination: URL(string: "https://platform.deepseek.com/api_keys")!
+      )
+      .font(.caption)
+    default:
+      EmptyView()
+    }
   }
 
   @ViewBuilder
@@ -486,7 +573,7 @@ struct ProvidersView: View {
 
   private func loadKeyHints() async {
     var hints: [UUID: String] = [:]
-    for group in model.accountGroups {
+    for group in model.accountGroups + model.costAccountGroups {
       for account in group.accounts {
         hints[account.id] = await model.keyHint(for: account.id)
       }

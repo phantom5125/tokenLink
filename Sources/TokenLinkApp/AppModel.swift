@@ -114,6 +114,7 @@ public final class AppModel {
   public private(set) var lastWatchSyncFailureAt: Date?
   public private(set) var lastWatchFocusOutcome: WatchFocusOutcome?
   public private(set) var lastWatchFocusAt: Date?
+  public private(set) var costDashboard: CostDashboardModel
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -141,6 +142,7 @@ public final class AppModel {
   @ObservationIgnored private var notificationPolicy = NotificationPolicy()
   @ObservationIgnored private let notificationManager: (any NotificationManaging)?
   @ObservationIgnored private let localUsageObserver: LocalUsageObserver?
+  @ObservationIgnored private let costDashboardBuilder: ((AppConfiguration) -> CostDashboardModel)?
   @ObservationIgnored private let workItemStore: WorkItemStore
   @ObservationIgnored private let codexWorkItemTracker: CodexWorkItemTracker?
   @ObservationIgnored private let codexDesktopActivator: any CodexDesktopActivating
@@ -171,6 +173,8 @@ public final class AppModel {
     loginController: LoginItemController? = nil,
     notificationManager: (any NotificationManaging)? = nil,
     localUsageObserver: LocalUsageObserver? = nil,
+    costDashboard: CostDashboardModel? = nil,
+    costDashboardBuilder: ((AppConfiguration) -> CostDashboardModel)? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
     codexWorkItemTracker: CodexWorkItemTracker? = nil,
     codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator(),
@@ -188,6 +192,19 @@ public final class AppModel {
     self.loginController = loginController
     self.notificationManager = notificationManager
     self.localUsageObserver = localUsageObserver
+    self.costDashboard =
+      costDashboard
+      ?? CostDashboardModel(
+        enabled: configuration.betaCostsEnabled,
+        authoritativeSources: [],
+        estimateProviders: [],
+        authoritativeLoader: { _ in
+          .failure(.configuration("No authoritative cost source is configured."))
+        },
+        estimateLoader: { _ in
+          .failure(.configuration("No local cost source is configured."))
+        })
+    self.costDashboardBuilder = costDashboardBuilder
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
     self.codexDesktopActivator = codexDesktopActivator
@@ -225,10 +242,20 @@ public final class AppModel {
     let vault = KeychainVault()
     let http = URLSessionHTTPClient()
     let store = ProviderStore()
+    let localUsageObserver = LocalUsageObserver()
+    let catalog = try? PriceCatalog.bundled()
     let makeCoordinator: @Sendable (AppConfiguration) -> RefreshCoordinator = { configuration in
       RefreshCoordinator(
         providers: makeProviders(configuration: configuration, http: http, vault: vault),
         store: store)
+    }
+    let makeCostDashboard: (AppConfiguration) -> CostDashboardModel = { configuration in
+      Self.makeCostDashboard(
+        configuration: configuration,
+        http: http,
+        vault: vault,
+        observer: localUsageObserver,
+        catalog: catalog)
     }
     return AppModel(
       refresher: makeCoordinator(configuration),
@@ -246,7 +273,9 @@ public final class AppModel {
       // running unpackaged (e.g. `swift run`).
       notificationManager: Bundle.main.bundleURL.pathExtension == "app"
         ? SystemNotificationManager() : NullNotificationManager(),
-      localUsageObserver: LocalUsageObserver(),
+      localUsageObserver: localUsageObserver,
+      costDashboard: makeCostDashboard(configuration),
+      costDashboardBuilder: makeCostDashboard,
       codexWorkItemTracker: CodexWorkItemTracker(
         executable: CodexExecutableResolver.resolve(configuredPath: configuration.codexPath),
         transport: ProcessAppServerTransport(
@@ -259,10 +288,7 @@ public final class AppModel {
     vault: any CredentialReader
   ) -> [AccountProvider] {
     var providers: [AccountProvider] = []
-    for account in configuration.accounts where account.enabled {
-      guard ProviderRegistry.capabilities(for: account.provider).contains(.quota) else {
-        continue
-      }
+    for account in quotaAccounts(in: configuration) {
       let isDefault = configuration.isDefaultAccount(account)
       // Codex and Claude rely on local CLI sign-ins and stay single-instance.
       if account.provider == .codex || account.provider == .claude, !isDefault { continue }
@@ -303,6 +329,93 @@ public final class AppModel {
     return providers
   }
 
+  nonisolated static func quotaAccounts(
+    in configuration: AppConfiguration
+  ) -> [ProviderAccount] {
+    configuration.accounts.filter {
+      $0.enabled && ProviderRegistry.capabilities(for: $0.provider).contains(.quota)
+    }
+  }
+
+  private static func makeCostDashboard(
+    configuration: AppConfiguration,
+    http: any HTTPClient,
+    vault: KeychainVault,
+    observer: LocalUsageObserver,
+    catalog: PriceCatalog?
+  ) -> CostDashboardModel {
+    var providers: [AccountCostProvider] = []
+    for account in configuration.accounts where account.enabled {
+      guard ProviderRegistry.capabilities(for: account.provider).contains(.authoritativeCost)
+      else { continue }
+      let credentialAccount = KeychainVault.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: configuration.isDefaultAccount(account))
+      let provider: any AuthoritativeCostProvider
+      switch account.provider {
+      case .openrouter:
+        provider = OpenRouterCostProvider(
+          credentialAccount: credentialAccount,
+          http: http,
+          credentials: vault)
+      case .deepseek:
+        provider = DeepSeekCostProvider(
+          credentialAccount: credentialAccount,
+          http: http,
+          credentials: vault)
+      default:
+        continue
+      }
+      providers.append(AccountCostProvider(accountID: account.id, provider: provider))
+    }
+    let sources = providers.map {
+      AuthoritativeCostSource(accountID: $0.accountID, provider: $0.provider.id)
+    }
+    let costProviders = providers
+    let estimateProviders = ProviderRegistry.localCostEstimateProviderIDs
+    let estimator = catalog.map {
+      LocalCostEstimator(observer: observer, catalog: $0)
+    }
+    return CostDashboardModel(
+      enabled: configuration.betaCostsEnabled,
+      authoritativeSources: sources,
+      estimateProviders: estimateProviders,
+      authoritativeLoader: { source in
+        guard let entry = costProviders.first(where: { $0.accountID == source.accountID }) else {
+          return .failure(.configuration("Cost provider configuration is unavailable."))
+        }
+        return await entry.provider.fetch()
+      },
+      estimateLoader: { provider in
+        guard let estimator else {
+          return .failure(.configuration("The bundled price catalog is unavailable."))
+        }
+        let task = Task.detached(priority: .utility) {
+          () -> Result<EstimatedCostSnapshot, ProviderFailure> in
+          do {
+            try Task.checkCancellation()
+            let through = Date()
+            return .success(
+              try estimator.estimate(
+                provider: provider,
+                since: through.addingTimeInterval(-7 * 86_400),
+                through: through))
+          } catch is CancellationError {
+            return .failure(.timeout("Local cost scan was cancelled."))
+          } catch {
+            return .failure(
+              .init(kind: .localRead, message: "Local usage could not be read."))
+          }
+        }
+        return await withTaskCancellationHandler {
+          await task.value
+        } onCancel: {
+          task.cancel()
+        }
+      })
+  }
+
   /// Enabled accounts grouped by provider, in `ProviderID.allCases` order.
   public var accountGroups: [ProviderAccountGroup] {
     ProviderRegistry.quotaProviderIDs.compactMap { provider in
@@ -322,6 +435,39 @@ public final class AppModel {
         provider: provider,
         displayName: Self.displayName(for: provider),
         accounts: rows)
+    }
+  }
+
+  public var costAccountGroups: [ProviderAccountGroup] {
+    ProviderRegistry.authoritativeCostProviderIDs.compactMap { provider in
+      let rows =
+        configuration.accounts
+        .filter { $0.provider == provider && $0.enabled }
+        .map { account in
+          AccountRow(
+            id: account.id,
+            provider: provider,
+            label: account.label,
+            isDefault: configuration.isDefaultAccount(account),
+            state: ProviderState(phase: .disabled))
+        }
+      guard !rows.isEmpty else { return nil }
+      return ProviderAccountGroup(
+        provider: provider,
+        displayName: Self.displayName(for: provider),
+        accounts: rows)
+    }
+  }
+
+  public var watchEligibleProviders: [ProviderID] {
+    ProviderRegistry.quotaProviderIDs.filter { provider in
+      configuration.defaultAccount(for: provider)?.enabled == true
+    }
+  }
+
+  public var enabledWatchProviders: [ProviderID] {
+    watchEligibleProviders.filter { provider in
+      configuration.watchSettings.syncedProviders.contains(provider)
     }
   }
 
@@ -547,7 +693,11 @@ public final class AppModel {
       label: trimmed.isEmpty ? Self.displayName(for: provider) : trimmed)
     configuration.accounts.append(account)
     try saveConfiguration()
-    rebuildRefresher(reason: "Account added; refreshing")
+    if ProviderRegistry.capabilities(for: provider).contains(.quota) {
+      rebuildRefresher(reason: "Account added; refreshing")
+    } else {
+      rebuildCostDashboard()
+    }
     Task { await refreshCredentialStates() }
     return account
   }
@@ -575,7 +725,11 @@ public final class AppModel {
       }
     }
     try saveConfiguration()
-    rebuildRefresher(reason: "Account removed; refreshing")
+    if ProviderRegistry.capabilities(for: account.provider).contains(.quota) {
+      rebuildRefresher(reason: "Account removed; refreshing")
+    } else {
+      rebuildCostDashboard()
+    }
     await refreshCredentialStates()
     record("Removed \(Self.displayName(for: account.provider)) account")
   }
@@ -736,11 +890,15 @@ public final class AppModel {
         configuration.accounts[index].enabled = false
       }
     }
+    let capabilities = ProviderRegistry.capabilities(for: provider)
     try saveConfiguration()
     if provider == .claude {
       rebuildRefresher(reason: "Claude provider setting applied")
-    } else {
+    } else if capabilities.contains(.quota) {
       configurationRestartRequired = true
+    }
+    if capabilities.contains(.authoritativeCost) {
+      rebuildCostDashboard()
     }
   }
 
@@ -885,6 +1043,9 @@ public final class AppModel {
   }
 
   public func setWatchSyncedProvider(_ provider: ProviderID, enabled: Bool) throws {
+    guard ProviderRegistry.capabilities(for: provider).contains(.quota) else {
+      throw ProviderFailure.configuration("Only quota providers can sync to StopWatch.")
+    }
     if enabled {
       configuration.watchSettings.syncedProviders.insert(provider)
     } else {
@@ -930,6 +1091,39 @@ public final class AppModel {
     } else {
       localUsageSummaries = []
     }
+  }
+
+  public func setBetaCostsEnabled(_ enabled: Bool) async throws {
+    configuration.betaCostsEnabled = enabled
+    if enabled, configuration.menuBarCostMetric == .none {
+      configuration.menuBarCostMetric = .localEstimate(.codex)
+    } else if !enabled {
+      configuration.menuBarCostMetric = .none
+    }
+    try saveConfiguration()
+    if enabled {
+      await costDashboard.setEnabled(true)
+    } else {
+      await costDashboard.disable()
+    }
+  }
+
+  public func setMenuBarCostMetric(_ metric: MenuBarCostMetric) throws {
+    guard configuration.betaCostsEnabled || metric == .none else {
+      throw ProviderFailure.configuration("Enable Costs beta before selecting a cost metric.")
+    }
+    configuration.menuBarCostMetric = metric
+    try saveConfiguration()
+  }
+
+  public func loadCostsIfNeeded() async {
+    guard configuration.betaCostsEnabled else { return }
+    await costDashboard.loadIfNeeded()
+  }
+
+  public func refreshCosts(force: Bool) async {
+    guard configuration.betaCostsEnabled else { return }
+    await costDashboard.refreshCosts(force: force)
   }
 
   /// Beta: scans local CLI transcripts (last 7 days) on a background task.
@@ -1016,7 +1210,7 @@ public final class AppModel {
   }
 
   private func hasWatchSyncCandidate(allowStale: Bool) -> Bool {
-    configuration.watchSettings.syncedProviders.contains { provider in
+    enabledWatchProviders.contains { provider in
       guard let account = configuration.defaultAccount(for: provider), account.enabled,
         let state = states[account.id]
       else { return false }
@@ -1066,9 +1260,8 @@ public final class AppModel {
   ) async -> [WatchSyncPolicy.Decision] {
     let negotiated = await bridge.negotiatedProtocol
     var candidates: [(provider: ProviderID, snapshot: QuotaSnapshot)] = []
-    for provider in ProviderID.allCases {
-      guard configuration.watchSettings.syncedProviders.contains(provider),
-        let account = configuration.defaultAccount(for: provider),
+    for provider in enabledWatchProviders {
+      guard let account = configuration.defaultAccount(for: provider),
         account.enabled,
         let state = states[account.id],
         state.phase == .healthy || (allowStale && state.phase == .stale),
@@ -1385,6 +1578,13 @@ public final class AppModel {
     }
     hasSeenNetworkState = true
     networkWasAvailable = available
+  }
+
+  private func rebuildCostDashboard() {
+    guard let costDashboardBuilder else { return }
+    let previous = costDashboard
+    costDashboard = costDashboardBuilder(configuration)
+    Task { await previous.disable() }
   }
 
   public static func displayName(for provider: ProviderID) -> String {
