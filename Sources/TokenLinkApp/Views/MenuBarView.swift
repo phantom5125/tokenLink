@@ -19,6 +19,12 @@ struct MenuBarView: View {
           Text("StopWatch · \(model.deviceStatusText)")
             .font(.caption)
             .foregroundStyle(.secondary)
+          if model.menuBarLabel != "TokenLink" {
+            Text(model.menuBarLabel)
+              .font(.caption2.weight(.medium))
+              .foregroundStyle(.secondary)
+              .monospacedDigit()
+          }
         }
         Spacer()
         if model.isRefreshing {

@@ -39,7 +39,7 @@ struct TokenLinkApplication: App {
         Text(model.menuBarLabel)
       }
       .accessibilityElement(children: .combine)
-      .accessibilityLabel("TokenLink, \(model.menuBarLabel)")
+      .accessibilityLabel(model.menuBarAccessibilityLabel)
       // MenuBarExtra content is lazy. Starting from the always-present label
       // guarantees the first refresh/BLE sync without requiring a click.
       .task { await model.start() }

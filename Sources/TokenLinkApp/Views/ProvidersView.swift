@@ -45,9 +45,9 @@ struct ProvidersView: View {
         }
 
         VStack(alignment: .leading, spacing: 5) {
-          Text("Authoritative cost providers (Beta)")
+          Text(model.text(.providersCostTitle))
             .font(.title2.bold())
-          Text("Opt-in provider balances. Cost refresh remains separate from quota refresh.")
+          Text(model.text(.providersCostSubtitle))
             .font(.subheadline)
             .foregroundStyle(.secondary)
         }
@@ -132,7 +132,7 @@ struct ProvidersView: View {
         VStack(alignment: .leading, spacing: 2) {
           Text(AppModel.displayName(for: provider))
             .font(.headline)
-          Text("Authoritative balance · Beta")
+          Text(model.text(.providersCostBadge))
             .font(.caption)
             .foregroundStyle(.secondary)
         }
@@ -174,18 +174,16 @@ struct ProvidersView: View {
   private func costCredentialHelp(_ provider: ProviderID) -> some View {
     switch provider {
     case .openrouter:
-      Text(
-        "Use an explicit Management Key for account credits; a regular API key may provide only current-key spend."
-      )
-      .font(.caption)
-      .foregroundStyle(.secondary)
+      Text(model.text(.providersOpenRouterCostNote))
+        .font(.caption)
+        .foregroundStyle(.secondary)
       Link(
         model.text(.providersGetKey),
         destination: URL(string: "https://openrouter.ai/settings/keys")!
       )
       .font(.caption)
     case .deepseek:
-      Text("Use an explicit DeepSeek API key for authoritative multi-currency balances.")
+      Text(model.text(.providersDeepSeekCostNote))
         .font(.caption)
         .foregroundStyle(.secondary)
       Link(

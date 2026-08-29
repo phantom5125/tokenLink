@@ -45,19 +45,22 @@ public struct CostDiagnosticSourceMetadata: Equatable, Sendable {
   public let phase: ProviderPhase
   public let errorKind: ProviderErrorKind?
   public let updatedAt: Date?
+  public let catalogVersion: String?
 
   public init(
     provider: ProviderID,
     kind: CostDiagnosticSourceKind,
     phase: ProviderPhase,
     errorKind: ProviderErrorKind?,
-    updatedAt: Date?
+    updatedAt: Date?,
+    catalogVersion: String? = nil
   ) {
     self.provider = provider
     self.kind = kind
     self.phase = phase
     self.errorKind = errorKind
     self.updatedAt = updatedAt
+    self.catalogVersion = catalogVersion
   }
 }
 
@@ -130,7 +133,8 @@ public final class CostDashboardModel {
         kind: .authoritative,
         phase: row.state.phase,
         errorKind: row.state.error?.kind,
-        updatedAt: row.state.snapshot?.fetchedAt)
+        updatedAt: row.state.snapshot?.fetchedAt,
+        catalogVersion: nil)
     }
     let estimated = estimateRows.map { row in
       CostDiagnosticSourceMetadata(
@@ -138,7 +142,8 @@ public final class CostDashboardModel {
         kind: .estimate,
         phase: row.state.phase,
         errorKind: row.state.error?.kind,
-        updatedAt: row.state.snapshot?.scannedAt)
+        updatedAt: row.state.snapshot?.scannedAt,
+        catalogVersion: row.state.snapshot?.catalogVersion)
     }
     return CostDiagnosticMetadata(
       isRefreshing: isRefreshing,

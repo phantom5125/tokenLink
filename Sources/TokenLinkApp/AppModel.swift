@@ -502,8 +502,77 @@ public final class AppModel {
 
   public var menuBarLabel: String {
     guard let highlight else { return "TokenLink" }
-    return
+    let quota =
       "\(Self.displayName(for: highlight.provider)) \(Int(highlight.window.remainingPercent.rounded()))%"
+    guard configuration.betaCostsEnabled, let supplement = menuBarCostSupplement else {
+      return quota
+    }
+    return "\(quota) · \(supplement)"
+  }
+
+  public var menuBarAccessibilityLabel: String {
+    guard let highlight else { return "TokenLink" }
+    let quota = String(
+      format: text(.menubarQuotaAccessibilityFormat),
+      Self.displayName(for: highlight.provider),
+      Int(highlight.window.remainingPercent.rounded()))
+    guard configuration.betaCostsEnabled else { return quota }
+    switch configuration.menuBarCostMetric {
+    case .none:
+      return quota
+    case .localEstimate(let provider):
+      guard let row = costDashboard.estimateRows.first(where: { $0.provider == provider }),
+        Self.canPresentCost(row.state.phase),
+        let totals = row.state.snapshot?.totals,
+        totals.count == 1,
+        let amount = totals.first
+      else { return quota }
+      return String(
+        format: text(.menubarEstimateAccessibilityFormat),
+        quota, CostFormatting.amount(amount))
+    case .authoritativeBalance(let accountID, let currency):
+      guard
+        let row = costDashboard.authoritativeRows.first(where: { $0.id == accountID }),
+        Self.canPresentCost(row.state.phase),
+        let balance = row.state.snapshot?.balances.first(where: {
+          $0.available.currency.caseInsensitiveCompare(currency) == .orderedSame
+        })
+      else { return quota }
+      return String(
+        format: text(.menubarBalanceAccessibilityFormat),
+        quota,
+        Self.displayName(for: row.source.provider),
+        CostFormatting.amount(balance.available))
+    }
+  }
+
+  private var menuBarCostSupplement: String? {
+    switch configuration.menuBarCostMetric {
+    case .none:
+      return nil
+    case .localEstimate(let provider):
+      guard let row = costDashboard.estimateRows.first(where: { $0.provider == provider }),
+        Self.canPresentCost(row.state.phase),
+        let totals = row.state.snapshot?.totals,
+        totals.count == 1,
+        let amount = totals.first
+      else { return nil }
+      return "≈\(CostFormatting.amount(amount))/7d"
+    case .authoritativeBalance(let accountID, let currency):
+      guard
+        let row = costDashboard.authoritativeRows.first(where: { $0.id == accountID }),
+        Self.canPresentCost(row.state.phase),
+        let balance = row.state.snapshot?.balances.first(where: {
+          $0.available.currency.caseInsensitiveCompare(currency) == .orderedSame
+        })
+      else { return nil }
+      return
+        "\(CostFormatting.abbreviation(for: row.source.provider)) \(CostFormatting.amount(balance.available)) left"
+    }
+  }
+
+  private static func canPresentCost(_ phase: ProviderPhase) -> Bool {
+    phase == .healthy || phase == .stale || phase == .refreshing
   }
 
   public var deviceStatusText: String {
@@ -1141,7 +1210,34 @@ public final class AppModel {
   }
 
   public func diagnosticObject() -> [String: Any] {
-    [
+    let costMetadata = costDashboard.diagnosticMetadata
+    let lastCostRefresh: Any =
+      if let value = costMetadata.lastRefreshAt {
+        ISO8601DateFormatter().string(from: value)
+      } else {
+        NSNull()
+      }
+    let costSources: [[String: Any]] = costMetadata.sources.map { source in
+      let errorKind: Any =
+        if let value = source.errorKind?.rawValue { value } else { NSNull() }
+      let updatedAt: Any =
+        if let value = source.updatedAt {
+          ISO8601DateFormatter().string(from: value)
+        } else {
+          NSNull()
+        }
+      let catalogVersion: Any =
+        if let value = source.catalogVersion { value } else { NSNull() }
+      return [
+        "provider": source.provider.rawValue,
+        "kind": source.kind.rawValue,
+        "phase": source.phase.rawValue,
+        "error_kind": errorKind,
+        "updated_at": updatedAt,
+        "catalog_version": catalogVersion,
+      ]
+    }
+    return [
       "generated_at": ISO8601DateFormatter().string(from: now()),
       "configuration": [
         "enabled_providers": configuration.enabledProviders.map(\.rawValue).sorted(),
@@ -1172,6 +1268,12 @@ public final class AppModel {
           "error_kind": errorKind,
         ] as [String: Any]
       },
+      "costs": [
+        "enabled": configuration.betaCostsEnabled,
+        "is_refreshing": costMetadata.isRefreshing,
+        "last_refresh_at": lastCostRefresh,
+        "sources": costSources,
+      ] as [String: Any],
       "device_phase": deviceStatusText,
       "bluetooth": [
         "authorization": bluetoothDiagnostics.authorization.rawValue,
@@ -1195,7 +1297,10 @@ public final class AppModel {
   }
 
   public func exportDiagnostics(to url: URL) throws {
-    try DiagnosticExporter.write(diagnosticObject(), to: url)
+    try DiagnosticExporter.write(
+      diagnosticObject(),
+      to: url,
+      accountLabels: Set(configuration.accounts.map(\.label)))
   }
 
   private func saveConfiguration() throws {
