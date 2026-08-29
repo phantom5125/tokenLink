@@ -1,0 +1,27 @@
+{
+  "data": {
+    "byok_usage": 0,
+    "byok_usage_daily": 0,
+    "byok_usage_monthly": 0,
+    "byok_usage_weekly": 0,
+    "creator_user_id": "user_fixture",
+    "expires_at": "2027-12-31T23:59:59Z",
+    "include_byok_in_limit": false,
+    "is_free_tier": false,
+    "is_management_key": false,
+    "is_provisioning_key": false,
+    "label": "fixture-key",
+    "limit": "100",
+    "limit_remaining": 74.5,
+    "limit_reset": "monthly",
+    "rate_limit": {
+      "interval": "1h",
+      "note": "deprecated",
+      "requests": 1000
+    },
+    "usage": "25.5",
+    "usage_daily": 1.25,
+    "usage_monthly": "12.50",
+    "usage_weekly": "7.25"
+  }
+}
