@@ -1,8 +1,13 @@
 # TokenLink
 
+[![CI](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
+
+<!-- markdownlint-disable MD033 -->
 <p align="center">
   <img src="assets/branding/banner-hero.png" alt="TokenLink banner" width="720">
 </p>
+<!-- markdownlint-enable MD033 -->
 
 TokenLink is a native macOS menu-bar control plane that shows your AI coding
 plan quota — Codex, Kimi, MiniMax, and GLM — in one place, and syncs the Codex
@@ -20,6 +25,21 @@ primary window to the M5Stack StopWatch over Bluetooth (GATT protocol v1).
   watch payload — other providers are never mislabeled as Codex.
 - Last-known-good caching with honest stale/error display.
 - Redacted diagnostics export.
+
+## Architecture
+
+TokenLink keeps platform responsibilities separate:
+
+| Module | Responsibility |
+| --- | --- |
+| `TokenLinkCore` | Quota models, state, and refresh coordination |
+| `TokenLinkProviders` | Provider parsers, endpoint policies, and fetchers |
+| `TokenLinkDevice` | Bluetooth transport and StopWatch projection |
+| `TokenLinkApp` | SwiftUI, configuration, Keychain, and live assembly |
+
+Provider and hardware boundaries are intentionally narrow so new integrations
+can be developed like adapters. They are currently compiled into the app;
+TokenLink does not yet expose a dynamic plugin ABI.
 
 ## Requirements
 
@@ -68,8 +88,8 @@ rotation) is a separate upcoming project.
 ## Privacy
 
 TokenLink runs fully on-device: no local web server, no daemon, no browser
-cookies, no Full Disk Access. See `SECURITY.md` for secret handling and
-`scripts/privacy_scan.sh` for the CI-enforced privacy rules.
+cookies, no Full Disk Access. See [SECURITY.md](SECURITY.md) for secret handling
+and `scripts/privacy_scan.sh` for the CI-enforced privacy rules.
 
 ## Troubleshooting
 
@@ -84,6 +104,45 @@ Quit from the menu bar, remove `TokenLink.app`, then delete
 `~/Library/Application Support/TokenLink` and the Keychain entries under
 `io.github.phantom5125.tokenlink.provider`.
 
-## License
+## Contributing
 
-MIT — see `LICENSE`. Third-party acknowledgements in `NOTICE.md`.
+Contributions and well-formed ideas are welcome.
+
+- Small, verifiable bug fixes, tests, and documentation corrections may be
+  submitted directly as pull requests.
+- Large features, UI or protocol changes, and architectural work should begin
+  with an issue proposal.
+- Provider and hardware adapters require synthetic tests plus redacted
+  real-world compatibility evidence.
+- AI- and agent-assisted contributions are welcome when the submitter
+  understands, verifies, and discloses the assistance.
+
+TokenLink is a personal project with limited maintainer time, coding-plan
+capacity, provider accounts, and hardware access. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for scope, evidence requirements, and the
+review process. All community participation is governed by the
+[Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Commercial use and adoption
+
+Commercial use is permitted by the Apache License 2.0 without separate approval
+or mandatory notification.
+
+If TokenLink supports a product, paid service, workplace deployment, fork, or
+hardware integration, the maintainer would appreciate an optional
+[adoption report](https://github.com/phantom5125/tokenLink/issues/new?template=use_case.yml).
+You control what is disclosed, and may omit confidential details. Sharing is a
+community request, not a license condition.
+
+The software license does not grant rights to use TokenLink branding in a way
+that implies endorsement or official status. See [TRADEMARKS.md](TRADEMARKS.md).
+
+## License and acknowledgements
+
+The current version is licensed under the
+[Apache License 2.0](LICENSE). Versions previously received under the MIT
+License remain available under the license that accompanied those versions.
+
+Third-party foundations and development acknowledgements — including DeepSeek
+Harness (dsh), codex-micro-stopwatch, Kimi, and OpenAI Codex — are recorded in
+[NOTICE](NOTICE). Citation metadata is available in [CITATION.cff](CITATION.cff).

@@ -1,0 +1,32 @@
+TokenLink
+Copyright 2026 GreatHato
+
+This product is licensed under the Apache License, Version 2.0.
+
+PROJECT ACKNOWLEDGEMENTS
+
+TokenLink benefited from DeepSeek Harness (dsh), developed by DeepSeek AI and
+its contributors and made available under the MIT License:
+https://github.com/deepseek-ai/deepseek-harness
+
+TokenLink's M5Stack StopWatch protocol compatibility and firmware roadmap build
+on knowledge shared by codex-micro-stopwatch, copyright 2026 imliubo and
+codex-micro-4-stopwatch contributors, made available under the MIT License:
+https://github.com/digitsisyph/codex-micro-stopwatch
+
+TokenLink's provider architecture was inspired by CodexBar by Peter Steinberger
+and contributors, made available under the MIT License. TokenLink does not
+bundle or depend on CodexBarCore in v0.1:
+https://github.com/steipete/CodexBar
+
+GLM quota response handling was checked against zai-org/zai-coding-plugins,
+made available under the Apache License 2.0:
+https://github.com/zai-org/zai-coding-plugins
+
+DEVELOPMENT ACKNOWLEDGEMENTS
+
+Kimi and OpenAI Codex provided AI-assisted development support. The human
+maintainer directed, reviewed, and validated the changes included in TokenLink.
+
+Provider names and trademarks belong to their respective owners. References in
+this notice do not imply sponsorship or endorsement.

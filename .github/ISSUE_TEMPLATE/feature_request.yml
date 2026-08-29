@@ -1,0 +1,78 @@
+name: Feature proposal
+description: Propose an outcome before investing in a large implementation
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Large features, UI changes, protocols, and architecture work should be
+        discussed before implementation. A proposal is not a roadmap commitment.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I searched existing issues and pull requests for this proposal.
+          required: true
+        - label: This issue describes one problem or outcome.
+          required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or opportunity
+      description: Explain the user need without assuming a particular implementation.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Desired outcome
+      description: Describe observable success from a user's point of view.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed approach
+      description: Include interfaces, workflows, or architecture boundaries that may change.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Include workarounds or smaller solutions.
+    validations:
+      required: true
+  - type: dropdown
+    id: size
+    attributes:
+      label: Expected scope
+      options:
+        - Small and isolated
+        - Cross-module
+        - UI or workflow change
+        - Protocol or architecture change
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation plan
+      description: Explain how tests or redacted real-world evidence would prove the feature works.
+    validations:
+      required: true
+  - type: dropdown
+    id: participation
+    attributes:
+      label: Participation
+      options:
+        - I can help validate an implementation
+        - I can submit a small implementation after approval
+        - I can maintain a related external adapter or fork
+        - I am proposing the idea only
+    validations:
+      required: true

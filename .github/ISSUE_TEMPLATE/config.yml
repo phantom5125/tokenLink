@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security policy and private reporting
+    url: https://github.com/phantom5125/tokenLink/security/policy
+    about: Follow the policy to report vulnerabilities without opening an issue.
+  - name: Contribution guide
+    url: https://github.com/phantom5125/tokenLink/blob/main/CONTRIBUTING.md
+    about: Check scope, evidence, and verification requirements before contributing.
+  - name: Code of Conduct
+    url: https://github.com/phantom5125/tokenLink/blob/main/CODE_OF_CONDUCT.md
+    about: Read the community standards and private reporting route.
