@@ -20,10 +20,11 @@ M5Stack StopWatch companion. Version 0.2 shows Codex, Claude, Kimi, MiniMax,
 and GLM in one local interface, adds a negotiated watch protocol v2, and keeps
 the existing protocol-v1 firmware path byte-compatible.
 
-> Status: early development. Provider APIs can change without notice. The Mac
-> implementation is covered by automated tests, and protocol-v2 sync has been
-> exercised with a C152. The final v0.2 layout/active-count build and long-duration
-> power behavior still require release-candidate hardware validation.
+> Status: early development. Provider APIs can change without notice. The exact
+> v0.2 release candidate has been flashed to a C152 and exercised end to end with
+> the installed Mac app, including protocol-v2 negotiation, aggregate active count,
+> and three-provider sync. Physical touch/layout sign-off and long-duration power
+> behavior remain follow-up validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
 endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
@@ -31,6 +32,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-30 — The exact release candidate passed its first C152 end-to-end
+  run.** Firmware commit [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/commit/0d5bf6c)
+  booted after a hash-verified flash; TokenLink 0.2.0 negotiated v2 and sent live
+  Codex, Kimi, and MiniMax payloads with the full active count.
 - **2026-08-30 — Home now reflects the real Codex workload.** The newest task and
   its state share one compact row, while Active counts every running or
   needs-input Codex task — not only the three items sent for display.
@@ -91,23 +96,29 @@ enabled independently.
 
 The package script includes SwiftPM resources, creates a release-mode app,
 applies an ad-hoc signature by default, and verifies the resulting bundle. A CI
-development artifact is also produced for each revision. Because a notarized
-public v0.2 release has not been published yet, building from source is currently
-the supported first-run path.
+development artifact is also produced for each revision. The v0.2.0 RC download
+is Apple-Silicon-only and ad-hoc signed, so building from source remains the
+supported first-run path until a Developer ID-signed, notarized release exists.
 
 ### With an M5Stack StopWatch C152
 
 1. Complete the Mac-only steps above.
-2. Install the matching protocol-v2 firmware from
-   [`digitsisyph/codex-micro-stopwatch`](https://github.com/digitsisyph/codex-micro-stopwatch),
-   following that repository's C152 build, flash, and factory-recovery guide.
+2. Download `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` and its `.sha256` from the
+   [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1),
+   or build the exact verified firmware source at
+   [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/tree/0d5bf6c).
+   The upstream review is tracked in
+   [`digitsisyph/codex-micro-stopwatch#5`](https://github.com/digitsisyph/codex-micro-stopwatch/pull/5).
+   Verify the checksum, resolve and confirm the exact Espressif serial port, then
+   flash the C152-only merged image at offset `0x0`. The companion repository has
+   the source-build procedure; M5Stack documents the
+   [factory-recovery path](https://docs.m5stack.com/en/guide/restore_factory/stopwatch).
 3. In TokenLink, open **Control Center → StopWatch**, scan, select the exact
    device, bind it, and press **Sync watch now**.
 
-Do not expect the four-page UI from protocol-v1 firmware. Until the companion
-repository publishes its v0.2 tag and prebuilt firmware assets, the hardware
-path requires building the matching firmware source; this is a public-release
-gate, not a Mac-app fallback.
+Do not flash the C152 image to another M5Stack model, and do not expect the
+four-page UI from protocol-v1 firmware. The RC image is a development artifact;
+the upstream firmware PR and physical touch/power sign-off are still pending.
 
 ### Verify a source checkout
 
@@ -221,9 +232,9 @@ characteristic. A compatible device can receive up to three quota windows, up
 to three short named work items, selected-provider rotation, and watch settings.
 If capability discovery, reading, or decoding fails, TokenLink silently falls
 back to v1. The Mac implementation and fake-transport tests are complete, and
-protocol-v2 sync has been observed on a C152. The final release-candidate layout,
-full active-count field, and long-duration power behavior remain explicitly
-separate validation layers. See the latest report in
+the exact release candidate has carried its full active-count field and live
+multi-provider payloads to a C152. Physical layout/touch review and long-duration
+power behavior remain explicitly separate validation layers. See the latest report in
 [`docs/validation`](docs/validation/).
 
 ## Privacy and security
@@ -287,9 +298,10 @@ The Mac side implements payload projection, capability negotiation, v1 fallback,
 provider rotation, three visible work-item slots, a full active-task count,
 settings, payload preview, and a watch-to-Mac command channel. The companion
 firmware work — four watch pages, touch focus commands, optional pet theme, and
-raise-to-wake — lives in the separate `codex-micro-stopwatch` project. Earlier
-protocol-v2 BLE exchange and UI iterations were exercised on C152 hardware; the
-exact release candidate and 24-hour power soak are not yet signed off.
+raise-to-wake — lives in the separate `codex-micro-stopwatch` project. The exact
+release candidate now has a verified C152 flash, boot, protocol-v2 exchange, and
+multi-provider sync; physical layout/touch review and the 24-hour power soak are
+not yet signed off.
 
 ## Contributing
 

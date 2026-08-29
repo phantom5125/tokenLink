@@ -9,10 +9,10 @@
 **Tech Stack:** Swift 6.2, SwiftUI, CoreBluetooth, Foundation; firmware: ESP32-S3 / PlatformIO (external repo).
 
 **执行状态（2026-08-30）：** TokenLink Mac 端 Task 1–6 已实现；Task 7 的外部
-`codex-micro-stopwatch` 源码、原生预览和模拟器测试已完成，较早的协议 v2 版本也已
-在 C152 上运行。focus 现在打开匹配的 `codex://threads/<id>` 任务，并保留仅激活
-Codex Desktop 的兼容回退。最终固件布局/active-count build、24 小时功耗与发布产物
-仍按独立验证层跟踪。最新证据见
+`codex-micro-stopwatch` 源码、原生预览和模拟器测试已完成，最终候选也已在确认的
+C152 上完成烧录、启动、v2 协商与三 provider payload 同步。focus 现在打开匹配的
+`codex://threads/<id>` 任务，并保留仅激活 Codex Desktop 的兼容回退。实体布局/触摸、
+24 小时功耗与正式签名发布产物仍按独立验证层跟踪。最新证据见
 `docs/validation/2026-08-30-v0.2-release-readiness.md`。
 
 **前置约定:**

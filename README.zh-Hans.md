@@ -20,9 +20,9 @@ TokenLink 是一个原生 macOS 菜单栏管控中枢，用于集中展示各家
 Codex、Claude、Kimi、MiniMax 和 GLM 的额度，新增协商式手表协议 v2，同时保持
 协议 v1 固件路径的字节级兼容。
 
-> 状态：早期开发。各厂商接口可能随时变动。Mac 端已有自动化测试覆盖，协议 v2
-> 同步已在 C152 真机上跑通；最终 v0.2 布局/Active 计数版本和长时功耗仍需针对
-> release candidate 做最后真机确认。
+> 状态：早期开发。各厂商接口可能随时变动。最终 v0.2 候选已烧录到 C152，并与
+> 安装后的 Mac app 完成端到端验证，包括协议 v2 协商、完整 Active 计数和三家
+> provider 同步。实体触摸/布局签收与长时功耗仍是后续验证项。
 
 TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、MiniMax、
 智谱 AI、M5Stack 均无隶属或背书关系，也不是它们的官方产品。各厂商名称与
@@ -30,6 +30,10 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-30 — 最终候选首次通过 C152 端到端验证。** 固件提交
+  [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/commit/0d5bf6c)
+  经过哈希校验烧录后正常启动；TokenLink 0.2.0 协商 v2，并带完整 Active 数同步
+  Codex、Kimi 和 MiniMax 的真实 payload。
 - **2026-08-30 — 首页现在反映真实的 Codex 工作量。** 最新任务与状态压缩到同一行，
   Active 会统计所有 running 或 needs-input 的 Codex 任务，不再只数下发到表盘的三条。
 - **2026-08-30 — Watch Face v2 进入发布候选状态。** 针对圆屏安全区设计 Home、Quota、
@@ -77,19 +81,26 @@ open TokenLink.app
 登录态，不保存 Codex API key；其他 provider 可以单独启用。
 
 打包脚本会把 SwiftPM 图片资源装入 release-mode app，默认进行 ad-hoc 签名，并校验
-最终 bundle；每个 CI revision 也会生成开发用 artifact。目前尚未发布经过公证的 v0.2
-公开版本，因此从源码构建仍是受支持的首次体验路径。
+最终 bundle；每个 CI revision 也会生成开发用 artifact。v0.2.0 RC 下载目前仅支持
+Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple 公证版发布前，
+从源码构建仍是受支持的首次体验路径。
 
 ### 有 M5Stack StopWatch C152
 
 1. 先完成上面的纯 Mac 步骤。
-2. 从 [`digitsisyph/codex-micro-stopwatch`](https://github.com/digitsisyph/codex-micro-stopwatch)
-   安装匹配的协议 v2 固件，并严格按该仓库的 C152 构建、烧录和官方固件恢复说明操作。
+2. 从 [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1)
+   下载 `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` 与对应 `.sha256`，也可以从真机验证过的
+   [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/tree/0d5bf6c)
+   源码构建；上游合并进度见
+   [`digitsisyph/codex-micro-stopwatch#5`](https://github.com/digitsisyph/codex-micro-stopwatch/pull/5)。
+   校验 checksum，解析并确认准确的 Espressif 串口，再把仅限 C152 的合并镜像烧录到
+   `0x0`；源码仓库提供构建流程，M5Stack 提供
+   [官方恢复流程](https://docs.m5stack.com/en/guide/restore_factory/stopwatch)。
 3. 在 TokenLink 打开 **控制中心 → StopWatch**，扫描、选择准确设备、绑定，再点
    **立即同步手表**。
 
-协议 v1 固件不会显示四页新 UI。在固件仓库发布 v0.2 tag 和预编译产物之前，硬件路径
-仍需从匹配的源码构建；这是公开发布门槛，不是 Mac app 的回退方案。
+不要把 C152 镜像烧到其他 M5Stack 型号；协议 v1 固件也不会显示四页新 UI。RC 镜像
+仍属于开发产物，上游固件 PR 与实体触摸/功耗签收尚未完成。
 
 ### 校验源码 checkout
 
@@ -178,9 +189,9 @@ v1 表盘上被误标为 Codex。
 
 协议 v2 通过可选的只读 capabilities characteristic 协商。兼容设备可以接收最多三个
 额度窗口、最多三个短名称工作单元、所选额度源轮转和表盘设置。只要发现、读取或解码
-能力失败，TokenLink 就静默回退 v1。Mac 端实现和 fake transport 测试已经完成，协议
-v2 同步也已在 C152 上观察到；最终 release-candidate 布局、完整 active count 字段和
-长时功耗仍是独立的验证层。最新分层结果见 [`docs/validation`](docs/validation/)。
+能力失败，TokenLink 就静默回退 v1。Mac 端实现和 fake transport 测试已经完成，最终
+候选的完整 active count 与真实多 provider payload 也已送达 C152；实体布局/触摸检查
+和长时功耗仍是独立的验证层。最新分层结果见 [`docs/validation`](docs/validation/)。
 
 ## 隐私与安全
 
@@ -233,9 +244,9 @@ TokenLinkApp        SwiftUI/AppKit 状态、设置、钥匙串、诊断
 
 Mac 端已经实现 payload 投影、能力协商、v1 回退、provider 轮转、三个可见工作单元、
 完整 active-task 数量、表盘设置、payload 预览和手表到 Mac 的命令通道。四页面表盘、
-触摸聚焦、可选宠物主题和抬腕唤醒属于独立的 `codex-micro-stopwatch` 固件项目。较早的
-协议 v2 BLE 交换和 UI 迭代已在 C152 上验证；最终 release candidate 和 24 小时功耗
-浸泡尚未签收。
+触摸聚焦、可选宠物主题和抬腕唤醒属于独立的 `codex-micro-stopwatch` 固件项目。最终
+候选已通过 C152 烧录、启动、协议 v2 交换和多 provider 同步验证；实体布局/触摸检查
+与 24 小时功耗浸泡尚未签收。
 
 ## 参与贡献
 
