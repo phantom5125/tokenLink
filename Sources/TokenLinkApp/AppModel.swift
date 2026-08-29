@@ -260,6 +260,9 @@ public final class AppModel {
   ) -> [AccountProvider] {
     var providers: [AccountProvider] = []
     for account in configuration.accounts where account.enabled {
+      guard ProviderRegistry.capabilities(for: account.provider).contains(.quota) else {
+        continue
+      }
       let isDefault = configuration.isDefaultAccount(account)
       // Codex and Claude rely on local CLI sign-ins and stay single-instance.
       if account.provider == .codex || account.provider == .claude, !isDefault { continue }
@@ -292,6 +295,8 @@ public final class AppModel {
               base: vault,
               allowsKeychainCredential: configuration.claudeCredentialAccessAuthorized)
             : vault)
+      case .openrouter, .deepseek:
+        continue
       }
       providers.append(AccountProvider(accountID: account.id, provider: provider))
     }
@@ -300,7 +305,7 @@ public final class AppModel {
 
   /// Enabled accounts grouped by provider, in `ProviderID.allCases` order.
   public var accountGroups: [ProviderAccountGroup] {
-    ProviderID.allCases.compactMap { provider in
+    ProviderRegistry.quotaProviderIDs.compactMap { provider in
       let rows =
         configuration.accounts
         .filter { $0.provider == provider && $0.enabled }

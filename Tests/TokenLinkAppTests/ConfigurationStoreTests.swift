@@ -96,7 +96,21 @@ import TokenLinkProviders
   #expect(loaded.fairPaceEnabled == false)
   #expect(loaded.betaLocalUsageEnabled == false)
   #expect(loaded.legacyKeychainMigrationCompleted == false)
+  #expect(loaded.betaCostsEnabled == false)
+  #expect(loaded.menuBarCostMetric == .none)
+  #expect(!loaded.accounts.contains { [.openrouter, .deepseek].contains($0.provider) })
   #expect(loaded.watchSettings == WatchSettings())
+}
+
+@Test func defaultConfigurationIncludesQuotaProvidersOnly() {
+  #expect(
+    AppConfiguration.default.accounts.allSatisfy {
+      ProviderRegistry.capabilities(for: $0.provider).contains(.quota)
+    })
+  #expect(!AppConfiguration.default.accounts.contains { $0.provider == .openrouter })
+  #expect(!AppConfiguration.default.accounts.contains { $0.provider == .deepseek })
+  #expect(AppConfiguration.default.betaCostsEnabled == false)
+  #expect(AppConfiguration.default.menuBarCostMetric == .none)
 }
 
 @Test func accountsRoundTripWithStableIDsAndLabels() throws {

@@ -90,6 +90,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   /// from TokenLink's pre-0.2.1 Keychain service. Fresh installs have nothing
   /// to migrate and start with this flow completed.
   public var legacyKeychainMigrationCompleted: Bool
+  /// Beta: authoritative balances and local API-equivalent cost estimates.
+  public var betaCostsEnabled: Bool
+  /// Fixed optional supplement displayed after the primary quota label.
+  public var menuBarCostMetric: MenuBarCostMetric
   /// StopWatch v2 preferences (theme, wake, hour format, synced providers).
   public var watchSettings: WatchSettings
 
@@ -112,6 +116,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     betaLocalUsageEnabled: Bool = false,
     claudeCredentialAccessAuthorized: Bool = false,
     legacyKeychainMigrationCompleted: Bool = true,
+    betaCostsEnabled: Bool = false,
+    menuBarCostMetric: MenuBarCostMetric = .none,
     watchSettings: WatchSettings = WatchSettings()
   ) {
     self.accounts = accounts
@@ -127,6 +133,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     self.betaLocalUsageEnabled = betaLocalUsageEnabled
     self.claudeCredentialAccessAuthorized = claudeCredentialAccessAuthorized
     self.legacyKeychainMigrationCompleted = legacyKeychainMigrationCompleted
+    self.betaCostsEnabled = betaCostsEnabled
+    self.menuBarCostMetric = menuBarCostMetric
     self.watchSettings = watchSettings
   }
 
@@ -153,7 +161,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     // Claude is opt-in because enabling it can request access to a credential
     // owned by another app. The other providers use TokenLink-owned keys,
     // documented files, or local processes.
-    enabledProviders: Set(ProviderID.allCases).subtracting([.claude]),
+    enabledProviders: Set(ProviderRegistry.quotaProviderIDs).subtracting([.claude]),
     refreshMinutes: 5,
     boundDeviceIdentifier: nil,
     codexPath: nil,
@@ -161,7 +169,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     glmRegion: .global)
 
   public static func defaultAccounts(for providers: Set<ProviderID>) -> [ProviderAccount] {
-    ProviderID.allCases.filter(providers.contains).map { provider in
+    ProviderRegistry.quotaProviderIDs.filter(providers.contains).map { provider in
       ProviderAccount(
         provider: provider,
         label: ProviderRegistry.displayName(for: provider))
@@ -192,6 +200,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     case betaLocalUsageEnabled
     case claudeCredentialAccessAuthorized
     case legacyKeychainMigrationCompleted
+    case betaCostsEnabled
+    case menuBarCostMetric
     case watchSettings
   }
 
@@ -209,7 +219,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       accounts = Self.defaultAccounts(for: Set(legacy))
     } else {
       accounts = Self.defaultAccounts(
-        for: Set(ProviderID.allCases).subtracting([.claude]))
+        for: Set(ProviderRegistry.quotaProviderIDs).subtracting([.claude]))
     }
     let decodedBoundDeviceIdentifier = try container.decodeIfPresent(
       UUID.self, forKey: .boundDeviceIdentifier)
@@ -244,6 +254,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       // Do not touch the old Keychain service until the user chooses to migrate.
       legacyKeychainMigrationCompleted: try container.decodeIfPresent(
         Bool.self, forKey: .legacyKeychainMigrationCompleted) ?? false,
+      betaCostsEnabled: try container.decodeIfPresent(
+        Bool.self, forKey: .betaCostsEnabled) ?? false,
+      menuBarCostMetric: try container.decodeIfPresent(
+        MenuBarCostMetric.self, forKey: .menuBarCostMetric) ?? .none,
       watchSettings: try container.decodeIfPresent(
         WatchSettings.self, forKey: .watchSettings) ?? WatchSettings())
   }
@@ -267,6 +281,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       claudeCredentialAccessAuthorized, forKey: .claudeCredentialAccessAuthorized)
     try container.encode(
       legacyKeychainMigrationCompleted, forKey: .legacyKeychainMigrationCompleted)
+    try container.encode(betaCostsEnabled, forKey: .betaCostsEnabled)
+    try container.encode(menuBarCostMetric, forKey: .menuBarCostMetric)
     try container.encode(watchSettings, forKey: .watchSettings)
   }
 }

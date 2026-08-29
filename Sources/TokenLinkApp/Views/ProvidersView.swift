@@ -40,7 +40,7 @@ struct ProvidersView: View {
           legacyCredentialMigrationBanner
         }
 
-        ForEach(ProviderID.allCases, id: \.self) { provider in
+        ForEach(ProviderRegistry.quotaProviderIDs, id: \.self) { provider in
           providerSection(provider)
         }
 
@@ -510,6 +510,7 @@ struct ProvidersView: View {
     case .minimax: .subtitleMinimax
     case .glm: .subtitleGLM
     case .claude: .subtitleClaude
+    case .openrouter, .deepseek: .providersSubtitle
     }
   }
 }
