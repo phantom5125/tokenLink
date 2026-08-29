@@ -8,8 +8,12 @@ on:
 jobs:
   build-test:
     runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
+      - name: Swift toolchain
+        run: swift --version
       - name: Build
         run: swift build
       - name: Test
