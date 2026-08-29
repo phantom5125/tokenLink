@@ -79,6 +79,8 @@ struct ProviderMark: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
     } else {
+      // Cost-only providers intentionally use a code-native symbol until a
+      // reviewed, redistributable brand asset is added to the bundle.
       Image(systemName: ProviderPresentation.symbol(for: provider))
         .font(.system(size: size * 0.42, weight: .semibold))
         .foregroundStyle(.white)

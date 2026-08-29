@@ -17,23 +17,26 @@ Before publishing a release:
 
 1. Confirm `CHANGELOG.md`, both READMEs, version/build values in
    `packaging/Info.plist`, and the Latest News date agree.
-2. Run `bash scripts/test.sh`, strict Swift formatting, and
-   `bash scripts/privacy_scan.sh`.
-3. Run `python scripts/test_package_firmware_release.py`,
+2. Run `bash scripts/test.sh`, strict Swift formatting,
+   `bash scripts/privacy_scan.sh`, and `bash scripts/resource_check.sh`.
+3. If the release changes cost estimates, verify the bundled price-catalog
+   version, effective date, first-party source URLs, model aliases, and all
+   visible `Estimated/API-equivalent` labels.
+4. Run `python scripts/test_package_firmware_release.py`,
    `bash scripts/test_firmware.sh`, and
    `bash scripts/build_firmware_artifact.sh`. Verify `dist/firmware/SHA256SUMS`.
    The version tag itself is the exact firmware source archive; no external
    checkout or separately maintained source ZIP is required.
-4. For a hardware-facing release, flash the built candidate only after the exact
+5. For a hardware-facing release, flash the built candidate only after the exact
    C152 port is resolved and explicitly confirmed. Verify the serial boot marker,
    BLE v2 negotiation, a live sync, and user-visible interaction separately, then
    record the evidence under `docs/validation/`.
-5. Push, review, tag, and publish only in the TokenLink repository. Never push a
+6. Push, review, tag, and publish only in the TokenLink repository. Never push a
    branch or open a PR in an external firmware repository as part of a TokenLink
    release.
-6. Verify both arm64 and x86_64 slices in the mounted Mac DMG. Do not publish the
+7. Verify both arm64 and x86_64 slices in the mounted Mac DMG. Do not publish the
    architecture-neutral filename if either slice is missing.
-7. Observe the hosted CI run on the final commit before tagging, then observe
+8. Observe the hosted CI run on the final commit before tagging, then observe
    the tag-triggered Release workflow before publishing the final URL.
 
 ## Build a development artifact

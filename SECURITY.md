@@ -31,9 +31,15 @@ the old items as a recovery fallback.
   token field. Neither adapter writes a CLI credential or refresh token.
 - The initial destination of each credential-bearing request is validated
   against its provider's HTTPS host allowlist before the request is sent.
+- Authoritative cost adapters use only explicitly configured Keychain
+  credentials. Provider balances, spend values, local estimates, and priceable
+  model identifiers remain in memory and are excluded from diagnostics.
 - Codex quota and task state reuse the local Codex CLI sign-in. The optional
   usage observer reads only documented CLI session roots and summarizes token
   counters locally.
+- Local usage and cost scans accept regular files only, refuse symbolic links
+  and special files, enforce 50 MiB per-file and 1 MiB per-record limits while
+  reading, and never retain prompt or response content.
 - Protocol v2 sends provider/window labels, quota values, display settings, and
   up to three short visible Codex task titles/states to the explicitly bound
   watch. It does not send credentials, account identifiers, raw prompts,
@@ -66,5 +72,7 @@ investigation before public disclosure.
 Provider and hardware adapter contributions require compatibility evidence, but
 that evidence must not weaken user security. Public pull requests should contain
 only synthetic fixtures and redacted screenshots, recordings, or log excerpts.
+Cost-provider evidence must also obscure account-specific monetary values and
+must not include raw billing responses or organization identifiers.
 If reproducing a security-sensitive integration requires private material,
 coordinate through the reporting channels above before submitting the adapter.

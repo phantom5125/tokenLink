@@ -4,6 +4,15 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## Unreleased
+
+- Added an opt-in Costs beta that keeps provider-reported OpenRouter and
+  DeepSeek balances separate from coding-plan quota.
+- Added seven-day local `Estimated/API-equivalent` cost estimates for Codex,
+  Claude, and Kimi, backed by a versioned, reviewed price catalog.
+- Added bounded streaming transcript scans, explicit cost provenance and
+  freshness, and CI gates for privacy, memory, runtime, and executable size.
+
 ## 0.2.2 — Unreleased
 
 - Added a Universal 2 `TokenLink-0.2.2.dmg` with a drag-to-Applications layout,
