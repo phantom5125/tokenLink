@@ -16,9 +16,11 @@ Before publishing a release:
    `packaging/Info.plist`, and the Latest News date agree.
 2. Run `bash scripts/test.sh`, strict Swift formatting, and
    `bash scripts/privacy_scan.sh`.
-3. For a hardware-facing release, merge and tag the matching
-   `codex-micro-stopwatch` firmware. Flash that exact candidate only after the
-   C152 port is resolved and confirmed, then record the observed result under
+3. For a hardware-facing release, archive the exact reviewed firmware source and
+   publish its C152-only merged image plus separate checksums on the TokenLink
+   release. Do not push branches or open PRs in an external companion repository
+   as part of the TokenLink release. Flash the candidate only after the C152 port
+   is resolved and confirmed, then record the observed result under
    `docs/validation/`.
 4. Build and test each advertised Mac architecture. Do not label an arm64-only
    archive as Intel-compatible.
@@ -60,6 +62,6 @@ cd dist
 shasum -a 256 -c TokenLink-<version>-macos-<architecture>.zip.sha256
 ```
 
-Create the GitHub Release from the version tag and attach both the `.zip` and
-`.sha256`. Release notes must link the exact compatible firmware tag and repeat
-any remaining hardware or architecture limitations.
+Create the GitHub Release from the version tag and attach the Mac archive,
+firmware source archive, C152 image, and each matching `.sha256`. Release notes
+must repeat all remaining hardware, signing, and architecture limitations.

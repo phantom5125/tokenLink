@@ -33,9 +33,9 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 ## Latest News
 
 - **2026-08-30 — The exact release candidate passed its first C152 end-to-end
-  run.** Firmware commit [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/commit/0d5bf6c)
-  booted after a hash-verified flash; TokenLink 0.2.0 negotiated v2 and sent live
-  Codex, Kimi, and MiniMax payloads with the full active count.
+  run.** Firmware revision `0d5bf6c`, archived with the TokenLink RC, booted after
+  a hash-verified flash; TokenLink 0.2.0 negotiated v2 and sent live Codex, Kimi,
+  and MiniMax payloads with the full active count.
 - **2026-08-30 — Home now reflects the real Codex workload.** The newest task and
   its state share one compact row, while Active counts every running or
   needs-input Codex task — not only the three items sent for display.
@@ -104,21 +104,19 @@ supported first-run path until a Developer ID-signed, notarized release exists.
 
 1. Complete the Mac-only steps above.
 2. Download `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` and its `.sha256` from the
-   [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1),
-   or build the exact verified firmware source at
-   [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/tree/0d5bf6c).
-   The upstream review is tracked in
-   [`digitsisyph/codex-micro-stopwatch#5`](https://github.com/digitsisyph/codex-micro-stopwatch/pull/5).
-   Verify the checksum, resolve and confirm the exact Espressif serial port, then
-   flash the C152-only merged image at offset `0x0`. The companion repository has
-   the source-build procedure; M5Stack documents the
+   [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1).
+   The same TokenLink release contains a checksummed `-source.zip` if you prefer
+   to build the exact verified firmware revision yourself. Verify the checksum,
+   resolve and confirm the exact Espressif serial port, then flash the C152-only
+   merged image at offset `0x0`. The source archive contains the PlatformIO build
+   procedure; M5Stack documents the
    [factory-recovery path](https://docs.m5stack.com/en/guide/restore_factory/stopwatch).
 3. In TokenLink, open **Control Center → StopWatch**, scan, select the exact
    device, bind it, and press **Sync watch now**.
 
 Do not flash the C152 image to another M5Stack model, and do not expect the
 four-page UI from protocol-v1 firmware. The RC image is a development artifact;
-the upstream firmware PR and physical touch/power sign-off are still pending.
+physical touch/layout and power sign-off are still pending.
 
 ### Verify a source checkout
 

@@ -30,10 +30,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
-- **2026-08-30 — 最终候选首次通过 C152 端到端验证。** 固件提交
-  [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/commit/0d5bf6c)
-  经过哈希校验烧录后正常启动；TokenLink 0.2.0 协商 v2，并带完整 Active 数同步
-  Codex、Kimi 和 MiniMax 的真实 payload。
+- **2026-08-30 — 最终候选首次通过 C152 端到端验证。** 随 TokenLink RC 归档的固件
+  revision `0d5bf6c` 经过哈希校验烧录后正常启动；TokenLink 0.2.0 协商 v2，并带完整
+  Active 数同步 Codex、Kimi 和 MiniMax 的真实 payload。
 - **2026-08-30 — 首页现在反映真实的 Codex 工作量。** 最新任务与状态压缩到同一行，
   Active 会统计所有 running 或 needs-input 的 Codex 任务，不再只数下发到表盘的三条。
 - **2026-08-30 — Watch Face v2 进入发布候选状态。** 针对圆屏安全区设计 Home、Quota、
@@ -89,18 +88,16 @@ Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple �
 
 1. 先完成上面的纯 Mac 步骤。
 2. 从 [v0.2.0-rc.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.0-rc.1)
-   下载 `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` 与对应 `.sha256`，也可以从真机验证过的
-   [`0d5bf6c`](https://github.com/phantom5125/codex-micro-stopwatch/tree/0d5bf6c)
-   源码构建；上游合并进度见
-   [`digitsisyph/codex-micro-stopwatch#5`](https://github.com/digitsisyph/codex-micro-stopwatch/pull/5)。
+   下载 `TokenLink-StopWatch-C152-0.2.0-rc.1.bin` 与对应 `.sha256`。同一个 TokenLink
+   release 也提供带 checksum 的 `-source.zip`，可自行构建同一个真机验证 revision。
    校验 checksum，解析并确认准确的 Espressif 串口，再把仅限 C152 的合并镜像烧录到
-   `0x0`；源码仓库提供构建流程，M5Stack 提供
+   `0x0`；源码归档包含 PlatformIO 构建流程，M5Stack 提供
    [官方恢复流程](https://docs.m5stack.com/en/guide/restore_factory/stopwatch)。
 3. 在 TokenLink 打开 **控制中心 → StopWatch**，扫描、选择准确设备、绑定，再点
    **立即同步手表**。
 
 不要把 C152 镜像烧到其他 M5Stack 型号；协议 v1 固件也不会显示四页新 UI。RC 镜像
-仍属于开发产物，上游固件 PR 与实体触摸/功耗签收尚未完成。
+仍属于开发产物，实体触摸/布局与功耗签收尚未完成。
 
 ### 校验源码 checkout
 
