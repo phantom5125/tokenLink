@@ -82,3 +82,13 @@ jobs:
         run: |
           test "$MACOS_RESULT" = success
           test "$FIRMWARE_RESULT" = success
+
+  resources:
+    needs: build-test
+    runs-on: macos-15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce local-app resource budgets
+        run: bash scripts/resource_check.sh

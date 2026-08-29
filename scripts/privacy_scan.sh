@@ -44,6 +44,17 @@ if matches="$(git grep -nIE '(sk-[A-Za-z0-9_-]{16,}|AKIA[0-9A-Z]{16}|AIza[0-9A-Z
   failed=1
 fi
 
+# Domain declarations and UI formatting are allowed. Sensitive values must
+# never enter a production logging sink, even when interpolated at runtime.
+logging_sink='(?:\b(?:print|debugPrint|NSLog|os_log|record)\s*\(|\b(?:logger|tokenLinkEventLogger)\.[A-Za-z]+\s*\()'
+logging_sensitive='(?:\bbalances?\b|amount\.value|authorization|allHTTPHeaderFields|raw[_ ]?body|response[_ ]?body|transcript[\s\S]{0,120}?path|\.path\b)'
+if matches="$(rg -n -U --pcre2 -i \
+  "${logging_sink}[\\s\\S]{0,800}?${logging_sensitive}" Sources || true)"; [[ -n "$matches" ]]; then
+  echo "Privacy scan: sensitive cost, HTTP, or transcript data reached a logging sink:" >&2
+  echo "$matches" >&2
+  failed=1
+fi
+
 if [[ $failed -ne 0 ]]; then
   exit 1
 fi

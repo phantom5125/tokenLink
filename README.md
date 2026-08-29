@@ -100,8 +100,8 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## What it does
 
-- Native `MenuBarExtra` plus a four-route Control Center: Overview, Providers,
-  StopWatch, and Settings & Diagnostics.
+- Native `MenuBarExtra` plus a five-route Control Center: Overview, Providers,
+  Costs, StopWatch, and Settings & Diagnostics.
 - Normalizes several quota windows without inventing plan limits.
 - Projects burn rate per window ("runs out in ~3h at this pace") from recent
   local samples — no extra API calls.
@@ -109,6 +109,9 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
   even consumption.
 - Offers an opt-in beta scan of documented local Codex, Claude, and Kimi CLI
   transcript directories to summarize recent token counters on-device.
+- Keeps cost data in a separate opt-in beta: official OpenRouter/DeepSeek
+  balances stay authoritative, while local Codex/Claude/Kimi usage is always
+  labelled `Estimated/API-equivalent` and priced from a reviewed bundled catalog.
 - Sends macOS notifications when a window runs low, a window resets, or a
   stored credential is rejected (toggle in Settings).
 - Keeps last-known-good snapshots and marks them stale when refresh fails.
@@ -290,6 +293,35 @@ TokenLink supports the current numeric-unit/camelCase quota shape plus an explic
 legacy compatibility branch. It preserves returned windows and does not estimate
 limits from a plan name.
 
+### Costs beta
+
+Enable **Settings & Diagnostics → Beta → Costs** to load the separate Costs
+page. Cost refresh, failure, and caching are independent from quota refresh,
+notifications, menu-bar severity, and StopWatch payloads. The menu bar can show
+one fixed cost metric after the primary quota; unavailable selections fall back
+to quota-only text.
+
+The two cost domains are intentionally not merged:
+
+- **Authoritative balances** come from an official provider account API.
+  OpenRouter calls `/api/v1/credits` and `/api/v1/key` independently. An explicit
+  Management Key can expose account credits; a regular API key may expose only
+  current-key spend, which TokenLink presents as partial data instead of
+  inventing a balance. DeepSeek calls `/user/balance` and preserves every
+  returned currency separately, including valid zero balances. TokenLink does
+  not convert currencies or infer spend from balance changes.
+- **`Estimated/API-equivalent`** values price the last seven days of supported
+  local CLI token records using the bundled catalog's version and effective
+  date. They estimate what equivalent API traffic would cost; they do not
+  estimate, allocate, or assign monetary value to a Coding Plan subscription.
+  Unknown models and token categories without a reviewed price are excluded and
+  surfaced as warnings.
+
+Cost credentials are explicit Keychain entries. TokenLink does not reuse
+browser state, organization-admin credentials, or unrelated CLI credentials for
+OpenRouter or DeepSeek. Balances and estimated monetary totals remain in memory
+and are not written to configuration or diagnostics.
+
 Provider and Codex-path changes are persisted immediately and take effect
 after restarting the app. Region, account, and refresh-interval changes take
 effect immediately.
@@ -347,9 +379,12 @@ candidate validation layer. See the latest report in [`docs/validation`](docs/va
   with user-only permissions.
 - No browser-cookie access, Full Disk Access, analytics, or remote TokenLink
   service.
-- The optional local-usage beta reads only `.codex/sessions`, `.claude/projects`,
-  and `.kimi-code/sessions`; it extracts token counters locally and never sends
-  transcript data over the network.
+- The optional local-usage and cost betas read only `.codex/sessions`,
+  `.claude/projects`, and `.kimi-code/sessions`; they extract token counters
+  locally and never send transcript data over the network.
+- Local scans stream 64 KiB chunks, process files sequentially, skip files over
+  50 MiB and records over 1 MiB, and retain neither raw transcript content nor
+  monetary snapshots. There is no telemetry.
 - Provider URLs are HTTPS and checked against narrow official-host allowlists
   before credential-bearing requests.
 - Diagnostics are redacted before they are written to a user-selected file.
@@ -400,6 +435,21 @@ firmware/
 Each provider owns a fixture-tested parser and emits a shared `QuotaSnapshot`.
 The app is the only UI state owner. The device layer receives deliberate v1 or
 v2 projections and never receives provider credentials.
+
+Cost-only providers use separate adapters, state, refresh coordination, and UI
+models; they never receive synthetic quota snapshots or enter watch payloads.
+
+## Resource and privacy gates
+
+CI runs `scripts/resource_check.sh` after the regular macOS test job. The gate
+streams and parses a deterministic 64 MiB workload through the production JSONL
+reader, then enforces a maximum 160 MiB RSS, 30-second elapsed time, and 15 MiB
+release executable. Compiler processes are excluded from the measurement.
+
+`scripts/privacy_scan.sh` rejects secret-like values and production logging of
+balances, raw monetary values, authorization headers, raw response bodies, or
+transcript paths. Diagnostics separately test that amounts, model identifiers,
+account labels/UUIDs, error text, and paths cannot enter exported metadata.
 
 ## Protocol-v2 status
 
