@@ -1,6 +1,6 @@
 # Provider Costs Beta Design
 
-Status: chat design approved; awaiting written review
+Status: approved for implementation
 
 Date: 2026-08-30
 
@@ -243,7 +243,10 @@ directly, and the top-level model field supplies the model ID.
 
 The bundled catalog records, per model and currency, prices per million tokens
 for uncached input, cache read, five-minute cache write, optional one-hour cache
-write, and output.
+write, and output. It may also record an official per-request long-context
+threshold and its input/output multipliers. Pricing is applied before events
+are aggregated so a threshold that applies to one request is not accidentally
+applied to a seven-day model total.
 
 For every category:
 
@@ -266,7 +269,8 @@ The catalog is a read-only application resource with:
 - an effective date;
 - exact model IDs and explicit aliases;
 - category prices and currency;
-- a first-party pricing source URL for every entry.
+- a first-party pricing source URL for every entry;
+- optional first-party long-context thresholds and multipliers.
 
 Initial sources are the official OpenAI, Anthropic, and Moonshot pricing pages.
 The implementation includes only model IDs verified against supported local
