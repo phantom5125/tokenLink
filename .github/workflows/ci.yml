@@ -18,3 +18,8 @@ jobs:
         run: swift format lint --recursive --strict Sources Tests
       - name: Privacy scan
         run: bash scripts/privacy_scan.sh
+      - name: Package with distribution notices
+        run: |
+          bash scripts/package_app.sh
+          cmp LICENSE TokenLink.app/Contents/Resources/LICENSE
+          cmp NOTICE TokenLink.app/Contents/Resources/NOTICE

@@ -1,0 +1,60 @@
+name: Share an adoption
+description: Optionally tell the community how you use TokenLink
+title: "[Adoption]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Commercial and non-commercial use is permitted by Apache-2.0 without
+        approval or notification. This optional public report helps the maintainer
+        understand real-world use and prioritize compatibility. Do not disclose
+        confidential information.
+  - type: checkboxes
+    id: public
+    attributes:
+      label: Public report
+      options:
+        - label: I understand that this issue and its contents will be public.
+          required: true
+  - type: input
+    id: name
+    attributes:
+      label: Project or organization
+      description: Optional; a product, organization, team, or pseudonym.
+  - type: dropdown
+    id: context
+    attributes:
+      label: Use context
+      options:
+        - Commercial product or paid service
+        - Workplace or internal deployment
+        - Open-source fork or integration
+        - Personal or educational use
+        - Evaluation
+        - Prefer not to say
+    validations:
+      required: true
+  - type: textarea
+    id: use
+    attributes:
+      label: How TokenLink is used
+      description: Share only the level of detail you are comfortable making public.
+    validations:
+      required: true
+  - type: textarea
+    id: integrations
+    attributes:
+      label: Providers, hardware, or adaptations
+      description: Optional; mention integrations or compatibility findings that may help others.
+  - type: input
+    id: link
+    attributes:
+      label: Public link
+      description: Optional; a project, product, article, or demo URL.
+  - type: checkboxes
+    id: showcase
+    attributes:
+      label: Showcase permission
+      options:
+        - label: The maintainer may link to this public report from project documentation.
+          required: false

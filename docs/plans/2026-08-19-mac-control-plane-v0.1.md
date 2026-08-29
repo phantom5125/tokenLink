@@ -1,5 +1,9 @@
 # TokenLink macOS Control Plane v0.1 Implementation Plan
 
+**Historical snapshot:** This plan records the 2026-08-19 v0.1 implementation.
+License references and filenames reflect that date; the repository-root license,
+notice, and contribution files are authoritative now.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a native macOS menu-bar control plane that displays Codex, Kimi, MiniMax, and GLM Coding Plan quota, stores explicit API keys in Keychain, and syncs the Codex primary window to the existing M5Stack StopWatch quota GATT protocol.

@@ -1,0 +1,88 @@
+name: Adapter proposal
+description: Propose a provider or hardware integration with a proof plan
+title: "[Adapter]: "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TokenLink welcomes adapter-style integrations. Maintainer access to paid
+        plans and hardware is limited, so reproducible, redacted proof is required.
+        Adapters are currently compiled into the app; there is no dynamic plugin ABI.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Preflight
+      options:
+        - label: I read the adapter requirements in CONTRIBUTING.md.
+          required: true
+        - label: I searched existing issues and pull requests for this target.
+          required: true
+        - label: I can provide synthetic tests and redacted real-world validation.
+          required: true
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Adapter type
+      options:
+        - Coding-plan provider
+        - Hardware or firmware
+        - Transport or protocol
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: target
+    attributes:
+      label: Target
+      description: Name the provider, device, firmware, transport, or protocol.
+    validations:
+      required: true
+  - type: textarea
+    id: user_value
+    attributes:
+      label: User value
+      description: Explain the concrete problem this adapter solves.
+    validations:
+      required: true
+  - type: textarea
+    id: documentation
+    attributes:
+      label: Authoritative interface information
+      description: Link official API or protocol documentation, or explain how the interface was established.
+    validations:
+      required: true
+  - type: textarea
+    id: architecture
+    attributes:
+      label: Architecture fit
+      description: Identify the TokenLink protocol or module boundary the adapter will implement and any core changes required.
+    validations:
+      required: true
+  - type: textarea
+    id: security
+    attributes:
+      label: Credentials, endpoints, and privacy
+      description: Describe authentication, exact HTTPS host allowlists, data read or transmitted, and redaction risks.
+    validations:
+      required: true
+  - type: textarea
+    id: automated_proof
+    attributes:
+      label: Automated proof plan
+      description: List synthetic fixtures and success, failure, malformed-data, or transport tests.
+    validations:
+      required: true
+  - type: textarea
+    id: real_proof
+    attributes:
+      label: Real-world proof plan
+      description: Describe the redacted screenshot, video, or checkpoint log you will attach and the plan or hardware you can access.
+    validations:
+      required: true
+  - type: textarea
+    id: maintenance
+    attributes:
+      label: Ongoing maintenance
+      description: State who can revalidate the adapter when the upstream API, plan, hardware, or firmware changes.
+    validations:
+      required: true

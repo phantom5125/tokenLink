@@ -1,5 +1,11 @@
 # Security Policy
 
+## Supported versions
+
+Security fixes are made against the current `main` branch and, when practical,
+the most recent published release. Older commits, forks, and independently
+distributed builds do not receive guaranteed security updates.
+
 ## Secret handling
 
 TokenLink stores provider API keys exclusively in the macOS Keychain under the
@@ -13,12 +19,35 @@ Keys are never written to `config.json`, logs, diagnostics, or Git.
   `token|secret|authorization|api[_-]?key`).
 - The Kimi adapter may read the local Kimi Code CLI credential file read-only;
   it never reads or writes the refresh token.
-- Network requests are validated against per-provider HTTPS host allowlists
-  before any credential-bearing header is attached.
+- The initial destination of each credential-bearing request is validated
+  against its provider's HTTPS host allowlist before the request is sent.
 
 ## Reporting a vulnerability
 
-Please do not open a public issue for security reports. Email the maintainer
-listed on the GitHub repository profile, or use GitHub's private vulnerability
-reporting. Include reproduction steps and affected versions; secrets must never
-be included in the report.
+Do not open a public issue for a suspected vulnerability.
+
+Email [nico_ying@163.com](mailto:nico_ying@163.com) with a subject beginning
+`[TokenLink Security]`. Include:
+
+- the affected version or commit;
+- impact and realistic attack conditions;
+- minimal reproduction steps or a proof of concept;
+- relevant macOS, provider, device, and firmware versions; and
+- any suggested mitigation.
+
+Never include real API keys, access or refresh tokens, cookies, complete private
+provider responses, personal paths, account identifiers, or Bluetooth UUIDs.
+Use synthetic or aggressively redacted evidence.
+
+TokenLink is a personal project, so no response or remediation deadline is
+guaranteed. Reports will be handled on a best-effort basis, with priority given
+to demonstrated impact and reproducibility. Please allow a reasonable period for
+investigation before public disclosure.
+
+## Adapter evidence
+
+Provider and hardware adapter contributions require compatibility evidence, but
+that evidence must not weaken user security. Public pull requests should contain
+only synthetic fixtures and redacted screenshots, recordings, or log excerpts.
+If reproducing a security-sensitive integration requires private material,
+coordinate through the reporting channels above before submitting the adapter.
