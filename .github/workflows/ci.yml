@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   build-test:
     runs-on: macos-15
@@ -17,13 +20,23 @@ jobs:
       - name: Build
         run: swift build
       - name: Test
-        run: swift test
+        run: bash scripts/test.sh
       - name: Lint
-        run: swift format lint --recursive --strict Sources Tests
+        run: |
+          swift format lint --strict Package.swift
+          swift format lint --recursive --strict Sources Tests
       - name: Privacy scan
         run: bash scripts/privacy_scan.sh
       - name: Package with distribution notices
         run: |
-          bash scripts/package_app.sh
+          bash scripts/build_release_artifact.sh
           cmp LICENSE TokenLink.app/Contents/Resources/LICENSE
           cmp NOTICE TokenLink.app/Contents/Resources/NOTICE
+      - name: Upload development artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TokenLink-macos-${{ runner.arch }}
+          path: |
+            dist/*.zip
+            dist/*.sha256
+          if-no-files-found: error

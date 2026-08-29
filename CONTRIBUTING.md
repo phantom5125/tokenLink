@@ -78,7 +78,7 @@ Build and run the project:
 
 ```bash
 swift build
-swift test
+bash scripts/test.sh
 swift run tokenlink
 ```
 
@@ -86,7 +86,8 @@ Before opening a pull request, run:
 
 ```bash
 swift build
-swift test
+bash scripts/test.sh
+swift format lint --strict Package.swift
 swift format lint --recursive --strict Sources Tests
 bash scripts/privacy_scan.sh
 ```
@@ -162,6 +163,9 @@ Never include a real Bluetooth UUID or other persistent device identifier.
 
 The legacy StopWatch protocol v1 carries only the Codex primary window. Do not
 project other providers onto that payload or label non-Codex data as Codex.
+Protocol v2 additions must keep that byte-compatible fallback, enforce the
+payload size limit, add fake-transport coverage, and link a matching companion
+firmware revision. Physical claims still require separate C152 observations.
 
 When the maintainer lacks the required account, plan, or hardware, an adapter may
 remain experimental, live in a separately maintained fork, or wait for another
@@ -179,6 +183,8 @@ on the effort involved.
 
 Keep commits scoped and use descriptive subjects such as
 `fix: handle missing provider window` or `docs: clarify adapter evidence`.
+Maintainer release checks are documented separately in
+[`docs/RELEASING.md`](docs/RELEASING.md).
 
 ## Contribution licensing
 

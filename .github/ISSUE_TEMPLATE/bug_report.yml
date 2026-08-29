@@ -25,7 +25,7 @@ body:
     attributes:
       label: TokenLink version or commit
       description: Use a release version or full commit SHA.
-      placeholder: v0.1.0 or 0123456789abcdef...
+      placeholder: v0.2.0 or 0123456789abcdef...
     validations:
       required: true
   - type: input
@@ -43,6 +43,7 @@ body:
       options:
         - Menu bar or overview
         - Codex provider
+        - Claude provider
         - Kimi provider
         - MiniMax provider
         - GLM provider

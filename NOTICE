@@ -16,7 +16,7 @@ https://github.com/digitsisyph/codex-micro-stopwatch
 
 TokenLink's provider architecture was inspired by CodexBar by Peter Steinberger
 and contributors, made available under the MIT License. TokenLink does not
-bundle or depend on CodexBarCore in v0.1:
+bundle or depend on CodexBarCore:
 https://github.com/steipete/CodexBar
 
 GLM quota response handling was checked against zai-org/zai-coding-plugins,
@@ -30,3 +30,8 @@ maintainer directed, reviewed, and validated the changes included in TokenLink.
 
 Provider names and trademarks belong to their respective owners. References in
 this notice do not imply sponsorship or endorsement.
+
+The Codex, Claude, Kimi, MiniMax, and GLM provider marks bundled with the app
+are used only to identify their corresponding services. Those names and marks
+remain the property of their respective owners and are not covered by the
+Apache License granted for TokenLink's own source code and artwork.

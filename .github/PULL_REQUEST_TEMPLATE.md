@@ -21,7 +21,8 @@
 <!-- List exact commands and results. State why any check was not run. -->
 
 - [ ] `swift build`
-- [ ] `swift test`
+- [ ] `bash scripts/test.sh`
+- [ ] `swift format lint --strict Package.swift`
 - [ ] `swift format lint --recursive --strict Sources Tests`
 - [ ] `bash scripts/privacy_scan.sh`
 
