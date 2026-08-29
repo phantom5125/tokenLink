@@ -55,6 +55,7 @@ public enum CostWarning: Equatable, Sendable {
   case partialLocalScan(fileCount: Int, recordCount: Int)
   case partialSource(String)
   case unpricedModel(String)
+  case invalidTokenCount
 }
 
 public struct AuthoritativeCostSnapshot: Equatable, Sendable {
@@ -121,7 +122,10 @@ public struct NormalizedModelUsage: Equatable, Sendable {
   }
 
   public var totalInputTokens: Int {
-    uncachedInputTokens + cacheReadTokens + cacheWriteTokens
+    let first = uncachedInputTokens.addingReportingOverflow(cacheReadTokens)
+    if first.overflow { return Int.max }
+    let second = first.partialValue.addingReportingOverflow(cacheWriteTokens)
+    return second.overflow ? Int.max : second.partialValue
   }
 }
 

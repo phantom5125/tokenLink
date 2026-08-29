@@ -101,6 +101,7 @@ public final class CostDashboardModel {
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
   @ObservationIgnored private var refreshToken: UUID?
+  @ObservationIgnored private var agingTask: Task<Void, Never>?
 
   public init(
     enabled: Bool,
@@ -189,6 +190,8 @@ public final class CostDashboardModel {
     refreshToken = nil
     refreshTask?.cancel()
     refreshTask = nil
+    agingTask?.cancel()
+    agingTask = nil
     isRefreshing = false
     authoritativeRows = []
     estimateRows = []
@@ -247,6 +250,7 @@ public final class CostDashboardModel {
         case .estimate(let provider, let value):
           await store.acceptEstimate(value, provider: provider)
         }
+        await updateRows()
       }
     }
 
@@ -272,6 +276,37 @@ public final class CostDashboardModel {
     }
     authoritativeRows = authoritative
     estimateRows = estimates
+    scheduleAging()
+  }
+
+  private func scheduleAging() {
+    agingTask?.cancel()
+    agingTask = nil
+    guard isEnabled else { return }
+
+    let authoritativeDeadlines = authoritativeRows.compactMap { row -> Date? in
+      guard row.state.phase == .healthy, let fetchedAt = row.state.snapshot?.fetchedAt else {
+        return nil
+      }
+      return fetchedAt.addingTimeInterval(CostStore.authoritativeTTL)
+    }
+    let estimateDeadlines = estimateRows.compactMap { row -> Date? in
+      guard row.state.phase == .healthy, let scannedAt = row.state.snapshot?.scannedAt else {
+        return nil
+      }
+      return scannedAt.addingTimeInterval(CostStore.estimateTTL)
+    }
+    guard let deadline = (authoritativeDeadlines + estimateDeadlines).min() else { return }
+    let delay = max(0, deadline.timeIntervalSince(now())) + 0.01
+    agingTask = Task { @MainActor [weak self] in
+      do {
+        try await Task.sleep(for: .seconds(delay))
+      } catch {
+        return
+      }
+      guard let self, self.isEnabled else { return }
+      await self.updateRows()
+    }
   }
 }
 

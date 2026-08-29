@@ -48,8 +48,14 @@ public enum L10n {
     case menubarQuotaAccessibilityFormat = "menubar.quotaAccessibilityFormat"
     case menubarEstimateAccessibilityFormat = "menubar.estimateAccessibilityFormat"
     case menubarBalanceAccessibilityFormat = "menubar.balanceAccessibilityFormat"
+    case menubarCostFresh = "menubar.costFresh"
+    case menubarCostStale = "menubar.costStale"
+    case menubarCostRefreshing = "menubar.costRefreshing"
+    case menubarEstimateCompactFormat = "menubar.estimateCompactFormat"
+    case menubarBalanceCompactFormat = "menubar.balanceCompactFormat"
     // Costs
     case costsTitle = "costs.title"
+    case costsBetaBadge = "costs.betaBadge"
     case costsSubtitle = "costs.subtitle"
     case costsBetaOffTitle = "costs.betaOffTitle"
     case costsBetaOffBody = "costs.betaOffBody"
@@ -64,6 +70,9 @@ public enum L10n {
     case costsSourceLocalTranscripts = "costs.sourceLocalTranscripts"
     case costsEstimatedLabel = "costs.estimatedLabel"
     case costsAvailable = "costs.available"
+    case costsPurchased = "costs.purchased"
+    case costsUsed = "costs.used"
+    case costsProviderUnavailable = "costs.providerUnavailable"
     case costsUpdatedFormat = "costs.updatedFormat"
     case costsPeriodFormat = "costs.periodFormat"
     case costsCatalogFormat = "costs.catalogFormat"
@@ -77,6 +86,7 @@ public enum L10n {
     case costsPartialScanFormat = "costs.partialScanFormat"
     case costsPartialSource = "costs.partialSource"
     case costsUnpricedModel = "costs.unpricedModel"
+    case costsInvalidTokenCount = "costs.invalidTokenCount"
     // Quota rows and cards
     case quotaLeft = "quota.left"
     case quotaRemaining = "quota.remaining"
@@ -270,7 +280,7 @@ public enum L10n {
     .routeProviders: [
       .english: "Providers", .simplifiedChinese: "额度源", .japanese: "プロバイダー",
     ],
-    .routeCosts: [.english: "Costs", .simplifiedChinese: "成本", .japanese: "コスト"],
+    .routeCosts: [.english: "Costs β", .simplifiedChinese: "成本 β", .japanese: "コスト β"],
     .routeStopwatch: [
       .english: "StopWatch", .simplifiedChinese: "StopWatch", .japanese: "StopWatch",
     ],
@@ -311,17 +321,37 @@ public enum L10n {
       .japanese: "%@ クォータ、残り %lld パーセント",
     ],
     .menubarEstimateAccessibilityFormat: [
-      .english: "%@; estimated API-equivalent cost %@ for the last 7 days",
-      .simplifiedChinese: "%@；近 7 天估算的 API 等价成本 %@",
-      .japanese: "%@、直近7日間の推定 API 相当コスト %@",
+      .english: "%@; %@ local Estimated/API-equivalent cost %@ for the last 7 days; %@",
+      .simplifiedChinese: "%@；%@ 本地 Estimated/API-equivalent 成本 %@，近 7 天；%@",
+      .japanese: "%@、%@ のローカル Estimated/API-equivalent コスト %@、直近7日間、%@",
     ],
     .menubarBalanceAccessibilityFormat: [
-      .english: "%@; %@ authoritative balance %@ remaining",
-      .simplifiedChinese: "%@；%@ 权威余额剩余 %@",
-      .japanese: "%@、%@ の正式残高は残り %@",
+      .english: "%@; %@ authoritative balance %@ remaining; %@",
+      .simplifiedChinese: "%@；%@ 权威余额剩余 %@；%@",
+      .japanese: "%@、%@ の正式残高は残り %@、%@",
+    ],
+    .menubarCostFresh: [
+      .english: "fresh", .simplifiedChinese: "数据新鲜", .japanese: "最新",
+    ],
+    .menubarCostStale: [
+      .english: "stale", .simplifiedChinese: "数据已过期", .japanese: "古いデータ",
+    ],
+    .menubarCostRefreshing: [
+      .english: "refreshing with last known data",
+      .simplifiedChinese: "正在刷新，显示上次数据",
+      .japanese: "更新中、前回のデータを表示",
+    ],
+    .menubarEstimateCompactFormat: [
+      .english: "≈%@/7d", .simplifiedChinese: "≈%@/7天", .japanese: "≈%@/7日",
+    ],
+    .menubarBalanceCompactFormat: [
+      .english: "%@ %@ left", .simplifiedChinese: "%@ 剩余 %@", .japanese: "%@ 残り %@",
     ],
     .costsTitle: [
       .english: "Costs", .simplifiedChinese: "成本", .japanese: "コスト",
+    ],
+    .costsBetaBadge: [
+      .english: "Beta", .simplifiedChinese: "Beta", .japanese: "ベータ",
     ],
     .costsSubtitle: [
       .english:
@@ -389,6 +419,19 @@ public enum L10n {
     .costsAvailable: [
       .english: "Available", .simplifiedChinese: "可用余额", .japanese: "利用可能",
     ],
+    .costsPurchased: [
+      .english: "Purchased / credited", .simplifiedChinese: "已购买 / 已入账",
+      .japanese: "購入・付与済み",
+    ],
+    .costsUsed: [
+      .english: "Authoritative usage", .simplifiedChinese: "权威累计用量",
+      .japanese: "正式な累計使用額",
+    ],
+    .costsProviderUnavailable: [
+      .english: "The provider reports that this balance is currently unavailable.",
+      .simplifiedChinese: "服务商报告当前余额不可用。",
+      .japanese: "プロバイダーは、この残高が現在利用できないと報告しています。",
+    ],
     .costsUpdatedFormat: [
       .english: "Updated %@", .simplifiedChinese: "更新于 %@", .japanese: "%@ に更新",
     ],
@@ -441,6 +484,11 @@ public enum L10n {
       .english: "An unpriced model was excluded from the estimate.",
       .simplifiedChinese: "估算中排除了未定价模型。",
       .japanese: "価格未設定のモデルを推定から除外しました。",
+    ],
+    .costsInvalidTokenCount: [
+      .english: "A record with an invalid token count was excluded from the estimate.",
+      .simplifiedChinese: "估算中排除了一条令 Token 计数溢出的记录。",
+      .japanese: "トークン数が不正なレコードを推定から除外しました。",
     ],
     .quotaLeft: [.english: "left", .simplifiedChinese: "剩余", .japanese: "残り"],
     .quotaRemaining: [

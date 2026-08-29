@@ -20,13 +20,22 @@ public struct LocalUsageSummary: Equatable, Sendable {
     eventCount: Int = 0
   ) {
     self.provider = provider
-    self.inputTokens = inputTokens
-    self.outputTokens = outputTokens
-    self.cachedInputTokens = cachedInputTokens
-    self.eventCount = eventCount
+    self.inputTokens = max(0, inputTokens)
+    self.outputTokens = max(0, outputTokens)
+    self.cachedInputTokens = max(0, cachedInputTokens)
+    self.eventCount = max(0, eventCount)
   }
 
-  public var totalTokens: Int { inputTokens + outputTokens }
+  public var totalTokens: Int {
+    saturatingTokenAdd(inputTokens, outputTokens)
+  }
+
+  mutating func add(_ event: TokenUsageEvent) {
+    inputTokens = saturatingTokenAdd(inputTokens, event.inputTokens)
+    outputTokens = saturatingTokenAdd(outputTokens, event.outputTokens)
+    cachedInputTokens = saturatingTokenAdd(cachedInputTokens, event.cachedInputTokens)
+    eventCount = saturatingTokenAdd(eventCount, 1)
+  }
 }
 
 /// A single timestamped token-usage observation parsed from a transcript.
@@ -43,9 +52,9 @@ public struct TokenUsageEvent: Equatable, Sendable {
     cachedInputTokens: Int = 0, dedupeKey: String = ""
   ) {
     self.timestamp = timestamp
-    self.inputTokens = inputTokens
-    self.outputTokens = outputTokens
-    self.cachedInputTokens = cachedInputTokens
+    self.inputTokens = max(0, inputTokens)
+    self.outputTokens = max(0, outputTokens)
+    self.cachedInputTokens = max(0, cachedInputTokens)
     self.dedupeKey = dedupeKey
   }
 }
@@ -82,11 +91,13 @@ public enum LocalUsageAggregation {
       if !event.dedupeKey.isEmpty && !seen.insert(event.dedupeKey).inserted {
         continue
       }
-      summary.inputTokens += event.inputTokens
-      summary.outputTokens += event.outputTokens
-      summary.cachedInputTokens += event.cachedInputTokens
-      summary.eventCount += 1
+      summary.add(event)
     }
     return summary
   }
+}
+
+private func saturatingTokenAdd(_ lhs: Int, _ rhs: Int) -> Int {
+  let result = max(0, lhs).addingReportingOverflow(max(0, rhs))
+  return result.overflow ? Int.max : result.partialValue
 }

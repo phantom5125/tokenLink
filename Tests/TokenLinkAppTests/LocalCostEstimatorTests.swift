@@ -141,6 +141,50 @@ import TokenLinkProviders
     ])
 }
 
+@Test func localCostEstimatorSkipsCountersThatOverflowAnAggregate() throws {
+  // Catches repeated attacker-controlled Int.max counters trapping the local scanner.
+  let root = try temporaryCostHome()
+  defer { try? FileManager.default.removeItem(at: root) }
+  let directory = root.appending(
+    path: ".kimi-code/sessions/project/session/agents/agent",
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  try Data(
+    """
+    {"type":"usage.record","time":1788048000000,"model":"huge","usage":{"inputOther":9223372036854775807,"inputCacheRead":0,"inputCacheCreation":0,"output":0}}
+    {"type":"usage.record","time":1788048060000,"model":"huge","usage":{"inputOther":9223372036854775807,"inputCacheRead":0,"inputCacheCreation":0,"output":0}}
+
+    """.utf8
+  ).write(to: directory.appending(path: "wire.jsonl"))
+
+  let through = Date(timeIntervalSince1970: 1_788_134_400)
+  let catalog = PriceCatalog(
+    version: "overflow-test",
+    effectiveDate: through,
+    entries: [
+      ModelPrice(
+        provider: .kimi,
+        modelID: "huge",
+        aliases: [],
+        currency: "USD",
+        uncachedInputPerMillion: 1,
+        cacheReadPerMillion: nil,
+        outputPerMillion: nil,
+        sourceURL: URL(string: "https://example.com/huge")!)
+    ])
+  let snapshot = try LocalCostEstimator(
+    observer: LocalUsageObserver(homeURL: root),
+    catalog: catalog,
+    now: { through }
+  ).estimate(
+    provider: .kimi,
+    since: through.addingTimeInterval(-604_800),
+    through: through)
+
+  #expect(snapshot.lineItems.first?.usage.uncachedInputTokens == Int.max)
+  #expect(snapshot.warnings.contains(.invalidTokenCount))
+}
+
 private func temporaryCostHome() throws -> URL {
   let root = FileManager.default.temporaryDirectory.appending(
     path: UUID().uuidString,

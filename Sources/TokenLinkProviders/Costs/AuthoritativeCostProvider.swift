@@ -31,7 +31,11 @@ struct LosslessDecimal: Decodable, Sendable {
     let decoded: Decimal?
     if let decimal = try? container.decode(Decimal.self) {
       decoded = decimal
-    } else if let string = try? container.decode(String.self), !string.isEmpty {
+    } else if let string = try? container.decode(String.self),
+      string.range(
+        of: #"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?$"#,
+        options: .regularExpression) != nil
+    {
       decoded = Decimal(
         string: string,
         locale: Locale(identifier: "en_US_POSIX"))
@@ -83,6 +87,22 @@ enum AuthoritativeCostSupport {
     return ProviderFailure(
       kind: kind,
       message: "\(providerName) \(sourceName) returned HTTP \(statusCode).")
+  }
+
+  static func transportFailure(
+    _ error: any Error,
+    providerName: String,
+    sourceName: String
+  ) -> ProviderFailure {
+    if error is CancellationError
+      || (error as? URLError)?.code == .cancelled
+    {
+      return .timeout("\(providerName) \(sourceName) request was cancelled.")
+    }
+    if (error as? URLError)?.code == .timedOut {
+      return .timeout("\(providerName) \(sourceName) request timed out.")
+    }
+    return .network("\(providerName) \(sourceName) request failed.")
   }
 
   static func aggregate(_ failures: [ProviderFailure]) -> ProviderFailure {

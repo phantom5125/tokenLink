@@ -108,6 +108,28 @@ import TokenLinkCore
   #expect(summary.eventCount == 1)
 }
 
+@Test func observerReportsAnExistingButUnreadableTranscriptDirectory() throws {
+  // Catches a permission failure being presented as if no transcript directory exists.
+  let home = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+  let sessions = home.appending(path: ".codex/sessions", directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: sessions, withIntermediateDirectories: true)
+  defer {
+    try? FileManager.default.setAttributes(
+      [.posixPermissions: 0o700],
+      ofItemAtPath: sessions.path)
+    try? FileManager.default.removeItem(at: home)
+  }
+  try FileManager.default.setAttributes(
+    [.posixPermissions: 0o000],
+    ofItemAtPath: sessions.path)
+
+  let report = try LocalUsageObserver(homeURL: home).scan(
+    CodexRolloutParser.self,
+    since: .distantPast)
+
+  #expect(report.unreadableFileCount == 1)
+}
+
 @Test func codexCostParserTracksModelsCumulativeDeltasAndChildBaseline() throws {
   // Catches charging cached input twice, repeated totals, or replayed parent totals.
   var parser = CodexCostRecordParser()

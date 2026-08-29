@@ -1016,6 +1016,75 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
   #expect(await probe.authoritativeCalls == 1)
 }
 
+@MainActor @Test func betaCostsRollsBackWhenConfigurationCannotBeSaved() async throws {
+  // Catches observable configuration and the runtime dashboard diverging after a disk failure.
+  let root = FileManager.default.temporaryDirectory.appending(
+    path: UUID().uuidString,
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let blockedDirectory = root.appending(path: "not-a-directory")
+  try Data("blocked".utf8).write(to: blockedDirectory)
+  let store = ConfigurationStore(directory: blockedDirectory)
+
+  let disabledDashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [],
+    estimateProviders: [],
+    authoritativeLoader: { _ in .failure(.configuration("unused")) },
+    estimateLoader: { _ in .failure(.configuration("unused")) })
+  let disabledModel = AppModel(
+    refresher: CountingRefresher(),
+    configurationStore: store,
+    costDashboard: disabledDashboard)
+
+  do {
+    try await disabledModel.setBetaCostsEnabled(true)
+    Issue.record("Expected enabling Costs to fail")
+  } catch {}
+  #expect(!disabledModel.configuration.betaCostsEnabled)
+  #expect(disabledModel.configuration.menuBarCostMetric == .none)
+  #expect(!disabledModel.costDashboard.isEnabled)
+
+  var enabledConfiguration = AppConfiguration.default
+  enabledConfiguration.betaCostsEnabled = true
+  enabledConfiguration.menuBarCostMetric = .localEstimate(.codex)
+  let snapshotDate = Date(timeIntervalSince1970: 1_000)
+  let costSourceID = UUID()
+  let enabledDashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: costSourceID, provider: .openrouter)
+    ],
+    estimateProviders: [],
+    store: CostStore(now: { snapshotDate }),
+    authoritativeLoader: { _ in
+      .success(
+        AuthoritativeCostSnapshot(
+          provider: .openrouter,
+          balances: [AccountBalance(currency: "USD", available: 1)],
+          fetchedAt: snapshotDate))
+    },
+    estimateLoader: { _ in .failure(.configuration("unused")) },
+    now: { snapshotDate })
+  let enabledModel = AppModel(
+    refresher: CountingRefresher(),
+    configuration: enabledConfiguration,
+    configurationStore: store,
+    costDashboard: enabledDashboard)
+  await enabledModel.loadCostsIfNeeded()
+  #expect(enabledModel.costDashboard.authoritativeRows.count == 1)
+
+  do {
+    try await enabledModel.setBetaCostsEnabled(false)
+    Issue.record("Expected disabling Costs to fail")
+  } catch {}
+  #expect(enabledModel.configuration.betaCostsEnabled)
+  #expect(enabledModel.configuration.menuBarCostMetric == .localEstimate(.codex))
+  #expect(enabledModel.costDashboard.isEnabled)
+  #expect(enabledModel.costDashboard.authoritativeRows.count == 1)
+}
+
 @MainActor @Test func costAccountRemovalPromotesNamespacedCredential() async throws {
   // Catches cost-only accounts bypassing the existing default-key promotion semantics.
   var configuration = AppConfiguration.default
@@ -1041,6 +1110,7 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
 @MainActor @Test func menuBarCostEstimateKeepsQuotaFirstAndMarksApproximation() async throws {
   // Catches replacing the quota segment or omitting the mandatory estimate marker.
   var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
   configuration.betaCostsEnabled = true
   configuration.menuBarCostMetric = .localEstimate(.codex)
   let date = Date(timeIntervalSince1970: 1_000)
@@ -1082,11 +1152,16 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
 
   #expect(model.highlight?.provider == .codex)
   #expect(model.menuBarLabel == "Codex 42% · ≈$8.31/7d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Codex local Estimated/API-equivalent cost $8.31 for the last 7 days; fresh"
+  )
 }
 
 @MainActor @Test func menuBarCostAuthoritativeBalanceAndMissingFallback() async throws {
   // Catches adding an estimate marker to provider balances or showing a missing selection.
   var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
   let openRouter = ProviderAccount(provider: .openrouter, label: "Private label")
   configuration.accounts.append(openRouter)
   configuration.betaCostsEnabled = true
@@ -1131,10 +1206,65 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
   await model.requestRefresh(reason: "Quota")
   await model.loadCostsIfNeeded()
   #expect(model.menuBarLabel == "Codex 42% · OR $18.40 left")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; OpenRouter authoritative balance $18.40 remaining; fresh"
+  )
 
   try model.setMenuBarCostMetric(
     .authoritativeBalance(accountID: UUID(), currency: "USD"))
   #expect(model.menuBarLabel == "Codex 42%")
+}
+
+@MainActor @Test func menuBarCostAccessibilityDescribesStaleEstimate() async throws {
+  // Catches stale cost text being exposed to assistive tech as if it were fresh.
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  configuration.betaCostsEnabled = true
+  configuration.menuBarCostMetric = .localEstimate(.claude)
+  let date = Date(timeIntervalSince1970: 1_000)
+  let staleDate = date.addingTimeInterval(CostStore.estimateTTL + 1)
+  let dashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [],
+    estimateProviders: [.claude],
+    store: CostStore(now: { staleDate }),
+    authoritativeLoader: { _ in .failure(.network("unused")) },
+    estimateLoader: { provider in
+      .success(
+        EstimatedCostSnapshot(
+          provider: provider,
+          period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+          lineItems: [],
+          totals: [CurrencyAmount(value: Decimal(string: "4.20")!, currency: "USD")],
+          unknownModelIDs: [],
+          catalogVersion: "accessibility-test",
+          catalogEffectiveDate: date,
+          scannedAt: date))
+    },
+    now: { staleDate })
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in
+      [
+        codexAccount.id: ProviderState(
+          phase: .healthy,
+          snapshot: snapshot(.codex, remaining: 42))
+      ]
+    },
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.requestRefresh(reason: "Quota")
+  await model.loadCostsIfNeeded()
+
+  #expect(model.costDashboard.estimateRows.first?.state.phase == .stale)
+  #expect(model.menuBarLabel == "Codex 42% · ≈$4.20/7d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Claude local Estimated/API-equivalent cost $4.20 for the last 7 days; stale"
+  )
 }
 
 @MainActor @Test func costDiagnosticsContainOnlyRedactedMetadata() async throws {

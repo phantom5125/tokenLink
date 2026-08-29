@@ -106,7 +106,11 @@ public struct OpenRouterCostProvider: AuthoritativeCostProvider {
     } catch is DecodingError {
       return .failure(.decoding("OpenRouter credits could not be read."))
     } catch {
-      return .failure(.network("OpenRouter credits request failed."))
+      return .failure(
+        AuthoritativeCostSupport.transportFailure(
+          error,
+          providerName: "OpenRouter",
+          sourceName: "credits"))
     }
   }
 
@@ -133,7 +137,11 @@ public struct OpenRouterCostProvider: AuthoritativeCostProvider {
     } catch is DecodingError {
       return .failure(.decoding("OpenRouter key usage could not be read."))
     } catch {
-      return .failure(.network("OpenRouter key usage request failed."))
+      return .failure(
+        AuthoritativeCostSupport.transportFailure(
+          error,
+          providerName: "OpenRouter",
+          sourceName: "key"))
     }
   }
 }

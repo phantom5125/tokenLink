@@ -38,7 +38,6 @@ struct SettingsView: View {
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     .navigationTitle(model.text(.settingsTitle))
-    .task { await model.loadCostsIfNeeded() }
   }
 
   private var generalCard: some View {
@@ -201,7 +200,6 @@ struct SettingsView: View {
               Task { @MainActor in
                 do {
                   try await model.setBetaCostsEnabled(enabled)
-                  if enabled { await model.loadCostsIfNeeded() }
                 } catch {
                   message = error.localizedDescription
                 }

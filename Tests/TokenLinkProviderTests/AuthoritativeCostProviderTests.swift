@@ -27,6 +27,24 @@ private actor CostHTTPClient: HTTPClient {
   }
 }
 
+private struct FailingCostHTTPClient: HTTPClient {
+  enum Failure: Sendable {
+    case timedOut
+    case cancelled
+  }
+
+  let failure: Failure
+
+  func data(for request: URLRequest, policy: EndpointPolicy) async throws -> HTTPResponse {
+    switch failure {
+    case .timedOut:
+      throw URLError(.timedOut)
+    case .cancelled:
+      throw CancellationError()
+    }
+  }
+}
+
 private func response(_ fixture: String, statusCode: Int = 200) throws -> HTTPResponse {
   HTTPResponse(data: try Fixture.load(fixture), statusCode: statusCode)
 }
@@ -166,6 +184,60 @@ private func response(_ fixture: String, statusCode: Int = 200) throws -> HTTPRe
     return
   }
   #expect(failure.kind == .decoding)
+}
+
+@Test func openRouterRejectsPartiallyParsedDecimalStrings() async {
+  // Catches Foundation Decimal accepting a numeric prefix or locale-dependent spelling.
+  let malformedValues = [
+    "1abc", "1.2.3", "1,2", " 1", "1 ", "--1", "1e", "1e+",
+  ]
+  for malformedValue in malformedValues {
+    let malformedCredits = Data(
+      #"{"data":{"total_credits":"\#(malformedValue)","total_usage":"1"}}"#.utf8)
+    let provider = OpenRouterCostProvider(
+      http: CostHTTPClient(
+        responses: [
+          "/api/v1/credits": HTTPResponse(data: malformedCredits, statusCode: 200),
+          "/api/v1/key": HTTPResponse(data: Data(#"{"data":{}}"#.utf8), statusCode: 200),
+        ]),
+      credentials: CostCredentials(value: "management-key"))
+
+    guard case .failure(let failure) = await provider.fetch() else {
+      Issue.record("Expected decoding failure for \(malformedValue)")
+      continue
+    }
+    #expect(failure.kind == .decoding)
+  }
+}
+
+@Test func authoritativeCostsClassifyTimeoutAndCancellationSeparatelyFromNetwork() async {
+  // Catches actionable transport states collapsing into a generic network failure.
+  let timedOutProviders: [any AuthoritativeCostProvider] = [
+    OpenRouterCostProvider(
+      http: FailingCostHTTPClient(failure: .timedOut),
+      credentials: CostCredentials(value: "key")),
+    DeepSeekCostProvider(
+      http: FailingCostHTTPClient(failure: .timedOut),
+      credentials: CostCredentials(value: "key")),
+  ]
+  for provider in timedOutProviders {
+    guard case .failure(let failure) = await provider.fetch() else {
+      Issue.record("Expected timeout for \(provider.id.rawValue)")
+      continue
+    }
+    #expect(failure.kind == .timeout)
+    #expect(failure.message.localizedCaseInsensitiveContains("timed out"))
+  }
+
+  let cancelled = DeepSeekCostProvider(
+    http: FailingCostHTTPClient(failure: .cancelled),
+    credentials: CostCredentials(value: "key"))
+  guard case .failure(let cancellation) = await cancelled.fetch() else {
+    Issue.record("Expected cancellation failure")
+    return
+  }
+  #expect(cancellation.kind == .timeout)
+  #expect(cancellation.message.localizedCaseInsensitiveContains("cancelled"))
 }
 
 @Test func deepSeekPreservesCurrenciesAvailabilityAndZero() async throws {

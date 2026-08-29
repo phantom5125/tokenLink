@@ -1,18 +1,28 @@
+import Darwin
 import Foundation
+
+public enum JSONLStreamingReaderError: Error, Equatable, Sendable {
+  case notRegularFile
+  case openFailed(Int32)
+  case inspectFailed(Int32)
+}
 
 public struct JSONLReadReport: Equatable, Sendable {
   public let bytesRead: Int
   public let deliveredRecordCount: Int
   public let oversizedRecordCount: Int
+  public let byteLimitExceeded: Bool
 
   public init(
     bytesRead: Int,
     deliveredRecordCount: Int,
-    oversizedRecordCount: Int
+    oversizedRecordCount: Int,
+    byteLimitExceeded: Bool = false
   ) {
     self.bytesRead = bytesRead
     self.deliveredRecordCount = deliveredRecordCount
     self.oversizedRecordCount = oversizedRecordCount
+    self.byteLimitExceeded = byteLimitExceeded
   }
 }
 
@@ -24,10 +34,11 @@ public struct JSONLStreamingReader: Sendable {
 
   public func read(
     url: URL,
+    maximumBytes: Int? = nil,
     onRecord: (Data) -> Void
   ) throws -> JSONLReadReport {
     try Task.checkCancellation()
-    let handle = try FileHandle(forReadingFrom: url)
+    let handle = try openRegularFile(at: url)
     defer { try? handle.close() }
 
     var currentRecord = Data()
@@ -35,11 +46,29 @@ public struct JSONLStreamingReader: Sendable {
     var bytesRead = 0
     var deliveredRecordCount = 0
     var oversizedRecordCount = 0
+    var byteLimitExceeded = false
+    let byteLimit = maximumBytes.map { max(0, $0) }
 
     while true {
       try Task.checkCancellation()
-      guard let chunk = try handle.read(upToCount: Self.chunkBytes), !chunk.isEmpty else {
+      let readCount: Int
+      if let byteLimit {
+        let remaining = byteLimit - bytesRead
+        readCount = remaining >= Self.chunkBytes ? Self.chunkBytes : max(1, remaining + 1)
+      } else {
+        readCount = Self.chunkBytes
+      }
+      guard var chunk = try handle.read(upToCount: readCount), !chunk.isEmpty else {
         break
+      }
+      var stopAfterChunk = false
+      if let byteLimit {
+        let remaining = max(0, byteLimit - bytesRead)
+        if chunk.count > remaining {
+          chunk = Data(chunk.prefix(remaining))
+          byteLimitExceeded = true
+          stopAfterChunk = true
+        }
       }
       bytesRead += chunk.count
       var segmentStart = chunk.startIndex
@@ -65,19 +94,20 @@ public struct JSONLStreamingReader: Sendable {
         segmentStart = chunk.index(after: index)
       }
 
-      guard segmentStart < chunk.endIndex else { continue }
-      if discardingOversizedRecord { continue }
-      let tail = chunk[segmentStart..<chunk.endIndex]
-      if currentRecord.count + tail.count > Self.maximumRecordBytes {
-        oversizedRecordCount += 1
-        currentRecord.removeAll(keepingCapacity: false)
-        discardingOversizedRecord = true
-      } else {
-        currentRecord.append(contentsOf: tail)
+      if segmentStart < chunk.endIndex, !discardingOversizedRecord {
+        let tail = chunk[segmentStart..<chunk.endIndex]
+        if currentRecord.count + tail.count > Self.maximumRecordBytes {
+          oversizedRecordCount += 1
+          currentRecord.removeAll(keepingCapacity: false)
+          discardingOversizedRecord = true
+        } else {
+          currentRecord.append(contentsOf: tail)
+        }
       }
+      if stopAfterChunk { break }
     }
 
-    if !discardingOversizedRecord, !currentRecord.isEmpty {
+    if !byteLimitExceeded, !discardingOversizedRecord, !currentRecord.isEmpty {
       try Task.checkCancellation()
       onRecord(currentRecord)
       deliveredRecordCount += 1
@@ -85,6 +115,31 @@ public struct JSONLStreamingReader: Sendable {
     return JSONLReadReport(
       bytesRead: bytesRead,
       deliveredRecordCount: deliveredRecordCount,
-      oversizedRecordCount: oversizedRecordCount)
+      oversizedRecordCount: oversizedRecordCount,
+      byteLimitExceeded: byteLimitExceeded)
+  }
+
+  private func openRegularFile(at url: URL) throws -> FileHandle {
+    let descriptor = url.withUnsafeFileSystemRepresentation { path in
+      guard let path else { return Int32(-1) }
+      return Darwin.open(path, O_RDONLY | O_NOFOLLOW | O_NONBLOCK)
+    }
+    guard descriptor >= 0 else {
+      let code = errno
+      if code == ELOOP { throw JSONLStreamingReaderError.notRegularFile }
+      throw JSONLStreamingReaderError.openFailed(code)
+    }
+
+    var metadata = stat()
+    guard fstat(descriptor, &metadata) == 0 else {
+      let code = errno
+      Darwin.close(descriptor)
+      throw JSONLStreamingReaderError.inspectFailed(code)
+    }
+    guard metadata.st_mode & S_IFMT == S_IFREG else {
+      Darwin.close(descriptor)
+      throw JSONLStreamingReaderError.notRegularFile
+    }
+    return FileHandle(fileDescriptor: descriptor, closeOnDealloc: true)
   }
 }

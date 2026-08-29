@@ -2,9 +2,14 @@ import Foundation
 import TokenLinkCore
 
 enum CostFormatting {
-  static func amount(_ amount: CurrencyAmount) -> String {
+  static func amount(_ amount: CurrencyAmount, language: AppLanguage) -> String {
     let formatter = NumberFormatter()
-    formatter.locale = Locale(identifier: "en_US")
+    formatter.locale =
+      switch language {
+      case .english: Locale(identifier: "en_US")
+      case .simplifiedChinese: Locale(identifier: "zh_CN")
+      case .japanese: Locale(identifier: "ja_JP")
+      }
     formatter.numberStyle = .currency
     formatter.currencyCode = amount.currency
     formatter.minimumFractionDigits = amount.currency == "JPY" ? 0 : 2

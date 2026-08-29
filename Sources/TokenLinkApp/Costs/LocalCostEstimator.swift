@@ -57,6 +57,7 @@ public struct LocalCostEstimator: Sendable {
     var aggregates: [AggregateKey: CostAggregate] = [:]
     var unknownModelIDs: Set<String> = []
     var seenEventIDs: Set<String> = []
+    var rejectedOverflow = false
 
     let report = try observer.scanRecords(
       parser,
@@ -88,8 +89,13 @@ public struct LocalCostEstimator: Sendable {
       let key = AggregateKey(
         modelID: price.modelID,
         currency: item.amount.currency)
-      aggregates[key, default: CostAggregate(provider: P.provider, modelID: price.modelID)]
-        .add(item)
+      var aggregate =
+        aggregates[key] ?? CostAggregate(provider: P.provider, modelID: price.modelID)
+      if aggregate.add(item) {
+        aggregates[key] = aggregate
+      } else {
+        rejectedOverflow = true
+      }
     }
 
     let lineItems = aggregates.keys.sorted().compactMap { key in
@@ -102,6 +108,9 @@ public struct LocalCostEstimator: Sendable {
         .partialLocalScan(
           fileCount: skippedFiles,
           recordCount: report.oversizedRecordCount))
+    }
+    if rejectedOverflow {
+      warnings.append(.invalidTokenCount)
     }
     return EstimatedCostSnapshot(
       provider: P.provider,
@@ -137,16 +146,30 @@ private struct CostAggregate {
   var amount: Decimal = 0
   var warnings: [CostWarning] = []
 
-  mutating func add(_ item: ModelCostLineItem) {
+  mutating func add(_ item: ModelCostLineItem) -> Bool {
+    let nextUncached = uncachedInputTokens.addingReportingOverflow(
+      item.usage.uncachedInputTokens)
+    let nextCacheRead = cacheReadTokens.addingReportingOverflow(item.usage.cacheReadTokens)
+    let nextCacheWrite = cacheWriteTokens.addingReportingOverflow(
+      item.usage.cacheWriteTokens)
+    let nextOutput = outputTokens.addingReportingOverflow(item.usage.outputTokens)
+    guard
+      !nextUncached.overflow,
+      !nextCacheRead.overflow,
+      !nextCacheWrite.overflow,
+      !nextOutput.overflow
+    else { return false }
+
     latestTimestamp = max(latestTimestamp, item.usage.timestamp)
-    uncachedInputTokens += item.usage.uncachedInputTokens
-    cacheReadTokens += item.usage.cacheReadTokens
-    cacheWriteTokens += item.usage.cacheWriteTokens
-    outputTokens += item.usage.outputTokens
+    uncachedInputTokens = nextUncached.partialValue
+    cacheReadTokens = nextCacheRead.partialValue
+    cacheWriteTokens = nextCacheWrite.partialValue
+    outputTokens = nextOutput.partialValue
     amount += item.amount.value
     for warning in item.warnings where !warnings.contains(warning) {
       warnings.append(warning)
     }
+    return true
   }
 
   func lineItem(currency: String) -> ModelCostLineItem {

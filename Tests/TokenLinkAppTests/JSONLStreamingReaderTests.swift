@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import Testing
 
@@ -72,6 +73,72 @@ import Testing
   }
 }
 
+@Test func streamingReaderEnforcesByteCeilingWhileFileIsOpen() throws {
+  // Catches a file growing beyond the observer's preflight size check.
+  let url = try temporaryFile(contents: Data("a\nb\nc\n".utf8))
+  defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+
+  var records: [String] = []
+  let truncated = try JSONLStreamingReader().read(url: url, maximumBytes: 4) {
+    records.append(String(decoding: $0, as: UTF8.self))
+  }
+
+  #expect(truncated.bytesRead == 4)
+  #expect(truncated.byteLimitExceeded)
+  #expect(records == ["a", "b"])
+
+  let exactURL = try temporaryFile(contents: Data("a\nb\n".utf8))
+  defer { try? FileManager.default.removeItem(at: exactURL.deletingLastPathComponent()) }
+  let exact = try JSONLStreamingReader().read(url: exactURL, maximumBytes: 4) { _ in }
+  #expect(exact.bytesRead == 4)
+  #expect(!exact.byteLimitExceeded)
+}
+
+@Test func streamingReaderEnforcesByteCeilingWhenFileGrowsAfterOpening() throws {
+  // Catches a writer extending the transcript after the reader passed its preflight check.
+  let url = try temporaryFile(contents: Data("a\n".utf8))
+  defer { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
+  let writer = try FileHandle(forWritingTo: url)
+  defer { try? writer.close() }
+  try writer.seekToEnd()
+
+  var records: [String] = []
+  let report = try JSONLStreamingReader().read(url: url, maximumBytes: 4) {
+    let record = String(decoding: $0, as: UTF8.self)
+    records.append(record)
+    if record == "a" {
+      try? writer.write(contentsOf: Data("b\nc\n".utf8))
+    }
+  }
+
+  #expect(report.bytesRead == 4)
+  #expect(report.byteLimitExceeded)
+  #expect(records == ["a", "b"])
+}
+
+@Test func streamingReaderRejectsSymbolicLinksAndSpecialFiles() throws {
+  // Catches transcript discovery being redirected or blocked by a FIFO.
+  let directory = FileManager.default.temporaryDirectory.appending(
+    path: UUID().uuidString,
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+
+  let target = directory.appending(path: "target.jsonl")
+  try Data("{}\n".utf8).write(to: target)
+  let link = directory.appending(path: "link.jsonl")
+  try FileManager.default.createSymbolicLink(at: link, withDestinationURL: target)
+  expectNotRegularFile(at: link)
+
+  let fifo = directory.appending(path: "pipe.jsonl")
+  let result = fifo.withUnsafeFileSystemRepresentation { path in
+    guard let path else { return Int32(-1) }
+    return Darwin.mkfifo(path, 0o600)
+  }
+  #expect(result == 0)
+  expectNotRegularFile(at: fifo)
+}
+
 @Test func observerProcessesExactlyFiftyMiBAndSkipsOneByteOver() throws {
   // Catches opening a file beyond the hard cap or rejecting the exact boundary.
   let root = FileManager.default.temporaryDirectory.appending(
@@ -127,4 +194,15 @@ private func makeSparseFile(at url: URL, prefix: Data, byteCount: UInt64) throws
   defer { try? handle.close() }
   try handle.write(contentsOf: prefix)
   try handle.truncate(atOffset: byteCount)
+}
+
+private func expectNotRegularFile(at url: URL) {
+  do {
+    _ = try JSONLStreamingReader().read(url: url) { _ in }
+    Issue.record("Expected a non-regular file error")
+  } catch let error as JSONLStreamingReaderError {
+    #expect(error == .notRegularFile)
+  } catch {
+    Issue.record("Expected JSONLStreamingReaderError, got \(type(of: error))")
+  }
 }

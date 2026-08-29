@@ -112,6 +112,37 @@ private func dashboardEstimateSnapshot(at date: Date) -> EstimatedCostSnapshot {
   #expect(model.isRefreshing == false)
 }
 
+@MainActor @Test func costDashboardPublishesEachSourceAsItFinishes() async throws {
+  // Catches a fast authoritative result being hidden behind a slower local scan.
+  let date = Date(timeIntervalSince1970: 1_000)
+  let model = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: costAccount, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { date }),
+    authoritativeLoader: { _ in
+      .success(dashboardAuthoritativeSnapshot(at: date))
+    },
+    estimateLoader: { _ in
+      try? await Task.sleep(for: .milliseconds(400))
+      return .success(dashboardEstimateSnapshot(at: date))
+    },
+    now: { date })
+
+  let refresh = Task { await model.refreshCosts(force: true) }
+  for _ in 0..<50 {
+    if model.authoritativeRows.first?.state.phase == .healthy { break }
+    try await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(model.authoritativeRows.first?.state.phase == .healthy)
+  #expect(model.isRefreshing)
+  await refresh.value
+  #expect(model.estimateRows.first?.state.phase == .healthy)
+}
+
 @MainActor @Test func sourceFailuresRemainIndependentAndDisableClearsRows() async {
   let date = Date(timeIntervalSince1970: 1_000)
   let probe = CostLoaderProbe(
@@ -154,6 +185,36 @@ private func dashboardEstimateSnapshot(at date: Date) -> EstimatedCostSnapshot {
   #expect(model.isRefreshing == false)
   #expect(model.authoritativeRows.isEmpty)
   #expect(model.estimateRows.isEmpty)
+}
+
+@MainActor @Test func costDashboardAgesVisibleRowsAtTTLWithoutAnotherLoad() async throws {
+  // Catches copied presentation rows remaining healthy forever while Costs stays open.
+  let loadedAt = Date()
+  let probe = CostLoaderProbe(
+    authoritativeResult: .success(
+      dashboardAuthoritativeSnapshot(
+        at: loadedAt.addingTimeInterval(-CostStore.authoritativeTTL + 0.3))),
+    estimateResult: .success(
+      dashboardEstimateSnapshot(
+        at: loadedAt.addingTimeInterval(-CostStore.estimateTTL + 0.3))))
+  let model = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: costAccount, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(),
+    authoritativeLoader: { await probe.loadAuthoritative($0) },
+    estimateLoader: { await probe.loadEstimate($0) })
+
+  await model.loadIfNeeded()
+  #expect(model.authoritativeRows.first?.state.phase == .healthy)
+  #expect(model.estimateRows.first?.state.phase == .healthy)
+
+  try await Task.sleep(for: .milliseconds(600))
+
+  #expect(model.authoritativeRows.first?.state.phase == .stale)
+  #expect(model.estimateRows.first?.state.phase == .stale)
 }
 
 @MainActor private func makeDashboard(

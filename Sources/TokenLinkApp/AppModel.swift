@@ -529,7 +529,10 @@ public final class AppModel {
       else { return quota }
       return String(
         format: text(.menubarEstimateAccessibilityFormat),
-        quota, CostFormatting.amount(amount))
+        quota,
+        Self.displayName(for: row.provider),
+        CostFormatting.amount(amount, language: currentLanguage),
+        costFreshness(row.state.phase))
     case .authoritativeBalance(let accountID, let currency):
       guard
         let row = costDashboard.authoritativeRows.first(where: { $0.id == accountID }),
@@ -542,7 +545,8 @@ public final class AppModel {
         format: text(.menubarBalanceAccessibilityFormat),
         quota,
         Self.displayName(for: row.source.provider),
-        CostFormatting.amount(balance.available))
+        CostFormatting.amount(balance.available, language: currentLanguage),
+        costFreshness(row.state.phase))
     }
   }
 
@@ -557,7 +561,9 @@ public final class AppModel {
         totals.count == 1,
         let amount = totals.first
       else { return nil }
-      return "≈\(CostFormatting.amount(amount))/7d"
+      return String(
+        format: text(.menubarEstimateCompactFormat),
+        CostFormatting.amount(amount, language: currentLanguage))
     case .authoritativeBalance(let accountID, let currency):
       guard
         let row = costDashboard.authoritativeRows.first(where: { $0.id == accountID }),
@@ -566,13 +572,28 @@ public final class AppModel {
           $0.available.currency.caseInsensitiveCompare(currency) == .orderedSame
         })
       else { return nil }
-      return
-        "\(CostFormatting.abbreviation(for: row.source.provider)) \(CostFormatting.amount(balance.available)) left"
+      return String(
+        format: text(.menubarBalanceCompactFormat),
+        CostFormatting.abbreviation(for: row.source.provider),
+        CostFormatting.amount(balance.available, language: currentLanguage))
     }
   }
 
   private static func canPresentCost(_ phase: ProviderPhase) -> Bool {
     phase == .healthy || phase == .stale || phase == .refreshing
+  }
+
+  private func costFreshness(_ phase: ProviderPhase) -> String {
+    switch phase {
+    case .healthy:
+      text(.menubarCostFresh)
+    case .stale:
+      text(.menubarCostStale)
+    case .refreshing:
+      text(.menubarCostRefreshing)
+    case .disabled, .missingCredential, .error:
+      text(.phaseError)
+    }
   }
 
   public var deviceStatusText: String {
@@ -1163,16 +1184,29 @@ public final class AppModel {
   }
 
   public func setBetaCostsEnabled(_ enabled: Bool) async throws {
+    let previousConfiguration = configuration
     configuration.betaCostsEnabled = enabled
     if enabled, configuration.menuBarCostMetric == .none {
       configuration.menuBarCostMetric = .localEstimate(.codex)
     } else if !enabled {
       configuration.menuBarCostMetric = .none
     }
-    try saveConfiguration()
+
     if enabled {
+      do {
+        try saveConfiguration()
+      } catch {
+        configuration = previousConfiguration
+        throw error
+      }
       await costDashboard.setEnabled(true)
     } else {
+      do {
+        try saveConfiguration()
+      } catch {
+        configuration = previousConfiguration
+        throw error
+      }
       await costDashboard.disable()
     }
   }

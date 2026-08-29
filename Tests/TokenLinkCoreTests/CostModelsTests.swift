@@ -70,6 +70,19 @@ private let sourceURL = URL(string: "https://example.com/pricing")!
       == Decimal(string: "47.72001"))
 }
 
+@Test func normalizedUsageSaturatesTotalInputInsteadOfOverflowing() {
+  // Catches malicious transcript counters trapping before long-context pricing.
+  let usage = NormalizedModelUsage(
+    provider: .kimi,
+    modelID: "huge",
+    timestamp: .distantPast,
+    uncachedInputTokens: Int.max,
+    cacheReadTokens: Int.max,
+    cacheWriteTokens: Int.max)
+
+  #expect(usage.totalInputTokens == Int.max)
+}
+
 @Test func priceCalculationRejectsPartiallyPricedUsage() {
   // Catches silently undercounting a model when one used category lacks a rate.
   let usage = NormalizedModelUsage(

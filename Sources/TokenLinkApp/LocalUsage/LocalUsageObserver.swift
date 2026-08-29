@@ -35,14 +35,15 @@ public struct LocalUsageObserver: @unchecked Sendable {
     _ parser: P.Type,
     since: Date
   ) throws -> LocalUsageScanReport {
-    let files = transcriptFiles(in: P.transcriptDirectories)
+    let discovery = transcriptFiles(in: P.transcriptDirectories)
+    let files = discovery.files
 
     var summary = LocalUsageSummary(provider: P.provider)
     var seenEventIDs: Set<String> = []
     var processedFileCount = 0
     var staleFileCount = 0
     var oversizedFileCount = 0
-    var unreadableFileCount = 0
+    var unreadableFileCount = discovery.unreadableDirectoryCount
     var oversizedRecordCount = 0
 
     for file in files {
@@ -66,21 +67,22 @@ public struct LocalUsageObserver: @unchecked Sendable {
       }
 
       do {
-        let readReport = try JSONLStreamingReader().read(url: file) { record in
+        let readReport = try JSONLStreamingReader().read(
+          url: file,
+          maximumBytes: Self.maximumFileBytes
+        ) { record in
           for event in P.parseEvents(from: record) where event.timestamp >= since {
             if !event.dedupeKey.isEmpty,
               !seenEventIDs.insert(event.dedupeKey).inserted
             {
               continue
             }
-            summary.inputTokens += event.inputTokens
-            summary.outputTokens += event.outputTokens
-            summary.cachedInputTokens += event.cachedInputTokens
-            summary.eventCount += 1
+            summary.add(event)
           }
         }
         processedFileCount += 1
         oversizedRecordCount += readReport.oversizedRecordCount
+        if readReport.byteLimitExceeded { oversizedFileCount += 1 }
       } catch is CancellationError {
         throw CancellationError()
       } catch {
@@ -105,11 +107,12 @@ public struct LocalUsageObserver: @unchecked Sendable {
     through: Date,
     onUsage: (NormalizedModelUsage) -> Void
   ) throws -> LocalUsageRecordScanReport {
-    let files = transcriptFiles(in: P.transcriptDirectories)
+    let discovery = transcriptFiles(in: P.transcriptDirectories)
+    let files = discovery.files
     var processedFileCount = 0
     var staleFileCount = 0
     var oversizedFileCount = 0
-    var unreadableFileCount = 0
+    var unreadableFileCount = discovery.unreadableDirectoryCount
     var oversizedRecordCount = 0
 
     for file in files {
@@ -135,7 +138,10 @@ public struct LocalUsageObserver: @unchecked Sendable {
       var recordParser = P()
       defer { recordParser.finish() }
       do {
-        let readReport = try JSONLStreamingReader().read(url: file) { record in
+        let readReport = try JSONLStreamingReader().read(
+          url: file,
+          maximumBytes: Self.maximumFileBytes
+        ) { record in
           guard let usage = recordParser.consume(record),
             usage.timestamp >= since,
             usage.timestamp <= through
@@ -144,6 +150,7 @@ public struct LocalUsageObserver: @unchecked Sendable {
         }
         processedFileCount += 1
         oversizedRecordCount += readReport.oversizedRecordCount
+        if readReport.byteLimitExceeded { oversizedFileCount += 1 }
       } catch is CancellationError {
         throw CancellationError()
       } catch {
@@ -168,22 +175,45 @@ public struct LocalUsageObserver: @unchecked Sendable {
     ]
   }
 
-  private func transcriptFiles(in relativeDirectories: [String]) -> [URL] {
+  private func transcriptFiles(in relativeDirectories: [String]) -> TranscriptDiscovery {
     var files: [URL] = []
+    var unreadableDirectoryCount = 0
     for relative in relativeDirectories {
       let directory = homeURL.appending(path: relative, directoryHint: .isDirectory)
+      var isDirectory: ObjCBool = false
+      guard fileManager.fileExists(atPath: directory.path, isDirectory: &isDirectory) else {
+        continue
+      }
+      guard isDirectory.boolValue else {
+        unreadableDirectoryCount += 1
+        continue
+      }
       guard
         let enumerator = fileManager.enumerator(
           at: directory,
           includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-          options: [.skipsHiddenFiles])
-      else { continue }
+          options: [.skipsHiddenFiles],
+          errorHandler: { _, _ in
+            unreadableDirectoryCount += 1
+            return false
+          })
+      else {
+        unreadableDirectoryCount += 1
+        continue
+      }
       for case let file as URL in enumerator where file.pathExtension == "jsonl" {
         files.append(file.standardizedFileURL)
       }
     }
-    return files.sorted { $0.path < $1.path }
+    return TranscriptDiscovery(
+      files: files.sorted { $0.path < $1.path },
+      unreadableDirectoryCount: unreadableDirectoryCount)
   }
+}
+
+private struct TranscriptDiscovery {
+  let files: [URL]
+  let unreadableDirectoryCount: Int
 }
 
 public struct LocalUsageScanReport: Equatable, Sendable {

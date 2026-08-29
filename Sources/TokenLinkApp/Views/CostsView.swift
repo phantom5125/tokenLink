@@ -11,7 +11,7 @@ struct CostsView: View {
           HStack(spacing: 9) {
             Text(model.text(.costsTitle))
               .font(.largeTitle.bold())
-            Text("Beta")
+            Text(model.text(.costsBetaBadge))
               .font(.caption.weight(.semibold))
               .padding(.horizontal, 8)
               .padding(.vertical, 4)
@@ -122,19 +122,28 @@ struct CostsView: View {
 
       if let snapshot = row.state.snapshot {
         ForEach(Array(snapshot.balances.enumerated()), id: \.offset) { _, balance in
-          HStack(alignment: .firstTextBaseline) {
-            Text(model.text(.costsAvailable))
-              .font(.caption)
-              .foregroundStyle(.secondary)
-            Spacer()
-            Text(CostFormatting.amount(balance.available))
-              .font(.title3.weight(.semibold))
-              .monospacedDigit()
+          VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline) {
+              Text(model.text(.costsAvailable))
+                .font(.caption)
+                .foregroundStyle(.secondary)
+              Spacer()
+              Text(CostFormatting.amount(balance.available, language: model.currentLanguage))
+                .font(.title3.weight(.semibold))
+                .monospacedDigit()
+            }
+            if let purchased = balance.purchased {
+              amountDetail(model.text(.costsPurchased), amount: purchased)
+            }
+            if let used = balance.used {
+              amountDetail(model.text(.costsUsed), amount: used)
+            }
           }
         }
         ForEach(Array(snapshot.periodSpend.enumerated()), id: \.offset) { _, spend in
           LabeledContent(periodText(spend.period)) {
-            Text(CostFormatting.amount(spend.amount)).monospacedDigit()
+            Text(CostFormatting.amount(spend.amount, language: model.currentLanguage))
+              .monospacedDigit()
           }
           .font(.caption)
         }
@@ -142,7 +151,13 @@ struct CostsView: View {
           String(
             format: model.text(.costsUpdatedFormat),
             snapshot.fetchedAt.formatted(date: .abbreviated, time: .shortened)))
+        if snapshot.isAvailable == false {
+          warningLine(model.text(.costsProviderUnavailable))
+        }
         warningList(snapshot.warnings)
+        if let error = row.state.error {
+          warningLine(error.message)
+        }
       } else {
         emptyState(row.state.error)
       }
@@ -167,7 +182,7 @@ struct CostsView: View {
 
       if let snapshot = row.state.snapshot {
         ForEach(Array(snapshot.totals.enumerated()), id: \.offset) { _, total in
-          Text("≈\(CostFormatting.amount(total))")
+          Text("≈\(CostFormatting.amount(total, language: model.currentLanguage))")
             .font(.title3.weight(.semibold))
             .monospacedDigit()
         }
@@ -193,6 +208,9 @@ struct CostsView: View {
               snapshot.unknownModelIDs.count))
         }
         warningList(snapshot.warnings)
+        if let error = row.state.error {
+          warningLine(error.message)
+        }
       } else {
         emptyState(row.state.error)
       }
@@ -229,6 +247,13 @@ struct CostsView: View {
       .fixedSize(horizontal: false, vertical: true)
   }
 
+  private func amountDetail(_ label: String, amount: CurrencyAmount) -> some View {
+    LabeledContent(label) {
+      Text(CostFormatting.amount(amount, language: model.currentLanguage)).monospacedDigit()
+    }
+    .font(.caption)
+  }
+
   private func warningLine(_ value: String) -> some View {
     Label(value, systemImage: "exclamationmark.triangle")
       .font(.caption2)
@@ -253,6 +278,8 @@ struct CostsView: View {
       model.text(.costsPartialSource)
     case .unpricedModel:
       model.text(.costsUnpricedModel)
+    case .invalidTokenCount:
+      model.text(.costsInvalidTokenCount)
     }
   }
 }

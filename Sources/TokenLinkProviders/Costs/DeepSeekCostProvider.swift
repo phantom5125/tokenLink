@@ -62,7 +62,11 @@ public struct DeepSeekCostProvider: AuthoritativeCostProvider {
     } catch is DecodingError {
       return .failure(.decoding("DeepSeek balance could not be read."))
     } catch {
-      return .failure(.network("DeepSeek balance request failed."))
+      return .failure(
+        AuthoritativeCostSupport.transportFailure(
+          error,
+          providerName: "DeepSeek",
+          sourceName: "balance"))
     }
   }
 }
