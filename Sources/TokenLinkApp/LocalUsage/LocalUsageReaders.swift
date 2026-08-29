@@ -153,3 +153,319 @@ public enum KimiWireParser: LocalUsageParsing {
     }
   }
 }
+
+public struct CodexCostRecordParser: LocalUsageRecordParser {
+  public static let provider: ProviderID = .codex
+  public static let transcriptDirectories = CodexRolloutParser.transcriptDirectories
+
+  private var currentModel: String?
+  private var previousTotal: CodexCostUsage?
+  private var needsChildBaseline = false
+
+  public init() {}
+
+  public mutating func consume(_ record: Data) -> NormalizedModelUsage? {
+    guard let decoded = try? JSONDecoder().decode(CodexCostRecord.self, from: record) else {
+      return nil
+    }
+    switch decoded.type {
+    case "session_meta":
+      currentModel = nil
+      previousTotal = nil
+      needsChildBaseline =
+        decoded.payload.threadSource == "subagent"
+        || decoded.payload.source?.isSubagent == true
+      return nil
+    case "turn_context":
+      if let model = decoded.payload.model, !model.isEmpty {
+        currentModel = model
+      }
+      return nil
+    case "event_msg":
+      guard decoded.payload.type == "token_count",
+        let model = currentModel,
+        let timestamp = LocalUsageTimestamp.parse(decoded.timestamp)
+      else { return nil }
+      if let total = decoded.payload.info?.totalTokenUsage {
+        return consumeCumulative(total, model: model, timestamp: timestamp)
+      }
+      guard let usage = decoded.payload.info?.lastTokenUsage else { return nil }
+      return normalized(usage, model: model, timestamp: timestamp)
+    default:
+      return nil
+    }
+  }
+
+  public mutating func finish() {
+    self = Self()
+  }
+
+  private mutating func consumeCumulative(
+    _ total: CodexCostUsage,
+    model: String,
+    timestamp: Date
+  ) -> NormalizedModelUsage? {
+    defer { previousTotal = total }
+    if needsChildBaseline {
+      needsChildBaseline = false
+      return nil
+    }
+    guard let previousTotal else {
+      return normalized(total, model: model, timestamp: timestamp)
+    }
+    guard total.isAtLeast(previousTotal) else {
+      return nil
+    }
+    return normalized(total.subtracting(previousTotal), model: model, timestamp: timestamp)
+  }
+
+  private func normalized(
+    _ usage: CodexCostUsage,
+    model: String,
+    timestamp: Date
+  ) -> NormalizedModelUsage? {
+    guard usage.hasTokens else { return nil }
+    return NormalizedModelUsage(
+      provider: Self.provider,
+      modelID: model,
+      timestamp: timestamp,
+      uncachedInputTokens: max(usage.inputTokens - usage.cachedInputTokens, 0),
+      cacheReadTokens: usage.cachedInputTokens,
+      cacheWriteTokens: usage.cacheWriteInputTokens,
+      outputTokens: usage.outputTokens)
+  }
+}
+
+public struct ClaudeCostRecordParser: LocalUsageRecordParser {
+  public static let provider: ProviderID = .claude
+  public static let transcriptDirectories = ClaudeTranscriptParser.transcriptDirectories
+
+  private var seenMessageIDs: Set<String> = []
+
+  public init() {}
+
+  public mutating func consume(_ record: Data) -> NormalizedModelUsage? {
+    guard let decoded = try? JSONDecoder().decode(ClaudeCostRecord.self, from: record),
+      let message = decoded.message,
+      let usage = message.usage,
+      let model = message.model,
+      !model.isEmpty,
+      let timestamp = LocalUsageTimestamp.parse(decoded.timestamp)
+    else { return nil }
+    let messageID = message.id ?? ""
+    if !messageID.isEmpty, !seenMessageIDs.insert(messageID).inserted {
+      return nil
+    }
+    return NormalizedModelUsage(
+      provider: Self.provider,
+      modelID: model,
+      timestamp: timestamp,
+      uncachedInputTokens: usage.inputTokens,
+      cacheReadTokens: usage.cacheReadInputTokens,
+      cacheWriteTokens: usage.cacheCreationInputTokens,
+      outputTokens: usage.outputTokens,
+      deduplicationKey: messageID)
+  }
+
+  public mutating func finish() {
+    seenMessageIDs.removeAll(keepingCapacity: false)
+  }
+}
+
+public struct KimiCostRecordParser: LocalUsageRecordParser {
+  public static let provider: ProviderID = .kimi
+  public static let transcriptDirectories = KimiWireParser.transcriptDirectories
+
+  public init() {}
+
+  public mutating func consume(_ record: Data) -> NormalizedModelUsage? {
+    guard let decoded = try? JSONDecoder().decode(KimiCostRecord.self, from: record),
+      decoded.type == "usage.record",
+      let usage = decoded.usage,
+      let model = decoded.model,
+      !model.isEmpty
+    else { return nil }
+    return NormalizedModelUsage(
+      provider: Self.provider,
+      modelID: model,
+      timestamp: Date(timeIntervalSince1970: decoded.time / 1_000),
+      uncachedInputTokens: usage.inputOther,
+      cacheReadTokens: usage.inputCacheRead,
+      cacheWriteTokens: usage.inputCacheCreation,
+      outputTokens: usage.output)
+  }
+
+  public mutating func finish() {}
+}
+
+private struct CodexCostRecord: Decodable {
+  let timestamp: String
+  let type: String
+  let payload: Payload
+
+  struct Payload: Decodable {
+    let type: String?
+    let model: String?
+    let info: Info?
+    let source: Source?
+    let threadSource: String?
+
+    enum CodingKeys: String, CodingKey {
+      case type
+      case model
+      case info
+      case source
+      case threadSource = "thread_source"
+    }
+  }
+
+  struct Info: Decodable {
+    let lastTokenUsage: CodexCostUsage?
+    let totalTokenUsage: CodexCostUsage?
+
+    enum CodingKeys: String, CodingKey {
+      case lastTokenUsage = "last_token_usage"
+      case totalTokenUsage = "total_token_usage"
+    }
+  }
+
+  struct Source: Decodable {
+    let isSubagent: Bool
+
+    init(from decoder: any Decoder) throws {
+      let container = try decoder.singleValueContainer()
+      if let value = try? container.decode(String.self) {
+        isSubagent = value == "subagent"
+        return
+      }
+      let keyed = try decoder.container(keyedBy: DynamicCodingKey.self)
+      isSubagent = keyed.contains(DynamicCodingKey("subagent"))
+    }
+  }
+}
+
+private struct CodexCostUsage: Decodable {
+  let inputTokens: Int
+  let cachedInputTokens: Int
+  let cacheWriteInputTokens: Int
+  let outputTokens: Int
+
+  enum CodingKeys: String, CodingKey {
+    case inputTokens = "input_tokens"
+    case cachedInputTokens = "cached_input_tokens"
+    case cacheWriteInputTokens = "cache_write_input_tokens"
+    case outputTokens = "output_tokens"
+  }
+
+  init(from decoder: any Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    inputTokens = max(try container.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0, 0)
+    cachedInputTokens = max(
+      try container.decodeIfPresent(Int.self, forKey: .cachedInputTokens) ?? 0,
+      0)
+    cacheWriteInputTokens = max(
+      try container.decodeIfPresent(Int.self, forKey: .cacheWriteInputTokens) ?? 0,
+      0)
+    outputTokens = max(try container.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0, 0)
+  }
+
+  private init(
+    inputTokens: Int,
+    cachedInputTokens: Int,
+    cacheWriteInputTokens: Int,
+    outputTokens: Int
+  ) {
+    self.inputTokens = inputTokens
+    self.cachedInputTokens = cachedInputTokens
+    self.cacheWriteInputTokens = cacheWriteInputTokens
+    self.outputTokens = outputTokens
+  }
+
+  var hasTokens: Bool {
+    inputTokens > 0 || cachedInputTokens > 0 || cacheWriteInputTokens > 0
+      || outputTokens > 0
+  }
+
+  func isAtLeast(_ other: Self) -> Bool {
+    inputTokens >= other.inputTokens
+      && cachedInputTokens >= other.cachedInputTokens
+      && cacheWriteInputTokens >= other.cacheWriteInputTokens
+      && outputTokens >= other.outputTokens
+  }
+
+  func subtracting(_ other: Self) -> Self {
+    Self(
+      inputTokens: inputTokens - other.inputTokens,
+      cachedInputTokens: cachedInputTokens - other.cachedInputTokens,
+      cacheWriteInputTokens: cacheWriteInputTokens - other.cacheWriteInputTokens,
+      outputTokens: outputTokens - other.outputTokens)
+  }
+}
+
+private struct ClaudeCostRecord: Decodable {
+  let timestamp: String
+  let message: Message?
+
+  struct Message: Decodable {
+    let id: String?
+    let model: String?
+    let usage: Usage?
+  }
+
+  struct Usage: Decodable {
+    let inputTokens: Int
+    let outputTokens: Int
+    let cacheReadInputTokens: Int
+    let cacheCreationInputTokens: Int
+
+    enum CodingKeys: String, CodingKey {
+      case inputTokens = "input_tokens"
+      case outputTokens = "output_tokens"
+      case cacheReadInputTokens = "cache_read_input_tokens"
+      case cacheCreationInputTokens = "cache_creation_input_tokens"
+    }
+
+    init(from decoder: any Decoder) throws {
+      let container = try decoder.container(keyedBy: CodingKeys.self)
+      inputTokens = max(try container.decodeIfPresent(Int.self, forKey: .inputTokens) ?? 0, 0)
+      outputTokens = max(try container.decodeIfPresent(Int.self, forKey: .outputTokens) ?? 0, 0)
+      cacheReadInputTokens = max(
+        try container.decodeIfPresent(Int.self, forKey: .cacheReadInputTokens) ?? 0,
+        0)
+      cacheCreationInputTokens = max(
+        try container.decodeIfPresent(Int.self, forKey: .cacheCreationInputTokens) ?? 0,
+        0)
+    }
+  }
+}
+
+private struct KimiCostRecord: Decodable {
+  let type: String
+  let time: Double
+  let model: String?
+  let usage: Usage?
+
+  struct Usage: Decodable {
+    let inputOther: Int
+    let output: Int
+    let inputCacheRead: Int
+    let inputCacheCreation: Int
+  }
+}
+
+private struct DynamicCodingKey: CodingKey {
+  let stringValue: String
+  let intValue: Int? = nil
+
+  init(_ stringValue: String) {
+    self.stringValue = stringValue
+  }
+
+  init?(stringValue: String) {
+    self.init(stringValue)
+  }
+
+  init?(intValue: Int) {
+    return nil
+  }
+}

@@ -52,6 +52,7 @@ public struct ProviderPeriodSpend: Equatable, Sendable {
 
 public enum CostWarning: Equatable, Sendable {
   case assumedFiveMinuteCacheWrite
+  case partialLocalScan(fileCount: Int, recordCount: Int)
   case partialSource(String)
   case unpricedModel(String)
 }
@@ -202,6 +203,7 @@ public struct EstimatedCostSnapshot: Equatable, Sendable {
   public let lineItems: [ModelCostLineItem]
   public let totals: [CurrencyAmount]
   public let unknownModelIDs: [String]
+  public let warnings: [CostWarning]
   public let catalogVersion: String
   public let catalogEffectiveDate: Date
   public let scannedAt: Date
@@ -212,6 +214,7 @@ public struct EstimatedCostSnapshot: Equatable, Sendable {
     lineItems: [ModelCostLineItem],
     totals: [CurrencyAmount],
     unknownModelIDs: [String],
+    warnings: [CostWarning] = [],
     catalogVersion: String,
     catalogEffectiveDate: Date,
     scannedAt: Date
@@ -221,6 +224,7 @@ public struct EstimatedCostSnapshot: Equatable, Sendable {
     self.lineItems = lineItems
     self.totals = totals
     self.unknownModelIDs = unknownModelIDs
+    self.warnings = warnings
     self.catalogVersion = catalogVersion
     self.catalogEffectiveDate = catalogEffectiveDate
     self.scannedAt = scannedAt

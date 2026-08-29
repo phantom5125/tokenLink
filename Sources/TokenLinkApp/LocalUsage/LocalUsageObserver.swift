@@ -35,20 +35,7 @@ public struct LocalUsageObserver: @unchecked Sendable {
     _ parser: P.Type,
     since: Date
   ) throws -> LocalUsageScanReport {
-    var files: [URL] = []
-    for relative in P.transcriptDirectories {
-      let directory = homeURL.appending(path: relative, directoryHint: .isDirectory)
-      guard
-        let enumerator = fileManager.enumerator(
-          at: directory,
-          includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-          options: [.skipsHiddenFiles])
-      else { continue }
-      for case let file as URL in enumerator where file.pathExtension == "jsonl" {
-        files.append(file.standardizedFileURL)
-      }
-    }
-    files.sort { $0.path < $1.path }
+    let files = transcriptFiles(in: P.transcriptDirectories)
 
     var summary = LocalUsageSummary(provider: P.provider)
     var seenEventIDs: Set<String> = []
@@ -110,6 +97,68 @@ public struct LocalUsageObserver: @unchecked Sendable {
       oversizedRecordCount: oversizedRecordCount)
   }
 
+  /// Streams model-aware usage without retaining record arrays. Parser state
+  /// is scoped to one file; nonempty IDs are deduplicated by the estimator.
+  public func scanRecords<P: LocalUsageRecordParser>(
+    _ parser: P.Type,
+    since: Date,
+    through: Date,
+    onUsage: (NormalizedModelUsage) -> Void
+  ) throws -> LocalUsageRecordScanReport {
+    let files = transcriptFiles(in: P.transcriptDirectories)
+    var processedFileCount = 0
+    var staleFileCount = 0
+    var oversizedFileCount = 0
+    var unreadableFileCount = 0
+    var oversizedRecordCount = 0
+
+    for file in files {
+      try Task.checkCancellation()
+      guard
+        let values = try? file.resourceValues(
+          forKeys: [.contentModificationDateKey, .fileSizeKey]),
+        let modified = values.contentModificationDate,
+        let size = values.fileSize
+      else {
+        unreadableFileCount += 1
+        continue
+      }
+      guard modified >= since else {
+        staleFileCount += 1
+        continue
+      }
+      guard size <= Self.maximumFileBytes else {
+        oversizedFileCount += 1
+        continue
+      }
+
+      var recordParser = P()
+      defer { recordParser.finish() }
+      do {
+        let readReport = try JSONLStreamingReader().read(url: file) { record in
+          guard let usage = recordParser.consume(record),
+            usage.timestamp >= since,
+            usage.timestamp <= through
+          else { return }
+          onUsage(usage)
+        }
+        processedFileCount += 1
+        oversizedRecordCount += readReport.oversizedRecordCount
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch {
+        unreadableFileCount += 1
+      }
+    }
+
+    return LocalUsageRecordScanReport(
+      processedFileCount: processedFileCount,
+      staleFileCount: staleFileCount,
+      oversizedFileCount: oversizedFileCount,
+      unreadableFileCount: unreadableFileCount,
+      oversizedRecordCount: oversizedRecordCount)
+  }
+
   /// All currently supported local sources, in provider order.
   public func summarizeAll(since: Date) -> [LocalUsageSummary] {
     [
@@ -117,6 +166,23 @@ public struct LocalUsageObserver: @unchecked Sendable {
       summarize(ClaudeTranscriptParser.self, since: since),
       summarize(KimiWireParser.self, since: since),
     ]
+  }
+
+  private func transcriptFiles(in relativeDirectories: [String]) -> [URL] {
+    var files: [URL] = []
+    for relative in relativeDirectories {
+      let directory = homeURL.appending(path: relative, directoryHint: .isDirectory)
+      guard
+        let enumerator = fileManager.enumerator(
+          at: directory,
+          includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+          options: [.skipsHiddenFiles])
+      else { continue }
+      for case let file as URL in enumerator where file.pathExtension == "jsonl" {
+        files.append(file.standardizedFileURL)
+      }
+    }
+    return files.sorted { $0.path < $1.path }
   }
 }
 
@@ -137,6 +203,28 @@ public struct LocalUsageScanReport: Equatable, Sendable {
     oversizedRecordCount: Int
   ) {
     self.summary = summary
+    self.processedFileCount = processedFileCount
+    self.staleFileCount = staleFileCount
+    self.oversizedFileCount = oversizedFileCount
+    self.unreadableFileCount = unreadableFileCount
+    self.oversizedRecordCount = oversizedRecordCount
+  }
+}
+
+public struct LocalUsageRecordScanReport: Equatable, Sendable {
+  public let processedFileCount: Int
+  public let staleFileCount: Int
+  public let oversizedFileCount: Int
+  public let unreadableFileCount: Int
+  public let oversizedRecordCount: Int
+
+  public init(
+    processedFileCount: Int,
+    staleFileCount: Int,
+    oversizedFileCount: Int,
+    unreadableFileCount: Int,
+    oversizedRecordCount: Int
+  ) {
     self.processedFileCount = processedFileCount
     self.staleFileCount = staleFileCount
     self.oversizedFileCount = oversizedFileCount

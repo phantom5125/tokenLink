@@ -58,6 +58,17 @@ public protocol LocalUsageParsing: Sendable {
   static func parseEvents(from data: Data) -> [TokenUsageEvent]
 }
 
+/// Stateful, per-file parser for model-aware API-equivalent cost estimation.
+/// Implementations decode only metadata and token counters.
+public protocol LocalUsageRecordParser: Sendable {
+  static var provider: ProviderID { get }
+  static var transcriptDirectories: [String] { get }
+
+  init()
+  mutating func consume(_ record: Data) -> NormalizedModelUsage?
+  mutating func finish()
+}
+
 public enum LocalUsageAggregation {
   /// Sums events inside [since, now], deduplicating on non-empty keys.
   public static func summarize(
