@@ -303,7 +303,7 @@ public enum L10n {
       .english: "Providers", .simplifiedChinese: "额度源", .japanese: "プロバイダー",
     ],
     .routeCosts: [
-      .english: "Cost Center β", .simplifiedChinese: "成本中心 β", .japanese: "コストセンター β",
+      .english: "Usage & Cost β", .simplifiedChinese: "用量与成本 β", .japanese: "使用量とコスト β",
     ],
     .routeStopwatch: [
       .english: "StopWatch", .simplifiedChinese: "StopWatch", .japanese: "StopWatch",
@@ -314,7 +314,7 @@ public enum L10n {
     ],
     .actionRefresh: [.english: "Refresh", .simplifiedChinese: "刷新", .japanese: "更新"],
     .actionRefreshCosts: [
-      .english: "Refresh costs", .simplifiedChinese: "刷新成本", .japanese: "コストを更新",
+      .english: "Refresh usage", .simplifiedChinese: "刷新用量", .japanese: "使用量を更新",
     ],
     .actionControlCenter: [
       .english: "Control Center…", .simplifiedChinese: "控制中心…",
@@ -372,7 +372,7 @@ public enum L10n {
       .english: "%@ %@ left", .simplifiedChinese: "%@ 剩余 %@", .japanese: "%@ 残り %@",
     ],
     .costsTitle: [
-      .english: "Cost Center", .simplifiedChinese: "成本中心", .japanese: "コストセンター",
+      .english: "Usage & Cost", .simplifiedChinese: "用量与成本", .japanese: "使用量とコスト",
     ],
     .costsBetaBadge: [
       .english: "Beta", .simplifiedChinese: "Beta", .japanese: "ベータ",
@@ -388,9 +388,9 @@ public enum L10n {
     ],
     .costsSubtitle: [
       .english:
-        "Official balances and local estimates stay separate from coding-plan quota.",
-      .simplifiedChinese: "官方余额与本地估算独立于编程套餐额度。",
-      .japanese: "正式残高とローカル推定値は、コーディングプランのクォータとは別に扱われます。",
+        "Explore local usage, efficiency, attribution, and API-equivalent cost without mixing them into coding-plan quota.",
+      .simplifiedChinese: "观察本地用量、效率、归因与 API 等价成本，同时保持它们与编程套餐额度相互独立。",
+      .japanese: "ローカル使用量、効率、内訳、API相当コストを、コーディングプランのクォータと分けて確認します。",
     ],
     .costsBetaOffTitle: [
       .english: "Costs beta is off", .simplifiedChinese: "成本 Beta 尚未启用",

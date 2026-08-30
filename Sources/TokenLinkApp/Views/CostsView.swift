@@ -23,19 +23,39 @@ struct CostsView: View {
         }
 
         if model.configuration.betaCostsEnabled {
-          periodPicker
-          authoritativeSection
-          estimateSection
+          sectionPicker
+          if model.usageAnalytics.selectedSection == .costs {
+            periodPicker
+            authoritativeSection
+            estimateSection
+          } else {
+            UsageAnalyticsView(model: model, analytics: model.usageAnalytics)
+          }
         } else {
           betaDisabledCard
         }
       }
       .padding(28)
-      .frame(maxWidth: 880, alignment: .leading)
+      .frame(maxWidth: 1_080, alignment: .leading)
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     .navigationTitle(model.text(.costsTitle))
     .task { await model.loadCostsIfNeeded() }
+  }
+
+  private var sectionPicker: some View {
+    Picker(
+      model.text(.costsTitle),
+      selection: Binding(
+        get: { model.usageAnalytics.selectedSection },
+        set: { model.usageAnalytics.selectedSection = $0 })
+    ) {
+      ForEach(UsageAnalyticsSection.allCases) { section in
+        Text(sectionText(section)).tag(section)
+      }
+    }
+    .pickerStyle(.segmented)
+    .frame(maxWidth: 520)
   }
 
   private var periodPicker: some View {
@@ -69,6 +89,23 @@ struct CostsView: View {
     .padding(3)
     .background(Color.secondary.opacity(0.12), in: Capsule())
     .animation(.easeOut(duration: 0.15), value: model.configuration.costDisplayPeriod)
+  }
+
+  private func sectionText(_ section: UsageAnalyticsSection) -> String {
+    switch (section, model.currentLanguage) {
+    case (.overview, .english): "Overview"
+    case (.overview, .simplifiedChinese): "概览"
+    case (.overview, .japanese): "概要"
+    case (.trends, .english): "Trends"
+    case (.trends, .simplifiedChinese): "趋势"
+    case (.trends, .japanese): "トレンド"
+    case (.attribution, .english): "Attribution"
+    case (.attribution, .simplifiedChinese): "归因"
+    case (.attribution, .japanese): "内訳"
+    case (.costs, .english): "Costs"
+    case (.costs, .simplifiedChinese): "费用"
+    case (.costs, .japanese): "コスト"
+    }
   }
 
   private var betaDisabledCard: some View {

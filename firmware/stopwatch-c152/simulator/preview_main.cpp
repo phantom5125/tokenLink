@@ -128,7 +128,7 @@ watchface::State previewFaceState(const char* scenario) {
   state.hour = 21;
   state.minute = 45;
   state.batteryPercent = 82;
-  state.firmwareVersion = "0.2.3-tokenlink";
+  state.firmwareVersion = "0.3.0-tokenlink";
   state.protocolVersion = 2;
 
   if (std::strcmp(scenario, "v2-home") == 0) {

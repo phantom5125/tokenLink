@@ -6,6 +6,11 @@ firmware_dir="$repo_dir/firmware/stopwatch-c152"
 output_dir="$repo_dir/dist/firmware"
 version="$(/usr/bin/sed -n 's/.*kFirmwareVersion\[\] = "\([0-9][0-9.]*\)-tokenlink".*/\1/p' "$firmware_dir/include/CodexMicroBle.h")"
 packaging_python="python3"
+release_channel="${TOKENLINK_RELEASE_CHANNEL:-stable}"
+
+if [[ "${GITHUB_REF_NAME:-}" == *-* ]]; then
+  release_channel="prerelease"
+fi
 
 if [[ -x "$repo_dir/.venv-pio/bin/python" ]]; then
   packaging_python="$repo_dir/.venv-pio/bin/python"
@@ -19,6 +24,7 @@ fi
 "$repo_dir/scripts/pio.sh" run -d "$firmware_dir" -e m5stack-stopwatch
 "$packaging_python" "$repo_dir/scripts/package_firmware_release.py" \
   --version "$version" \
+  --channel "$release_channel" \
   --output "$output_dir" \
   --pio "$repo_dir/scripts/pio.sh"
 

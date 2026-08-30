@@ -9,7 +9,7 @@ permissions:
 
 jobs:
   macos:
-    name: Signed and notarized macOS DMG
+    name: macOS DMG
     runs-on: macos-15
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
