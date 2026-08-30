@@ -57,6 +57,7 @@ constexpr uint8_t kDimBrightness = 24;
 constexpr uint32_t kRightLongPressMs = 600;
 constexpr uint32_t kCenterVoiceHoldMs = 600;
 constexpr uint32_t kV2RedrawMs = 200;
+constexpr uint32_t kSessionsRedrawMs = 250;
 constexpr uint32_t kImuPollMs = 100;
 // M5Unified's IOExpander_Base API is zero-based: physical M5IOE1 G8 is 7,
 // while physical G5 is 4.
@@ -1365,9 +1366,11 @@ void loop() {
   // v2 pages animate (pet, breathing alerts) and show a wall clock, so they
   // redraw on a fixed cadence instead of waiting for state changes.
   if (!deskSleeping && v2Mode() && appliedBrightness > 0) {
-    const uint32_t cadence = currentPage == watchface::Page::Home
-                                 ? kV2RedrawMs
-                                 : 500;
+    const uint32_t cadence =
+        currentPage == watchface::Page::Home
+            ? kV2RedrawMs
+            : (currentPage == watchface::Page::Sessions ? kSessionsRedrawMs
+                                                        : 500);
     if (millis() - lastDrawMs > cadence) drawScreen();
   }
 

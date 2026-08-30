@@ -4,6 +4,21 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## Unreleased — v0.2.2 Sessions status clarity
+
+- Page through the complete Codex `thread/list` result in updated-activity
+  order, deduplicate moving threads across pages, and fail closed instead of
+  presenting a bounded partial result as the full active-session count. Remove
+  sessions that disappear after a complete successful refresh.
+- Keep three glanceable watch slots while prioritizing needs-input, failed,
+  running, completed, and unknown sessions in that order; unaffected sessions
+  retain their slot when a more useful item arrives.
+- Give every Sessions state a distinct color, shape, text label, and motion
+  policy: blue running orbit, amber needs-input pulse, static green completion
+  check, and static red failure alert.
+- Show both the aggregate active count and visible row count on Sessions, while
+  keeping protocol v2 and the three-slot focus contract unchanged.
+
 ## 0.2.1 — 2026-08-30
 
 - Moved the exact default wireless M5Stack StopWatch C152 firmware source into

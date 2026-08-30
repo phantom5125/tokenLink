@@ -15,6 +15,7 @@
 
 #include "DashboardUi.h"  // shared palette, fonts, helpers
 #include "PetTheme.h"
+#include "SessionPresentation.h"
 #include "WatchModel.h"
 
 namespace watchface {
@@ -116,13 +117,58 @@ std::uint16_t syncColor(Surface& surface, SyncDot sync) {
 }
 
 inline std::uint16_t workStateColor(watch_v2::WorkState state) {
-  switch (state) {
-    case watch_v2::WorkState::Running: return dashboard::kAccent;
-    case watch_v2::WorkState::NeedsInput: return dashboard::kWarning;
-    case watch_v2::WorkState::Complete: return 0x2C6E;  // dim green
-    case watch_v2::WorkState::Failed: return dashboard::kDanger;
+  return session_presentation::rgb565(
+      session_presentation::visualFor(state).rgb);
+}
+
+template <typename Surface>
+void drawWorkStateIndicator(Surface& surface, watch_v2::WorkState state,
+                            int x, int y, std::uint32_t nowMs) {
+  const session_presentation::Visual visual =
+      session_presentation::visualFor(state);
+  const std::uint16_t color = session_presentation::rgb565(visual.rgb);
+  switch (visual.indicator) {
+    case session_presentation::Indicator::Orbit: {
+      static constexpr std::int8_t offsets[8][2] = {
+          {0, -7}, {5, -5}, {7, 0}, {5, 5},
+          {0, 7}, {-5, 5}, {-7, 0}, {-5, -5},
+      };
+      const std::uint8_t frame = session_presentation::animationFrame(nowMs);
+      surface.drawCircle(
+          x, y, 8, dashboard::rgb888To565(surface, visual.rgb, 0.30f));
+      surface.fillCircle(x + offsets[frame][0], y + offsets[frame][1], 3,
+                         color);
+      break;
+    }
+    case session_presentation::Indicator::Pulse: {
+      const float phase = (nowMs % 1600) / 1600.0f;
+      const float pulse = phase < 0.5f ? phase * 2.0f : 2.0f - phase * 2.0f;
+      const int radius = 7 + static_cast<int>(std::round(pulse * 3.0f));
+      surface.drawCircle(
+          x, y, radius,
+          dashboard::rgb888To565(surface, visual.rgb, 0.30f + 0.50f * pulse));
+      surface.fillCircle(
+          x, y, 5,
+          dashboard::rgb888To565(surface, visual.rgb, 0.70f + 0.30f * pulse));
+      break;
+    }
+    case session_presentation::Indicator::Check:
+      surface.fillCircle(x, y, 8, color);
+      surface.drawLine(x - 4, y, x - 1, y + 3, dashboard::kBackground);
+      surface.drawLine(x - 4, y + 1, x - 1, y + 4,
+                       dashboard::kBackground);
+      surface.drawLine(x - 1, y + 3, x + 5, y - 4,
+                       dashboard::kBackground);
+      surface.drawLine(x - 1, y + 4, x + 5, y - 3,
+                       dashboard::kBackground);
+      break;
+    case session_presentation::Indicator::Alert:
+      surface.fillCircle(x, y, 8, color);
+      surface.drawFastVLine(x, y - 5, 7, dashboard::kBackground);
+      surface.drawFastVLine(x + 1, y - 5, 7, dashboard::kBackground);
+      surface.fillCircle(x, y + 4, 1, dashboard::kBackground);
+      break;
   }
-  return dashboard::kAccent;
 }
 
 template <typename Surface>
@@ -702,7 +748,15 @@ void renderQuota(Surface& surface, const State& state,
 template <typename Surface>
 void renderSessions(Surface& surface, const State& state,
                     const watch_model::Store& store) {
-  drawTitle(surface, "SESSIONS");
+  drawTitle(surface, "SESSIONS", 42);
+  surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
+  surface.setTextSize(0.78f);
+  char summary[32];
+  std::snprintf(summary, sizeof(summary), "%d ACTIVE / %u SHOWN",
+                activeWorkItemCount(store),
+                static_cast<unsigned>(store.workItemCount()));
+  dashboard::centered(surface, summary, kCenterX, 69, dashboard::kMuted);
+  surface.unloadFont();
   if (store.workItemCount() == 0) {
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
     dashboard::centered(surface, "NO WORK ITEMS", kCenterX, 233,
@@ -717,13 +771,7 @@ void renderSessions(Surface& surface, const State& state,
     surface.fillSmoothRoundRect(52, y - 35, 362, 78, 17,
                                 selected ? dashboard::kPanelPressed
                                          : dashboard::kPanel);
-    std::uint16_t dot = workStateColor(item.state);
-    if (item.state == watch_v2::WorkState::NeedsInput) {
-      const float phase = (state.nowMs % 1600) / 1600.0f;
-      const float pulse = phase < 0.5f ? phase * 2.0f : 2.0f - phase * 2.0f;
-      dot = dashboard::rgb888To565(surface, 0xF7AC42, 0.35f + 0.65f * pulse);
-    }
-    surface.fillCircle(78, y - 10, 8, dot);
+    drawWorkStateIndicator(surface, item.state, 78, y - 10, state.nowMs);
 
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
     surface.setTextDatum(textdatum_t::top_left);
@@ -731,13 +779,16 @@ void renderSessions(Surface& surface, const State& state,
     surface.setTextColor(dashboard::kText);
     surface.drawString(item.name, 100, y - 28);
     surface.setTextColor(dashboard::kMuted);
-    char detail[32];
-    std::snprintf(detail, sizeof(detail), "%s / %s", item.source,
-                  friendlyWorkState(item.state));
-    for (char* c = detail; *c != '\0'; ++c) {
+    char source[16];
+    std::snprintf(source, sizeof(source), "%s", item.source);
+    for (char* c = source; *c != '\0'; ++c) {
       if (*c >= 'a' && *c <= 'z') *c -= 'a' - 'A';
     }
-    surface.drawString(detail, 100, y + 3);
+    surface.drawString(source, 100, y + 3);
+    const int stateX = 100 + surface.textWidth(source) + 18;
+    surface.drawString("/", stateX - 12, y + 3);
+    surface.setTextColor(workStateColor(item.state));
+    surface.drawString(friendlyWorkState(item.state), stateX, y + 3);
     if (selected && std::strcmp(item.source, "codex") == 0) {
       surface.setTextDatum(textdatum_t::top_right);
       surface.setTextColor(dashboard::kAccent);
