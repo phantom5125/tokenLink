@@ -4,11 +4,12 @@ import TokenLinkCore
 /// Scans local CLI transcripts (read-only) and aggregates token usage per
 /// provider. This is a beta feature: it exists to cross-check
 /// provider-reported quota against locally observed consumption. It reads
-/// only the three documented directories below, only files modified within
-/// the window, and only token counters — never message content.
+/// only the documented directories below plus Codex's non-secret service-tier
+/// setting, only files modified within the window, and only token counters —
+/// never message content.
 public struct LocalUsageObserver: @unchecked Sendable {
   /// Files larger than this are skipped (beta safeguard against huge logs).
-  public static let maximumFileBytes = 52_428_800
+  public static let maximumFileBytes = 268_435_456
   public static let maxFileBytes = maximumFileBytes
 
   private let homeURL: URL
@@ -105,6 +106,7 @@ public struct LocalUsageObserver: @unchecked Sendable {
     _ parser: P.Type,
     since: Date,
     through: Date,
+    makeParser: () -> P = { P() },
     onUsage: (NormalizedModelUsage) -> Void
   ) throws -> LocalUsageRecordScanReport {
     let discovery = transcriptFiles(in: P.transcriptDirectories)
@@ -135,7 +137,7 @@ public struct LocalUsageObserver: @unchecked Sendable {
         continue
       }
 
-      var recordParser = P()
+      var recordParser = makeParser()
       defer { recordParser.finish() }
       do {
         let readReport = try JSONLStreamingReader().read(
@@ -175,6 +177,20 @@ public struct LocalUsageObserver: @unchecked Sendable {
     ]
   }
 
+  /// Resolves only the non-secret top-level Codex service tier. Unmarked or
+  /// unsupported rollout events use this fallback, matching Codex usage tools'
+  /// automatic speed policy without retaining configuration contents.
+  func codexFallbackProcessingTier() -> CostProcessingTier {
+    let config = homeURL.appending(path: ".codex/config.toml")
+    guard
+      let values = try? config.resourceValues(forKeys: [.fileSizeKey]),
+      let size = values.fileSize,
+      size <= 1_048_576,
+      let contents = try? String(contentsOf: config, encoding: .utf8)
+    else { return .standard }
+    return CodexConfiguration.processingTier(in: contents)
+  }
+
   private func transcriptFiles(in relativeDirectories: [String]) -> TranscriptDiscovery {
     var files: [URL] = []
     var unreadableDirectoryCount = 0
@@ -208,6 +224,26 @@ public struct LocalUsageObserver: @unchecked Sendable {
     return TranscriptDiscovery(
       files: files.sorted { $0.path < $1.path },
       unreadableDirectoryCount: unreadableDirectoryCount)
+  }
+}
+
+enum CodexConfiguration {
+  static func processingTier(in contents: String) -> CostProcessingTier {
+    for line in contents.split(whereSeparator: \.isNewline) {
+      let setting =
+        line.split(separator: "#", maxSplits: 1).first?.trimmingCharacters(
+          in: .whitespacesAndNewlines) ?? ""
+      let parts = setting.split(separator: "=", maxSplits: 1)
+      guard parts.count == 2,
+        parts[0].trimmingCharacters(in: .whitespacesAndNewlines) == "service_tier"
+      else { continue }
+      let value = parts[1].trimmingCharacters(in: .whitespacesAndNewlines)
+        .trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+      if value == "fast" || value == "priority" {
+        return .fast
+      }
+    }
+    return .standard
   }
 }
 

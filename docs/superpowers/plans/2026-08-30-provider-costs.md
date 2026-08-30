@@ -17,7 +17,7 @@
 - Every local monetary result is labelled exactly `Estimated/API-equivalent`; menu-bar estimates always include `≈`.
 - Monetary arithmetic uses `Decimal`; no stored balance, price, multiplication, or total uses `Double`.
 - Authoritative TTL is 15 minutes; local estimate TTL is 30 minutes; manual cost refresh bypasses both.
-- JSONL reads use 64 KiB chunks, reject records over 1 MiB, and skip files over 50 MiB.
+- JSONL reads use 64 KiB chunks, reject records over 1 MiB, and skip files over 256 MiB.
 - Local data remains in memory. Logs and diagnostics omit balances, spend, monetary totals, account labels, UUIDs, paths, raw JSON, and secrets.
 - English, Simplified Chinese, and Japanese strings are required for every new UI string.
 - CI gates a deterministic 64 MiB scan at 160 MiB peak RSS and 30 seconds, and a release executable at 15 MiB.
@@ -413,12 +413,12 @@ git commit -m "feat: coordinate cost refresh independently"
 
 **Interfaces:**
 - Produces: `JSONLStreamingReader.read(url:onRecord:) throws -> JSONLReadReport`.
-- Produces: constants `chunkBytes = 65_536`, `maximumRecordBytes = 1_048_576`, and observer `maximumFileBytes = 52_428_800`.
+- Produces: constants `chunkBytes = 65_536`, `maximumRecordBytes = 1_048_576`, and observer `maximumFileBytes = 268_435_456`.
 - Consumes: a synchronous record closure; does not retain raw lines after delivery.
 
 - [ ] **Step 1: Write failing boundary tests**
 
-Create temporary files and assert: records split at every chunk boundary arrive intact; final record without newline arrives; exactly 1 MiB is delivered; 1 MiB plus one byte is skipped and counted; cancellation throws; and exactly/over 50 MiB observer files are processed/skipped. Expected values are literal record byte counts.
+Create temporary files and assert: records split at every chunk boundary arrive intact; final record without newline arrives; exactly 1 MiB is delivered; 1 MiB plus one byte is skipped and counted; cancellation throws; and exactly/over 256 MiB observer files are processed/skipped. Expected values are literal record byte counts.
 
 - [ ] **Step 2: Run reader tests and confirm RED**
 

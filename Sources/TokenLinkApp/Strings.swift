@@ -86,6 +86,7 @@ public enum L10n {
     case costsLifetimeSpend = "costs.lifetimeSpend"
     case costsNoData = "costs.noData"
     case costsAssumedCache = "costs.assumedCache"
+    case costsFastRateUnavailable = "costs.fastRateUnavailable"
     case costsPartialScanFormat = "costs.partialScanFormat"
     case costsPartialSource = "costs.partialSource"
     case costsUnpricedModel = "costs.unpricedModel"
@@ -104,6 +105,7 @@ public enum L10n {
     case costsCacheWriteOneHour = "costs.cacheWriteOneHour"
     case costsOutput = "costs.output"
     case costsLongContextRuleFormat = "costs.longContextRuleFormat"
+    case costsFastMultiplierFormat = "costs.fastMultiplierFormat"
     case costsPricingSource = "costs.pricingSource"
     case costsExcludedModels = "costs.excludedModels"
     case costsExcludedModelsHint = "costs.excludedModelsHint"
@@ -501,6 +503,11 @@ public enum L10n {
       .simplifiedChinese: "未标注时长的缓存写入按 5 分钟价格估算。",
       .japanese: "期間が不明なキャッシュ書き込みには5分料金を使用しています。",
     ],
+    .costsFastRateUnavailable: [
+      .english: "Fast usage has no reviewed Fast rate; the standard rate was used.",
+      .simplifiedChinese: "Fast 用量没有已审核的 Fast 价格，暂按标准价格计算。",
+      .japanese: "Fast 利用のレビュー済み料金がないため、標準料金を使用しました。",
+    ],
     .costsPartialScanFormat: [
       .english: "Partial local scan: %lld file(s), %lld record(s) skipped.",
       .simplifiedChinese: "本地扫描不完整：跳过 %lld 个文件、%lld 条记录。",
@@ -528,10 +535,10 @@ public enum L10n {
     ],
     .costsCalculationIntro: [
       .english:
-        "Each supported record is priced before aggregation. Category amounts below include any request-level long-context multiplier.",
-      .simplifiedChinese: "每条受支持的记录会先计价再汇总；下方各类别金额已包含适用的单次请求长上下文倍率。",
+        "Each supported record is priced before aggregation. Category amounts below include any request-level long-context and Fast multipliers.",
+      .simplifiedChinese: "每条受支持的记录会先计价再汇总；下方各类别金额已包含适用的单次请求长上下文和 Fast 倍率。",
       .japanese:
-        "対応する各レコードを集計前に価格換算します。以下のカテゴリ金額には、該当するリクエスト単位の長文コンテキスト倍率が含まれます。",
+        "対応する各レコードを集計前に価格換算します。以下のカテゴリ金額には、該当するリクエスト単位の長文コンテキスト倍率と Fast 倍率が含まれます。",
     ],
     .costsNoPricedModels: [
       .english: "No priced model records are included in this total.",
@@ -539,9 +546,9 @@ public enum L10n {
       .japanese: "この合計には価格設定済みモデルのレコードがありません。",
     ],
     .costsPricedRecordsFormat: [
-      .english: "%lld priced record(s) · %lld used long-context pricing",
-      .simplifiedChinese: "%lld 条已计价记录 · %lld 条使用长上下文价格",
-      .japanese: "%lld 件を価格換算・%lld 件に長文コンテキスト料金を適用",
+      .english: "%lld priced record(s) · %lld long-context · %lld Fast",
+      .simplifiedChinese: "%lld 条已计价记录 · %lld 条长上下文 · %lld 条 Fast",
+      .japanese: "%lld 件を価格換算・長文 %lld 件・Fast %lld 件",
     ],
     .costsEffectiveRateFormat: [
       .english: "%@ tokens · effective %@ / 1M",
@@ -580,6 +587,11 @@ public enum L10n {
       .english: "Above %@ input tokens: input × %@ · output × %@",
       .simplifiedChinese: "输入超过 %@ tokens：输入 × %@ · 输出 × %@",
       .japanese: "入力が %@ tokens を超える場合：入力 × %@・出力 × %@",
+    ],
+    .costsFastMultiplierFormat: [
+      .english: "Fast processing: all token rates × %@",
+      .simplifiedChinese: "Fast 处理：所有 token 价格 × %@",
+      .japanese: "Fast 処理：全トークン料金 × %@",
     ],
     .costsPricingSource: [
       .english: "Open reviewed pricing source", .simplifiedChinese: "打开已审核价格来源",

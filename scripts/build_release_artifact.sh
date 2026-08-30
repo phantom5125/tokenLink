@@ -79,6 +79,8 @@ test -f "$mounted_app/Contents/Resources/TokenLink.icns"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$mounted_app/Contents/Info.plist")" = \
   "TokenLink.icns"
 test -f "$mounted_app/Contents/Resources/TokenLink_TokenLinkApp.bundle/codex.png"
+test -f \
+  "$mounted_app/Contents/Resources/TokenLink_TokenLinkProviders.bundle/api-equivalent-prices.json"
 test -L "$mount_dir/Applications"
 test "$(readlink "$mount_dir/Applications")" = "/Applications"
 cmp "$repo_dir/LICENSE" "$mounted_app/Contents/Resources/LICENSE"

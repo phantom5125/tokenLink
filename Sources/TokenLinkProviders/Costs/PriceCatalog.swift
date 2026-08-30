@@ -86,9 +86,11 @@ private struct PriceDocument: Decodable {
   let currency: String
   let uncachedInputPerMillion: String?
   let cacheReadPerMillion: String?
+  let cacheWritePerMillion: String?
   let cacheWriteFiveMinutePerMillion: String?
   let cacheWriteOneHourPerMillion: String?
   let outputPerMillion: String?
+  let fastMultiplier: String?
   let sourceURL: String
   let longContext: LongContextDocument?
 
@@ -99,9 +101,11 @@ private struct PriceDocument: Decodable {
     case currency
     case uncachedInputPerMillion = "uncached_input_per_million"
     case cacheReadPerMillion = "cache_read_per_million"
+    case cacheWritePerMillion = "cache_write_per_million"
     case cacheWriteFiveMinutePerMillion = "cache_write_five_minute_per_million"
     case cacheWriteOneHourPerMillion = "cache_write_one_hour_per_million"
     case outputPerMillion = "output_per_million"
+    case fastMultiplier = "fast_multiplier"
     case sourceURL = "source_url"
     case longContext = "long_context"
   }
@@ -145,12 +149,16 @@ extension ModelPrice {
         document.uncachedInputPerMillion, modelID: document.modelID),
       cacheReadPerMillion: try Self.decimal(
         document.cacheReadPerMillion, modelID: document.modelID),
+      cacheWritePerMillion: try Self.decimal(
+        document.cacheWritePerMillion, modelID: document.modelID),
       cacheWriteFiveMinutePerMillion: try Self.decimal(
         document.cacheWriteFiveMinutePerMillion, modelID: document.modelID),
       cacheWriteOneHourPerMillion: try Self.decimal(
         document.cacheWriteOneHourPerMillion, modelID: document.modelID),
       outputPerMillion: try Self.decimal(
         document.outputPerMillion, modelID: document.modelID),
+      fastMultiplier: try Self.decimal(
+        document.fastMultiplier, modelID: document.modelID),
       sourceURL: sourceURL,
       longContext: longContext)
   }

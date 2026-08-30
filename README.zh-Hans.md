@@ -311,9 +311,10 @@ payload 送达 C152。0.2.2 候选新增完整分页、稳定优先级槽位、�
 - 显式 API key：只存 macOS 钥匙串。
 - 非敏感配置：`~/Library/Application Support/TokenLink/config.json`，仅本人权限。
 - 不读浏览器 Cookie，不需要完全磁盘访问权限，无埋点，无远端服务。
-- 可选本地用量与成本 Beta 只读取 `.codex/sessions`、`.claude/projects`、
-  `.kimi-code/sessions`，仅在本机提取 token 计数，不上传会话内容。
-- 本地扫描按 64 KiB 分块、逐文件处理，跳过超过 50 MiB 的文件与超过 1 MiB 的记录；
+- 可选本地用量与成本 Beta 只读取 `.codex/sessions`、`.codex/config.toml` 中顶层的
+  `service_tier`、`.claude/projects`、`.kimi-code/sessions`，仅在本机提取 token
+  计数，不上传会话内容。
+- 本地扫描按 64 KiB 分块、逐文件处理，跳过超过 256 MiB 的文件与超过 1 MiB 的记录；
   不保留原始会话内容或金额快照，也没有遥测。
 - 所有厂商请求都是 HTTPS，且在携带凭据前校验官方 host allowlist。
 - 诊断导出前脱敏。

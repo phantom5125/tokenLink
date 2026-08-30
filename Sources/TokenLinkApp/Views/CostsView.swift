@@ -319,6 +319,8 @@ struct CostsView: View {
     switch warning {
     case .assumedFiveMinuteCacheWrite:
       model.text(.costsAssumedCache)
+    case .fastRateUnavailable:
+      model.text(.costsFastRateUnavailable)
     case .partialLocalScan(let fileCount, let recordCount):
       String(format: model.text(.costsPartialScanFormat), fileCount, recordCount)
     case .partialSource:

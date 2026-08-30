@@ -30,10 +30,15 @@ public struct LocalCostEstimator: Sendable {
     guard since <= through else { throw LocalCostEstimatorError.invalidInterval }
     switch provider {
     case .codex:
+      let fallbackProcessingTier = observer.codexFallbackProcessingTier()
       return try estimate(
         CodexCostRecordParser.self,
         since: since,
-        through: through)
+        through: through,
+        makeParser: {
+          CodexCostRecordParser(
+            fallbackProcessingTier: fallbackProcessingTier)
+        })
     case .claude:
       return try estimate(
         ClaudeCostRecordParser.self,
@@ -58,10 +63,15 @@ public struct LocalCostEstimator: Sendable {
   ) throws -> EstimatedCostPeriodCollection {
     switch provider {
     case .codex:
+      let fallbackProcessingTier = observer.codexFallbackProcessingTier()
       return try estimatePeriods(
         CodexCostRecordParser.self,
         through: through,
-        calendar: calendar)
+        calendar: calendar,
+        makeParser: {
+          CodexCostRecordParser(
+            fallbackProcessingTier: fallbackProcessingTier)
+        })
     case .claude:
       return try estimatePeriods(
         ClaudeCostRecordParser.self,
@@ -80,7 +90,8 @@ public struct LocalCostEstimator: Sendable {
   private func estimate<P: LocalUsageRecordParser>(
     _ parser: P.Type,
     since: Date,
-    through: Date
+    through: Date,
+    makeParser: () -> P = { P() }
   ) throws -> EstimatedCostSnapshot {
     var aggregates: [AggregateKey: CostAggregate] = [:]
     var unknownModelIDs: Set<String> = []
@@ -90,7 +101,8 @@ public struct LocalCostEstimator: Sendable {
     let report = try observer.scanRecords(
       parser,
       since: since,
-      through: through
+      through: through,
+      makeParser: makeParser
     ) { usage in
       if !usage.deduplicationKey.isEmpty,
         !seenEventIDs.insert(usage.deduplicationKey).inserted
@@ -109,7 +121,8 @@ public struct LocalCostEstimator: Sendable {
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
         cacheWriteDuration: usage.cacheWriteDuration,
-        outputTokens: usage.outputTokens)
+        outputTokens: usage.outputTokens,
+        processingTier: usage.processingTier)
       guard let item = CostCalculator.lineItem(usage: canonicalUsage, price: price) else {
         unknownModelIDs.insert(usage.modelID)
         return
@@ -155,7 +168,8 @@ public struct LocalCostEstimator: Sendable {
   private func estimatePeriods<P: LocalUsageRecordParser>(
     _ parser: P.Type,
     through: Date,
-    calendar: Calendar
+    calendar: Calendar,
+    makeParser: () -> P = { P() }
   ) throws -> EstimatedCostPeriodCollection {
     let intervals = Dictionary(
       uniqueKeysWithValues: CostDisplayPeriod.allCases.map {
@@ -179,7 +193,8 @@ public struct LocalCostEstimator: Sendable {
     let report = try observer.scanRecords(
       parser,
       since: scanStart,
-      through: through
+      through: through,
+      makeParser: makeParser
     ) { usage in
       if !usage.deduplicationKey.isEmpty,
         !seenEventIDs.insert(usage.deduplicationKey).inserted
@@ -205,7 +220,8 @@ public struct LocalCostEstimator: Sendable {
         cacheReadTokens: usage.cacheReadTokens,
         cacheWriteTokens: usage.cacheWriteTokens,
         cacheWriteDuration: usage.cacheWriteDuration,
-        outputTokens: usage.outputTokens)
+        outputTokens: usage.outputTokens,
+        processingTier: usage.processingTier)
       guard let item = CostCalculator.lineItem(usage: canonicalUsage, price: price) else {
         for period in matchingPeriods {
           unknownModelIDs[period, default: []].insert(usage.modelID)
@@ -285,6 +301,7 @@ private struct CostAggregate {
   var price: ModelPrice?
   var requestCount = 0
   var longContextRequestCount = 0
+  var fastRequestCount = 0
   var warnings: [CostWarning] = []
 
   mutating func add(_ item: ModelCostLineItem) -> Bool {
@@ -297,6 +314,7 @@ private struct CostAggregate {
     let nextRequestCount = requestCount.addingReportingOverflow(item.requestCount)
     let nextLongContextRequestCount = longContextRequestCount.addingReportingOverflow(
       item.longContextRequestCount)
+    let nextFastRequestCount = fastRequestCount.addingReportingOverflow(item.fastRequestCount)
     var nextComponentTokens = componentTokens
     for component in item.components {
       let next = nextComponentTokens[component.category, default: 0]
@@ -310,7 +328,8 @@ private struct CostAggregate {
       !nextCacheWrite.overflow,
       !nextOutput.overflow,
       !nextRequestCount.overflow,
-      !nextLongContextRequestCount.overflow
+      !nextLongContextRequestCount.overflow,
+      !nextFastRequestCount.overflow
     else { return false }
 
     latestTimestamp = max(latestTimestamp, item.usage.timestamp)
@@ -326,6 +345,7 @@ private struct CostAggregate {
     price = price ?? item.price
     requestCount = nextRequestCount.partialValue
     longContextRequestCount = nextLongContextRequestCount.partialValue
+    fastRequestCount = nextFastRequestCount.partialValue
     for warning in item.warnings where !warnings.contains(warning) {
       warnings.append(warning)
     }
@@ -356,6 +376,7 @@ private struct CostAggregate {
       price: price,
       requestCount: requestCount,
       longContextRequestCount: longContextRequestCount,
+      fastRequestCount: fastRequestCount,
       warnings: warnings)
   }
 }

@@ -79,6 +79,7 @@ public struct ProviderPeriodSpend: Equatable, Sendable {
 
 public enum CostWarning: Equatable, Sendable {
   case assumedFiveMinuteCacheWrite
+  case fastRateUnavailable
   case partialLocalScan(fileCount: Int, recordCount: Int)
   case partialSource(String)
   case unpricedModel(String)
@@ -115,6 +116,11 @@ public enum CacheWriteDuration: String, Codable, Equatable, Sendable {
   case oneHour
 }
 
+public enum CostProcessingTier: String, Codable, Equatable, Sendable {
+  case standard
+  case fast
+}
+
 public struct NormalizedModelUsage: Equatable, Sendable {
   public let provider: ProviderID
   public let modelID: String
@@ -124,6 +130,7 @@ public struct NormalizedModelUsage: Equatable, Sendable {
   public let cacheWriteTokens: Int
   public let cacheWriteDuration: CacheWriteDuration?
   public let outputTokens: Int
+  public let processingTier: CostProcessingTier
   public let deduplicationKey: String
 
   public init(
@@ -135,6 +142,7 @@ public struct NormalizedModelUsage: Equatable, Sendable {
     cacheWriteTokens: Int = 0,
     cacheWriteDuration: CacheWriteDuration? = nil,
     outputTokens: Int = 0,
+    processingTier: CostProcessingTier = .standard,
     deduplicationKey: String = ""
   ) {
     self.provider = provider
@@ -145,6 +153,7 @@ public struct NormalizedModelUsage: Equatable, Sendable {
     self.cacheWriteTokens = max(0, cacheWriteTokens)
     self.cacheWriteDuration = cacheWriteDuration
     self.outputTokens = max(0, outputTokens)
+    self.processingTier = processingTier
     self.deduplicationKey = deduplicationKey
   }
 
@@ -179,9 +188,11 @@ public struct ModelPrice: Equatable, Sendable {
   public let currency: String
   public let uncachedInputPerMillion: Decimal?
   public let cacheReadPerMillion: Decimal?
+  public let cacheWritePerMillion: Decimal?
   public let cacheWriteFiveMinutePerMillion: Decimal?
   public let cacheWriteOneHourPerMillion: Decimal?
   public let outputPerMillion: Decimal?
+  public let fastMultiplier: Decimal?
   public let sourceURL: URL
   public let longContext: LongContextPricing?
 
@@ -192,9 +203,11 @@ public struct ModelPrice: Equatable, Sendable {
     currency: String,
     uncachedInputPerMillion: Decimal?,
     cacheReadPerMillion: Decimal?,
+    cacheWritePerMillion: Decimal? = nil,
     cacheWriteFiveMinutePerMillion: Decimal? = nil,
     cacheWriteOneHourPerMillion: Decimal? = nil,
     outputPerMillion: Decimal?,
+    fastMultiplier: Decimal? = nil,
     sourceURL: URL,
     longContext: LongContextPricing? = nil
   ) {
@@ -204,9 +217,11 @@ public struct ModelPrice: Equatable, Sendable {
     self.currency = currency.uppercased()
     self.uncachedInputPerMillion = uncachedInputPerMillion
     self.cacheReadPerMillion = cacheReadPerMillion
+    self.cacheWritePerMillion = cacheWritePerMillion
     self.cacheWriteFiveMinutePerMillion = cacheWriteFiveMinutePerMillion
     self.cacheWriteOneHourPerMillion = cacheWriteOneHourPerMillion
     self.outputPerMillion = outputPerMillion
+    self.fastMultiplier = fastMultiplier
     self.sourceURL = sourceURL
     self.longContext = longContext
   }
@@ -250,6 +265,7 @@ public struct ModelCostLineItem: Equatable, Sendable {
   public let price: ModelPrice?
   public let requestCount: Int
   public let longContextRequestCount: Int
+  public let fastRequestCount: Int
   public let warnings: [CostWarning]
 
   public init(
@@ -259,6 +275,7 @@ public struct ModelCostLineItem: Equatable, Sendable {
     price: ModelPrice? = nil,
     requestCount: Int = 0,
     longContextRequestCount: Int = 0,
+    fastRequestCount: Int = 0,
     warnings: [CostWarning] = []
   ) {
     self.usage = usage
@@ -267,6 +284,7 @@ public struct ModelCostLineItem: Equatable, Sendable {
     self.price = price
     self.requestCount = max(0, requestCount)
     self.longContextRequestCount = max(0, longContextRequestCount)
+    self.fastRequestCount = max(0, fastRequestCount)
     self.warnings = warnings
   }
 }
@@ -329,15 +347,19 @@ public enum CostCalculator {
 
     var warnings: [CostWarning] = []
     let cacheWriteRate: Decimal?
-    switch usage.cacheWriteDuration {
-    case .oneHour:
-      cacheWriteRate = price.cacheWriteOneHourPerMillion
-    case .fiveMinutes:
-      cacheWriteRate = price.cacheWriteFiveMinutePerMillion
-    case nil:
-      cacheWriteRate = price.cacheWriteFiveMinutePerMillion
-      if usage.cacheWriteTokens > 0 {
-        warnings.append(.assumedFiveMinuteCacheWrite)
+    if let genericRate = price.cacheWritePerMillion {
+      cacheWriteRate = genericRate
+    } else {
+      switch usage.cacheWriteDuration {
+      case .oneHour:
+        cacheWriteRate = price.cacheWriteOneHourPerMillion
+      case .fiveMinutes:
+        cacheWriteRate = price.cacheWriteFiveMinutePerMillion
+      case nil:
+        cacheWriteRate = price.cacheWriteFiveMinutePerMillion
+        if usage.cacheWriteTokens > 0 {
+          warnings.append(.assumedFiveMinuteCacheWrite)
+        }
       }
     }
 
@@ -353,31 +375,44 @@ public enum CostCalculator {
       } ?? false
     let inputMultiplier = isLongContext ? price.longContext?.inputMultiplier ?? 1 : 1
     let outputMultiplier = isLongContext ? price.longContext?.outputMultiplier ?? 1 : 1
-    let total = (input + cacheRead + cacheWrite) * inputMultiplier + output * outputMultiplier
+    let processingMultiplier: Decimal
+    if usage.processingTier == .fast {
+      if let fastMultiplier = price.fastMultiplier {
+        processingMultiplier = fastMultiplier
+      } else {
+        processingMultiplier = 1
+        warnings.append(.fastRateUnavailable)
+      }
+    } else {
+      processingMultiplier = 1
+    }
+    let total =
+      ((input + cacheRead + cacheWrite) * inputMultiplier + output * outputMultiplier)
+      * processingMultiplier
     let components: [ModelCostComponent] = [
       component(
         category: .uncachedInput,
         tokens: usage.uncachedInputTokens,
         baseAmount: input,
-        multiplier: inputMultiplier,
+        multiplier: inputMultiplier * processingMultiplier,
         currency: price.currency),
       component(
         category: .cacheRead,
         tokens: usage.cacheReadTokens,
         baseAmount: cacheRead,
-        multiplier: inputMultiplier,
+        multiplier: inputMultiplier * processingMultiplier,
         currency: price.currency),
       component(
         category: .cacheWrite,
         tokens: usage.cacheWriteTokens,
         baseAmount: cacheWrite,
-        multiplier: inputMultiplier,
+        multiplier: inputMultiplier * processingMultiplier,
         currency: price.currency),
       component(
         category: .output,
         tokens: usage.outputTokens,
         baseAmount: output,
-        multiplier: outputMultiplier,
+        multiplier: outputMultiplier * processingMultiplier,
         currency: price.currency),
     ].compactMap { $0 }
 
@@ -388,6 +423,7 @@ public enum CostCalculator {
       price: price,
       requestCount: 1,
       longContextRequestCount: isLongContext ? 1 : 0,
+      fastRequestCount: usage.processingTier == .fast ? 1 : 0,
       warnings: warnings)
   }
 

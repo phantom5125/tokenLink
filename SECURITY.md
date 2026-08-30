@@ -35,10 +35,11 @@ the old items as a recovery fallback.
   credentials. Provider balances, spend values, local estimates, and priceable
   model identifiers remain in memory and are excluded from diagnostics.
 - Codex quota and task state reuse the local Codex CLI sign-in. The optional
-  usage observer reads only documented CLI session roots and summarizes token
+  usage observer reads only documented CLI session roots plus the non-secret
+  top-level `service_tier` in Codex configuration, and summarizes token
   counters locally.
 - Local usage and cost scans accept regular files only, refuse symbolic links
-  and special files, enforce 50 MiB per-file and 1 MiB per-record limits while
+  and special files, enforce 256 MiB per-file and 1 MiB per-record limits while
   reading, and never retain prompt or response content.
 - Protocol v2 sends provider/window labels, quota values, display settings, and
   up to three short visible Codex task titles/states to the explicitly bound

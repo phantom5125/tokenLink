@@ -316,6 +316,13 @@ The two cost domains are intentionally not merged:
   fills all three cached windows, so switching periods does not reopen session
   files. They estimate what equivalent API traffic would cost; they do not
   estimate, allocate, or assign monetary value to a Coding Plan subscription.
+  Codex follows the common local-usage-tool formula: request-level usage is
+  preferred over cumulative counters; ordinary input is `input - cache read -
+  cache write`; reasoning tokens stay inside output and are not charged twice.
+  Recorded `priority` / Fast requests and request-level long-context thresholds
+  use the reviewed catalog multipliers before model totals are aggregated.
+  Unmarked speed records fall back to the non-secret `service_tier` value in
+  `.codex/config.toml`, then to Standard when no recognized value is present.
   Unknown models and token categories without a reviewed price are excluded and
   surfaced as warnings.
 
@@ -384,11 +391,12 @@ candidate validation layer. See the latest report in [`docs/validation`](docs/va
   with user-only permissions.
 - No browser-cookie access, Full Disk Access, analytics, or remote TokenLink
   service.
-- The optional local-usage and cost betas read only `.codex/sessions`,
+- The optional local-usage and cost betas read only `.codex/sessions`, the
+  top-level `service_tier` setting in `.codex/config.toml`,
   `.claude/projects`, and `.kimi-code/sessions`; they extract token counters
   locally and never send transcript data over the network.
 - Local scans stream 64 KiB chunks, process files sequentially, skip files over
-  50 MiB and records over 1 MiB, and retain neither raw transcript content nor
+  256 MiB and records over 1 MiB, and retain neither raw transcript content nor
   monetary snapshots. There is no telemetry.
 - Provider URLs are HTTPS and checked against narrow official-host allowlists
   before credential-bearing requests.

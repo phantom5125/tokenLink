@@ -161,8 +161,16 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
   private var currentModel: String?
   private var previousTotal: CodexCostUsage?
   private var needsChildBaseline = false
+  private var currentProcessingTier: CostProcessingTier?
+  private let fallbackProcessingTier: CostProcessingTier
 
-  public init() {}
+  public init() {
+    fallbackProcessingTier = .standard
+  }
+
+  public init(fallbackProcessingTier: CostProcessingTier) {
+    self.fallbackProcessingTier = fallbackProcessingTier
+  }
 
   public mutating func consume(_ record: Data) -> NormalizedModelUsage? {
     guard let decoded = try? JSONDecoder().decode(CodexCostRecord.self, from: record) else {
@@ -172,6 +180,7 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
     case "session_meta":
       currentModel = nil
       previousTotal = nil
+      currentProcessingTier = nil
       needsChildBaseline =
         decoded.payload.threadSource == "subagent"
         || decoded.payload.source?.isSubagent == true
@@ -182,12 +191,35 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
       }
       return nil
     case "event_msg":
+      if decoded.payload.type == "thread_settings_applied" {
+        if let serviceTier = decoded.payload.threadSettings?.serviceTier {
+          switch serviceTier {
+          case "fast", "priority": currentProcessingTier = .fast
+          case "default", "standard": currentProcessingTier = .standard
+          default: currentProcessingTier = nil
+          }
+        }
+        return nil
+      }
       guard decoded.payload.type == "token_count",
         let model = currentModel,
         let timestamp = LocalUsageTimestamp.parse(decoded.timestamp)
       else { return nil }
       if let total = decoded.payload.info?.totalTokenUsage {
-        return consumeCumulative(total, model: model, timestamp: timestamp)
+        let previous = previousTotal
+        previousTotal = total
+        if needsChildBaseline {
+          needsChildBaseline = false
+          return nil
+        }
+        if total != previous, let usage = decoded.payload.info?.lastTokenUsage {
+          return normalized(usage, model: model, timestamp: timestamp)
+        }
+        return consumeCumulative(
+          total,
+          previous: previous,
+          model: model,
+          timestamp: timestamp)
       }
       guard let usage = decoded.payload.info?.lastTokenUsage else { return nil }
       return normalized(usage, model: model, timestamp: timestamp)
@@ -202,14 +234,10 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
 
   private mutating func consumeCumulative(
     _ total: CodexCostUsage,
+    previous previousTotal: CodexCostUsage?,
     model: String,
     timestamp: Date
   ) -> NormalizedModelUsage? {
-    defer { previousTotal = total }
-    if needsChildBaseline {
-      needsChildBaseline = false
-      return nil
-    }
     guard let previousTotal else {
       return normalized(total, model: model, timestamp: timestamp)
     }
@@ -225,14 +253,19 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
     timestamp: Date
   ) -> NormalizedModelUsage? {
     guard usage.hasTokens else { return nil }
+    let cacheReadTokens = min(usage.cachedInputTokens, usage.inputTokens)
+    let cacheWriteTokens = min(
+      usage.cacheWriteInputTokens,
+      usage.inputTokens - cacheReadTokens)
     return NormalizedModelUsage(
       provider: Self.provider,
       modelID: model,
       timestamp: timestamp,
-      uncachedInputTokens: max(usage.inputTokens - usage.cachedInputTokens, 0),
-      cacheReadTokens: usage.cachedInputTokens,
-      cacheWriteTokens: usage.cacheWriteInputTokens,
-      outputTokens: usage.outputTokens)
+      uncachedInputTokens: usage.inputTokens - cacheReadTokens - cacheWriteTokens,
+      cacheReadTokens: cacheReadTokens,
+      cacheWriteTokens: cacheWriteTokens,
+      outputTokens: usage.outputTokens,
+      processingTier: currentProcessingTier ?? fallbackProcessingTier)
   }
 }
 
@@ -309,6 +342,7 @@ private struct CodexCostRecord: Decodable {
     let info: Info?
     let source: Source?
     let threadSource: String?
+    let threadSettings: ThreadSettings?
 
     enum CodingKeys: String, CodingKey {
       case type
@@ -316,6 +350,15 @@ private struct CodexCostRecord: Decodable {
       case info
       case source
       case threadSource = "thread_source"
+      case threadSettings = "thread_settings"
+    }
+  }
+
+  struct ThreadSettings: Decodable {
+    let serviceTier: String?
+
+    enum CodingKeys: String, CodingKey {
+      case serviceTier = "service_tier"
     }
   }
 
@@ -344,7 +387,7 @@ private struct CodexCostRecord: Decodable {
   }
 }
 
-private struct CodexCostUsage: Decodable {
+private struct CodexCostUsage: Decodable, Equatable {
   let inputTokens: Int
   let cachedInputTokens: Int
   let cacheWriteInputTokens: Int

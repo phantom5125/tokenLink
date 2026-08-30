@@ -3,14 +3,16 @@ set -euo pipefail
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="$repo_dir/.build/artifacts/TokenLink.app"
-resource_bundle_name="TokenLink_TokenLinkApp.bundle"
+app_resource_bundle_name="TokenLink_TokenLinkApp.bundle"
+provider_resource_bundle_name="TokenLink_TokenLinkProviders.bundle"
 app_icon="$repo_dir/packaging/TokenLink.icns"
 build_archs_value="${TOKENLINK_BUILD_ARCHS:-$(uname -m)}"
 
 cd "$repo_dir"
 read -r -a build_archs <<< "$build_archs_value"
 built_executables=()
-resource_bundle=""
+app_resource_bundle=""
+provider_resource_bundle=""
 
 if [[ "${#build_archs[@]}" -eq 0 ]]; then
   echo "TOKENLINK_BUILD_ARCHS must contain at least one architecture." >&2
@@ -36,21 +38,28 @@ for architecture in "${build_archs[@]}"; do
     --scratch-path "$scratch_path" \
     --show-bin-path)"
   architecture_executable="$release_bin_dir/tokenlink"
-  architecture_resource_bundle="$release_bin_dir/$resource_bundle_name"
+  architecture_app_resource_bundle="$release_bin_dir/$app_resource_bundle_name"
+  architecture_provider_resource_bundle="$release_bin_dir/$provider_resource_bundle_name"
 
   if [[ ! -x "$architecture_executable" ]]; then
     echo "Release executable was not produced at $architecture_executable" >&2
     exit 1
   fi
 
-  if [[ ! -d "$architecture_resource_bundle" ]]; then
-    echo "SwiftPM resource bundle was not produced at $architecture_resource_bundle" >&2
+  if [[ ! -d "$architecture_app_resource_bundle" ]]; then
+    echo "SwiftPM resource bundle was not produced at $architecture_app_resource_bundle" >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$architecture_provider_resource_bundle" ]]; then
+    echo "SwiftPM resource bundle was not produced at $architecture_provider_resource_bundle" >&2
     exit 1
   fi
 
   built_executables+=("$architecture_executable")
-  if [[ -z "$resource_bundle" ]]; then
-    resource_bundle="$architecture_resource_bundle"
+  if [[ -z "$app_resource_bundle" ]]; then
+    app_resource_bundle="$architecture_app_resource_bundle"
+    provider_resource_bundle="$architecture_provider_resource_bundle"
   fi
 done
 
@@ -82,7 +91,8 @@ mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$repo_dir/packaging/Info.plist" "$bundle/Contents/Info.plist"
 cp "$executable" "$bundle/Contents/MacOS/TokenLink"
 cp "$app_icon" "$bundle/Contents/Resources/TokenLink.icns"
-ditto "$resource_bundle" "$bundle/Contents/Resources/$resource_bundle_name"
+ditto "$app_resource_bundle" "$bundle/Contents/Resources/$app_resource_bundle_name"
+ditto "$provider_resource_bundle" "$bundle/Contents/Resources/$provider_resource_bundle_name"
 cp "$repo_dir/LICENSE" "$bundle/Contents/Resources/LICENSE"
 cp "$repo_dir/NOTICE" "$bundle/Contents/Resources/NOTICE"
 chmod 755 "$bundle/Contents/MacOS/TokenLink"

@@ -51,7 +51,8 @@ struct CostExplanationView: View {
           String(
             format: model.text(.costsPricedRecordsFormat),
             item.requestCount,
-            item.longContextRequestCount)
+            item.longContextRequestCount,
+            item.fastRequestCount)
         )
         .font(.caption2)
         .foregroundStyle(.secondary)
@@ -80,6 +81,15 @@ struct CostExplanationView: View {
           .font(.caption2)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
+        }
+        if let fastMultiplier = price.fastMultiplier {
+          Text(
+            String(
+              format: model.text(.costsFastMultiplierFormat),
+              CostFormatting.decimal(fastMultiplier, language: model.currentLanguage))
+          )
+          .font(.caption2)
+          .foregroundStyle(.secondary)
         }
         Link(destination: price.sourceURL) {
           Label(model.text(.costsPricingSource), systemImage: "arrow.up.right.square")
@@ -122,6 +132,9 @@ struct CostExplanationView: View {
     }
     if let value = price.cacheReadPerMillion {
       catalogRate(model.text(.costsCacheRead), value: value, currency: price.currency)
+    }
+    if let value = price.cacheWritePerMillion {
+      catalogRate(model.text(.costsCacheWrite), value: value, currency: price.currency)
     }
     if let value = price.cacheWriteFiveMinutePerMillion {
       catalogRate(model.text(.costsCacheWriteFiveMinute), value: value, currency: price.currency)

@@ -16,6 +16,10 @@ versioning while it is pre-1.0; hardware verification is reported separately in
   windows instead of inventing plan limits.
 - Promoted the Mac Costs beta to a dedicated localized Cost Center route with
   Today / Week / Month views and drill-down cost provenance.
+- Aligned Codex API-equivalent estimates with the leading community method:
+  request-level deltas, disjoint input/cache buckets, recorded and configured
+  Fast tiers, request-level long-context pricing, current GPT-5.6 official
+  rates, and streaming support for normal rollout files up to 256 MiB.
 
 - Added a persisted Today / Week / Month selector shared by the Costs screen
   and local-estimate menu-bar supplement.

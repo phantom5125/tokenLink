@@ -139,7 +139,7 @@ import Testing
   expectNotRegularFile(at: fifo)
 }
 
-@Test func observerProcessesExactlyFiftyMiBAndSkipsOneByteOver() throws {
+@Test func observerProcessesExactlyTwoHundredFiftySixMiBAndSkipsOneByteOver() throws {
   // Catches opening a file beyond the hard cap or rejecting the exact boundary.
   let root = FileManager.default.temporaryDirectory.appending(
     path: UUID().uuidString,
@@ -159,18 +159,18 @@ import Testing
   try makeSparseFile(
     at: exact,
     prefix: record,
-    byteCount: 52_428_800)
+    byteCount: 268_435_456)
   let over = sessions.appending(path: "b-over.jsonl")
   try makeSparseFile(
     at: over,
     prefix: record,
-    byteCount: 52_428_801)
+    byteCount: 268_435_457)
 
   let report = try LocalUsageObserver(homeURL: root).scan(
     CodexRolloutParser.self,
     since: Date(timeIntervalSince1970: 1_000_000))
 
-  #expect(LocalUsageObserver.maximumFileBytes == 52_428_800)
+  #expect(LocalUsageObserver.maximumFileBytes == 268_435_456)
   #expect(report.summary.eventCount == 1)
   #expect(report.summary.totalTokens == 15)
   #expect(report.processedFileCount == 1)

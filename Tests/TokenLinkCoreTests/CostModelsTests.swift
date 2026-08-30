@@ -96,6 +96,62 @@ private let sourceURL = URL(string: "https://example.com/pricing")!
   #expect(longItem.components.first { $0.category == .output }?.effectiveRatePerMillion == 45)
 }
 
+@Test func codexPriceCalculationUsesCacheWriteAndFastRatesWithoutDoubleCounting() throws {
+  // Codex input categories arrive as disjoint normalized buckets. Fast is an
+  // independent processing multiplier over the selected context tier.
+  let usage = NormalizedModelUsage(
+    provider: .codex,
+    modelID: "gpt-5.6-sol",
+    timestamp: .distantPast,
+    uncachedInputTokens: 1_000_000,
+    cacheReadTokens: 1_000_000,
+    cacheWriteTokens: 1_000_000,
+    outputTokens: 1_000_000,
+    processingTier: .fast)
+  let price = ModelPrice(
+    provider: .codex,
+    modelID: "gpt-5.6-sol",
+    aliases: ["gpt-5.6"],
+    currency: "USD",
+    uncachedInputPerMillion: 4,
+    cacheReadPerMillion: Decimal(string: "0.4"),
+    cacheWritePerMillion: 5,
+    outputPerMillion: 20,
+    fastMultiplier: 2,
+    sourceURL: sourceURL)
+
+  let item = try #require(CostCalculator.lineItem(usage: usage, price: price))
+
+  #expect(item.amount.value == Decimal(string: "58.8"))
+  #expect(item.components.map(\.amount.value) == [8, Decimal(string: "0.8")!, 10, 40])
+  #expect(item.fastRequestCount == 1)
+  #expect(item.warnings.isEmpty)
+}
+
+@Test func fastUsageFallsBackToReviewedStandardRateWithWarning() throws {
+  let usage = NormalizedModelUsage(
+    provider: .codex,
+    modelID: "legacy",
+    timestamp: .distantPast,
+    uncachedInputTokens: 1_000_000,
+    processingTier: .fast)
+  let price = ModelPrice(
+    provider: .codex,
+    modelID: "legacy",
+    aliases: [],
+    currency: "USD",
+    uncachedInputPerMillion: 3,
+    cacheReadPerMillion: nil,
+    outputPerMillion: nil,
+    sourceURL: sourceURL)
+
+  let item = try #require(CostCalculator.lineItem(usage: usage, price: price))
+
+  #expect(item.amount.value == 3)
+  #expect(item.fastRequestCount == 1)
+  #expect(item.warnings == [.fastRateUnavailable])
+}
+
 @Test func normalizedUsageSaturatesTotalInputInsteadOfOverflowing() {
   // Catches malicious transcript counters trapping before long-context pricing.
   let usage = NormalizedModelUsage(

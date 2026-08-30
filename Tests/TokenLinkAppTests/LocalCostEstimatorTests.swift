@@ -77,6 +77,77 @@ import TokenLinkProviders
   #expect(!presentation.contains("m1"))
 }
 
+@Test func codexEstimateMatchesRequestLevelCommunityFormula() throws {
+  // Catches double charging cached input, reasoning output, or Fast/long-context tiers.
+  let root = try temporaryCostHome()
+  defer { try? FileManager.default.removeItem(at: root) }
+  let directory = root.appending(
+    path: ".codex/sessions/2026/08/31",
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  try Data("service_tier = \"priority\"\n".utf8).write(
+    to: root.appending(path: ".codex/config.toml"))
+  try Data(
+    """
+    {"timestamp":"2026-08-31T00:00:00Z","type":"session_meta","payload":{"thread_source":"user"}}
+    {"timestamp":"2026-08-31T00:00:01Z","type":"turn_context","payload":{"model":"gpt-5.6"}}
+    {"timestamp":"2026-08-31T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":900000,"cached_input_tokens":300000,"cache_write_input_tokens":60000,"output_tokens":30000},"last_token_usage":{"input_tokens":300000,"cached_input_tokens":100000,"cache_write_input_tokens":20000,"output_tokens":10000,"reasoning_output_tokens":4000}}}}
+
+    """.utf8
+  ).write(to: directory.appending(path: "rollout.jsonl"))
+
+  let through = Date(timeIntervalSince1970: 1_788_220_800)
+  let catalog = PriceCatalog(
+    version: "community-formula",
+    effectiveDate: through,
+    entries: [
+      ModelPrice(
+        provider: .codex,
+        modelID: "gpt-5.6-sol",
+        aliases: ["gpt-5.6"],
+        currency: "USD",
+        uncachedInputPerMillion: 4,
+        cacheReadPerMillion: Decimal(string: "0.4"),
+        cacheWritePerMillion: 5,
+        outputPerMillion: 20,
+        fastMultiplier: 2,
+        sourceURL: URL(string: "https://developers.openai.com/api/docs/pricing")!,
+        longContext: LongContextPricing(
+          thresholdInputTokens: 272_000,
+          inputMultiplier: 2,
+          outputMultiplier: Decimal(string: "1.5")!))
+    ])
+  let snapshot = try LocalCostEstimator(
+    observer: LocalUsageObserver(homeURL: root),
+    catalog: catalog,
+    now: { through }
+  ).estimate(
+    provider: .codex,
+    since: through.addingTimeInterval(-604_800),
+    through: through)
+
+  let item = try #require(snapshot.lineItems.first)
+  #expect(snapshot.lineItems.count == 1)
+  #expect(item.usage.modelID == "gpt-5.6-sol")
+  #expect(item.usage.uncachedInputTokens == 180_000)
+  #expect(item.usage.cacheReadTokens == 100_000)
+  #expect(item.usage.cacheWriteTokens == 20_000)
+  #expect(item.usage.outputTokens == 10_000)
+  #expect(item.requestCount == 1)
+  #expect(item.longContextRequestCount == 1)
+  #expect(item.fastRequestCount == 1)
+  #expect(
+    item.components.map(\.amount.value) == [
+      Decimal(string: "2.88"),
+      Decimal(string: "0.16"),
+      Decimal(string: "0.4"),
+      Decimal(string: "0.6"),
+    ])
+  #expect(item.amount.value == Decimal(string: "4.04"))
+  #expect(snapshot.totals == [CurrencyAmount(value: Decimal(string: "4.04")!, currency: "USD")])
+  #expect(snapshot.unknownModelIDs.isEmpty)
+}
+
 @Test func localCostEstimatorPricesBeforeAggregationAndKeepsCurrenciesSeparate() throws {
   // Catches applying long-context multipliers to an aggregated seven-day token count.
   let root = try temporaryCostHome()

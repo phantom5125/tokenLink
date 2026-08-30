@@ -43,6 +43,7 @@ and expiry make that inference unreliable.
 ### 2.2 Initial local estimates
 
 - Codex rollout JSONL below `.codex/sessions`
+- Codex's non-secret top-level `service_tier` in `.codex/config.toml`
 - Claude transcript JSONL below `.claude/projects`
 - Kimi wire JSONL below `.kimi-code/sessions`
 
@@ -205,7 +206,7 @@ Production local scans must not call `Data(contentsOf:)` for transcript files.
 `JSONLStreamingReader` reads 64 KiB chunks, keeps records intact across chunk
 boundaries, and checks cancellation between chunks and records.
 
-- maximum source file size: 50 MiB;
+- maximum source file size: 256 MiB;
 - maximum JSONL record size: 1 MiB;
 - files are processed sequentially in path order;
 - records exceeding the limit are skipped and counted in a sanitized warning;
@@ -242,11 +243,24 @@ directly, and the top-level model field supplies the model ID.
 ### 7.3 Price calculation
 
 The bundled catalog records, per model and currency, prices per million tokens
-for uncached input, cache read, five-minute cache write, optional one-hour cache
-write, and output. It may also record an official per-request long-context
-threshold and its input/output multipliers. Pricing is applied before events
-are aggregated so a threshold that applies to one request is not accidentally
-applied to a seven-day model total.
+for uncached input, cache read, generic or duration-specific cache write, and
+output. It may also record an official per-request long-context threshold and
+its input/output multipliers, plus a reviewed Fast-processing multiplier.
+Pricing is applied before events are aggregated so a threshold or processing
+tier that applies to one request is not accidentally applied to a seven-day
+model total.
+
+For Codex, `last_token_usage` is preferred when available. A cumulative
+`total_token_usage` delta is used only as a compatibility fallback. Since the
+Codex `input_tokens` counter includes cache traffic, its normalized buckets are:
+
+`uncached input = input tokens - cached input tokens - cache-write input tokens`
+
+Reasoning output is already included in `output_tokens` and is never added a
+second time. Recorded `priority` and `fast` service tiers select Fast pricing;
+unmarked or unsupported records use the non-secret top-level `service_tier`
+from `.codex/config.toml`, falling back to standard when it is absent or not
+recognized.
 
 For every category:
 
@@ -270,7 +284,8 @@ The catalog is a read-only application resource with:
 - exact model IDs and explicit aliases;
 - category prices and currency;
 - a first-party pricing source URL for every entry;
-- optional first-party long-context thresholds and multipliers.
+- optional first-party long-context thresholds and multipliers;
+- optional first-party Fast-processing multipliers.
 
 Initial sources are the official OpenAI, Anthropic, and Moonshot pricing pages.
 The implementation includes only model IDs verified against supported local
@@ -396,7 +411,7 @@ Implementation follows test-driven development. Required coverage includes:
 - DeepSeek multiple currencies, zero balance, unavailable status, auth failure,
   malformed response, host validation, and redirect rejection;
 - JSONL records split across chunks, a record exactly at and over 1 MiB, a file
-  exactly at and over 50 MiB, cancellation, unreadable files, and Claude dedupe;
+  exactly at and over 256 MiB, cancellation, unreadable files, and Claude dedupe;
 - Codex model state, repeated cumulative totals, cached-input subtraction, and
   child replay suppression;
 - Claude and Kimi category mapping;

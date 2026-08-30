@@ -151,7 +151,7 @@ import TokenLinkCore
     ))
   let first = try #require(firstValue)
   #expect(first.modelID == "gpt-5.4")
-  #expect(first.uncachedInputTokens == 60)
+  #expect(first.uncachedInputTokens == 55)
   #expect(first.cacheReadTokens == 40)
   #expect(first.cacheWriteTokens == 5)
   #expect(first.outputTokens == 20)
@@ -170,7 +170,7 @@ import TokenLinkCore
     ))
   let changedModel = try #require(changedModelValue)
   #expect(changedModel.modelID == "gpt-5.5")
-  #expect(changedModel.uncachedInputTokens == 40)
+  #expect(changedModel.uncachedInputTokens == 37)
   #expect(changedModel.cacheReadTokens == 20)
   #expect(changedModel.cacheWriteTokens == 3)
   #expect(changedModel.outputTokens == 10)
@@ -210,6 +210,90 @@ import TokenLinkCore
   #expect(childDelta.uncachedInputTokens == 30)
   #expect(childDelta.cacheReadTokens == 20)
   #expect(childDelta.outputTokens == 10)
+}
+
+@Test func codexCostParserPrefersPerRequestUsageAndTracksFastTier() throws {
+  var parser = CodexCostRecordParser()
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:00Z","type":"session_meta","payload":{"thread_source":"user"}}"#
+    ))
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:01Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}"#
+    ))
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:02Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"priority"}}}"#
+    ))
+
+  let fastValue = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1000,"cached_input_tokens":400,"cache_write_input_tokens":100,"output_tokens":200},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"cache_write_input_tokens":10,"output_tokens":20,"reasoning_output_tokens":7}}}}"#
+    ))
+  let fast = try #require(fastValue)
+  #expect(fast.uncachedInputTokens == 50)
+  #expect(fast.cacheReadTokens == 40)
+  #expect(fast.cacheWriteTokens == 10)
+  #expect(fast.outputTokens == 20)
+  #expect(fast.processingTier == .fast)
+
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:04Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"default"}}}"#
+    ))
+  let standardValue = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"input_tokens":1100,"cached_input_tokens":440,"cache_write_input_tokens":110,"output_tokens":220},"last_token_usage":{"input_tokens":100,"cached_input_tokens":40,"cache_write_input_tokens":10,"output_tokens":20}}}}"#
+    ))
+  #expect(try #require(standardValue).processingTier == .standard)
+}
+
+@Test func codexConfigurationMatchesCommunitySpeedFallback() {
+  #expect(
+    CodexConfiguration.processingTier(
+      in: "service_tier = 'priority' # use higher tier") == .fast)
+  #expect(CodexConfiguration.processingTier(in: "service_tier = \"fast\"") == .fast)
+  #expect(CodexConfiguration.processingTier(in: "service_tier = \"standard\"") == .standard)
+  #expect(
+    CodexConfiguration.processingTier(
+      in: "service_tier_override = \"fast\"\nservice_tier = \"breakfast\"") == .standard)
+  #expect(
+    CodexConfiguration.processingTier(
+      in: "service_tier = \"standard\"\nservice_tier = \"priority\"") == .fast)
+}
+
+@Test func codexCostParserUsesFallbackOnlyForUnclassifiedTiers() throws {
+  var parser = CodexCostRecordParser(fallbackProcessingTier: .fast)
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:00Z","type":"turn_context","payload":{"model":"gpt-5.6-sol"}}"#
+    ))
+  let unmarked = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:01Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    ))
+  #expect(try #require(unmarked).processingTier == .fast)
+
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:02Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"standard"}}}"#
+    ))
+  let standard = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:03Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    ))
+  #expect(try #require(standard).processingTier == .standard)
+
+  _ = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:04Z","type":"event_msg","payload":{"type":"thread_settings_applied","thread_settings":{"service_tier":"flex"}}}"#
+    ))
+  let unsupported = parser.consume(
+    jsonRecord(
+      #"{"timestamp":"2026-08-31T00:00:05Z","type":"event_msg","payload":{"type":"token_count","info":{"last_token_usage":{"input_tokens":10,"cached_input_tokens":0,"output_tokens":5}}}}"#
+    ))
+  #expect(try #require(unsupported).processingTier == .fast)
 }
 
 @Test func claudeCostParserKeepsFourBucketsAndDeduplicatesMessageIDs() throws {
