@@ -38,7 +38,7 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 - **2026-08-30 — The 0.2.2 stability candidate is integrated.** Bluetooth
   diagnostics, explicit Codex task-link outcomes, complete thread pagination,
   stable priority slots, and accessible C152 session indicators now share one
-  release branch with 190 Swift tests and eleven firmware test executables.
+  release branch with 190 Swift tests and twelve firmware test executables.
 - **2026-08-30 — C152 firmware moved into TokenLink.** The exact default wireless
   source, simulator tests, partition layout, MIT/OFL notices, and a pinned
   PlatformIO build now live under `firmware/stopwatch-c152`. A fresh checkout can
@@ -294,7 +294,8 @@ back to v1. The Mac implementation and fake-transport tests are complete, and
 the v0.2.1 release carried its full active-count field and live multi-provider
 payloads to a C152. The 0.2.2 candidate adds complete pagination, stable priority
 slots, focus delivery feedback, and animated/non-color session indicators;
-physical layout, task focus, reconnect, and sleep/wake review remain the final
+the exact power-button wake fix is flashed and boot-verified, while physical
+layout, task focus, reconnect, and visible sleep/wake review remain the final
 candidate validation layer. See the latest report in [`docs/validation`](docs/validation/).
 
 ## Privacy and security

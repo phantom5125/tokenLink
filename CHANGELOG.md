@@ -50,6 +50,10 @@ versioning while it is pre-1.0; hardware verification is reported separately in
   actionable again.
 - Show both the aggregate active count and visible row count on Sessions, while
   keeping protocol v2 and the three-slot focus contract unchanged.
+- Merge M5Unified's latched PM1 click event with direct power-button sampling,
+  so a short red-button click reliably wakes desk sleep even when the full
+  press falls between two samples. Live press tracking still owns held and
+  double-click gestures, preventing duplicate actions.
 
 ## 0.2.1 — 2026-08-30
 
