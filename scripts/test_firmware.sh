@@ -19,6 +19,7 @@ plain_tests=(
   completion_banner_test
   connection_health_test
   gesture_test
+  power_button_input_test
   power_button_gesture_test
   raise_wake_test
   watch_protocol_presentation_test

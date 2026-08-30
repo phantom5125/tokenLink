@@ -16,6 +16,7 @@
 #include "ConnectionHealth.h"
 #include "DashboardUi.h"
 #include "PetTheme.h"
+#include "PowerButtonInput.h"
 #include "PowerButtonGesture.h"
 #include "RaiseWake.h"
 #include "TouchGesture.h"
@@ -1083,17 +1084,31 @@ void beginPowerButtonPress() {
   }
 }
 
-void finishPowerButtonPress() {
-  if (!powerButtonPressed) return;
-  powerButtonPressed = false;
-  const power_button_gesture::Event event =
-      powerButtonGesture.release(millis());
+void registerPowerButtonClick(bool wokeDisplay, uint32_t now) {
+  const power_button_gesture::Event event = powerButtonGesture.release(now);
   if (event == power_button_gesture::Event::DoubleClick) {
     pendingPowerClickWokeDisplay = false;
     enterTravelPowerOff();
   }
-  pendingPowerClickWokeDisplay = powerButtonWokeDisplay;
+  pendingPowerClickWokeDisplay = wokeDisplay;
+}
+
+void finishPowerButtonPress() {
+  if (!powerButtonPressed) return;
+  powerButtonPressed = false;
+  registerPowerButtonClick(powerButtonWokeDisplay, millis());
   powerButtonWokeDisplay = false;
+}
+
+void completeLatchedPowerButtonClick(uint32_t now) {
+  const bool wokeDisplay = deskSleeping;
+  lastActivityMs = now;
+  if (wokeDisplay) {
+    wakeDeskSleep();
+    startHaptic(kButtonHapticIntensity, kWakeHapticDurationMs);
+  }
+  Serial.printf("POWER red irq_click wake=%d\n", wokeDisplay ? 1 : 0);
+  registerPowerButtonClick(wokeDisplay, now);
 }
 
 void updatePowerButton() {
@@ -1105,12 +1120,33 @@ void updatePowerButton() {
       if (!pendingPowerClickWokeDisplay) enterDeskSleep();
       pendingPowerClickWokeDisplay = false;
     }
-    if (lastPollMs != 0 && now - lastPollMs < 25) return;
-    lastPollMs = now;
+
+    // M5.update() runs first and consumes PM1's latched click IRQ into BtnPWR.
+    // Capture it on every loop; unlike the instantaneous state below, this
+    // survives clicks that begin and end between the 25 ms direct samples.
+    const bool unifiedClicked = M5.BtnPWR.wasClicked();
+    bool directSampled = false;
     bool pressed = false;
-    if (powerManager.btnGetState(&pressed) != M5PM1_OK) return;
-    if (pressed && !powerButtonPressed) beginPowerButtonPress();
-    if (!pressed && powerButtonPressed) finishPowerButtonPress();
+    if (lastPollMs == 0 || now - lastPollMs >= 25) {
+      lastPollMs = now;
+      directSampled = powerManager.btnGetState(&pressed) == M5PM1_OK;
+    }
+
+    const power_button_input::Action action = power_button_input::arbitrate(
+        directSampled, pressed, powerButtonPressed, unifiedClicked);
+    switch (action) {
+      case power_button_input::Action::BeginPress:
+        beginPowerButtonPress();
+        break;
+      case power_button_input::Action::FinishPress:
+        finishPowerButtonPress();
+        break;
+      case power_button_input::Action::CompleteClick:
+        completeLatchedPowerButtonClick(now);
+        break;
+      case power_button_input::Action::None:
+        break;
+    }
     return;
   }
 
@@ -1206,6 +1242,13 @@ void setup() {
     if (timerStatus != M5PM1_OK) {
       Serial.printf("POWER stale timer clear failed=%d\n",
                     static_cast<int>(timerStatus));
+    }
+    // Discard the click used to boot from Travel Mode. Runtime clicks are read
+    // by M5Unified and merged with direct button-state samples in the loop.
+    const m5pm1_err_t buttonIrqClearStatus = powerManager.irqClearBtnAll();
+    if (buttonIrqClearStatus != M5PM1_OK) {
+      Serial.printf("POWER stale button IRQ clear failed=%d\n",
+                    static_cast<int>(buttonIrqClearStatus));
     }
     const m5pm1_err_t resetStatus = powerManager.setSingleResetDisable(true);
     // Replace PM1's immediate hardware double-off with the same clean Travel
