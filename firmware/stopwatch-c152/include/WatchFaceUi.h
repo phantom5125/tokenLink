@@ -88,8 +88,12 @@ constexpr int kCenterY = 233;
 constexpr int kSessionRowY = 122;
 constexpr int kSessionRowHeight = 94;
 
-constexpr int kHomeArcOuterRadius = 215;
-constexpr int kHomeArcInnerRadius = 189;
+// Keep the quota horseshoe clear of the clock at the top of the round screen.
+// The dedicated center also lets the rest of the watch face keep using the
+// physical display center for overlays and page layouts.
+constexpr int kHomeArcCenterY = 258;
+constexpr int kHomeArcOuterRadius = 188;
+constexpr int kHomeArcInnerRadius = 162;
 constexpr int kHomeSessionPillLeft = 158;
 constexpr int kHomeSessionPillTop = 382;
 constexpr int kHomeSessionPillWidth = 150;
@@ -402,7 +406,8 @@ inline ArcPoint homeArcPoint(int angleDegrees, int radius) {
   constexpr float kDegreesToRadians = 0.01745329252f;
   const float radians = angleDegrees * kDegreesToRadians;
   return {kCenterX + static_cast<int>(std::lround(std::cos(radians) * radius)),
-          kCenterY + static_cast<int>(std::lround(std::sin(radians) * radius))};
+          kHomeArcCenterY +
+              static_cast<int>(std::lround(std::sin(radians) * radius))};
 }
 
 template <typename Surface>
@@ -415,12 +420,12 @@ void fillWrappedArc(Surface& surface, int startDegrees, int endDegrees,
       startDegrees +
       std::min(watch_face_quota::kArcSweepDegrees, requestedSpan);
   if (normalizedEnd <= 360) {
-    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, startDegrees,
-                    normalizedEnd, color);
+    surface.fillArc(kCenterX, kHomeArcCenterY, outerRadius, innerRadius,
+                    startDegrees, normalizedEnd, color);
   } else {
-    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, startDegrees,
-                    360, color);
-    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, 0,
+    surface.fillArc(kCenterX, kHomeArcCenterY, outerRadius, innerRadius,
+                    startDegrees, 360, color);
+    surface.fillArc(kCenterX, kHomeArcCenterY, outerRadius, innerRadius, 0,
                     normalizedEnd - 360, color);
   }
 }
@@ -531,7 +536,7 @@ void renderHome(Surface& surface, const State& state,
     for (char* c = providerLabel; *c != '\0'; ++c) {
       if (*c >= 'a' && *c <= 'z') *c -= 'a' - 'A';
     }
-    dashboard::centered(surface, providerLabel, kCenterX, 108,
+    dashboard::centered(surface, providerLabel, kCenterX, 122,
                         stale ? dashboard::kMuted : dashboard::kText);
     surface.unloadFont();
 
@@ -560,8 +565,10 @@ void renderHome(Surface& surface, const State& state,
             window.durationSeconds, window.hasDuration, remainingReset,
             planned)) {
       const int planAngle = watch_face_quota::arcAngle(planned);
-      const ArcPoint tickInner = homeArcPoint(planAngle, 183);
-      const ArcPoint tickOuter = homeArcPoint(planAngle, 220);
+      const ArcPoint tickInner =
+          homeArcPoint(planAngle, kHomeArcInnerRadius - 6);
+      const ArcPoint tickOuter =
+          homeArcPoint(planAngle, kHomeArcOuterRadius + 5);
       surface.drawLine(tickInner.x, tickInner.y, tickOuter.x, tickOuter.y,
                        dashboard::kText);
       surface.drawLine(tickInner.x + 1, tickInner.y, tickOuter.x + 1,
@@ -593,7 +600,7 @@ void renderHome(Surface& surface, const State& state,
     surface.unloadFont();
   } else {
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-    dashboard::centered(surface, "TOKENLINK", kCenterX, 112,
+    dashboard::centered(surface, "TOKENLINK", kCenterX, 122,
                         dashboard::kText);
     dashboard::centered(surface,
                         state.bleConnected ? "WAITING FOR QUOTA"
@@ -606,7 +613,7 @@ void renderHome(Surface& surface, const State& state,
   surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
   dashboard::centered(surface, clock, kCenterX, 54, dashboard::kText);
   surface.unloadFont();
-  surface.fillCircle(181, 108, 4, syncColor(surface, state.sync));
+  surface.fillCircle(181, 122, 4, syncColor(surface, state.sync));
   drawHomeSessionPill(surface, store);
 }
 
@@ -891,8 +898,10 @@ inline bool homeSessionsAtPoint(int x, int y) {
 
 inline bool homeQuotaAtPoint(int x, int y) {
   const int dx = x - kCenterX;
-  const int dy = y - kCenterY;
-  return dx * dx + dy * dy <= 216 * 216 && !homeSessionsAtPoint(x, y);
+  const int dy = y - kHomeArcCenterY;
+  constexpr int kHitRadius = kHomeArcOuterRadius + 2;
+  return dx * dx + dy * dy <= kHitRadius * kHitRadius &&
+         !homeSessionsAtPoint(x, y);
 }
 
 inline int quotaProviderAtPoint(int x, int y, std::size_t providerCount,
