@@ -611,7 +611,7 @@ void renderHome(Surface& surface, const State& state,
   // Draw the clock after both arc layers so the numerals remain crisp when the
   // actual quota crosses the 12 o'clock region.
   surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
-  dashboard::centered(surface, clock, kCenterX, 68, dashboard::kText);
+  dashboard::centered(surface, clock, kCenterX, 95, dashboard::kText);
   surface.unloadFont();
   surface.fillCircle(181, 122, 4, syncColor(surface, state.sync));
   drawHomeSessionPill(surface, store);
