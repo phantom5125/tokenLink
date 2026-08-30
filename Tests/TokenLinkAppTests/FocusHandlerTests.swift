@@ -11,7 +11,7 @@ private final class FakeActivator: CodexDesktopActivating, @unchecked Sendable {
   private(set) var openedThreadIDs: [String] = []
   private(set) var activations = 0
 
-  func openCodexThread(_ threadID: String) -> Bool {
+  func openCodexThread(_ threadID: String) async -> Bool {
     openedThreadIDs.append(threadID)
     return canOpen
   }
@@ -51,8 +51,9 @@ private func makeHandler(
     activator: activator,
     log: log)
 
-  await handler.handle(.focus(slot: 1))
+  let outcome = await handler.handle(.focus(slot: 1))
 
+  #expect(outcome == .openedThread)
   #expect(activator.openedThreadIDs == ["thread-1"])
   #expect(activator.activations == 0)
   let messages = await log.messages
@@ -68,8 +69,9 @@ private func makeHandler(
     activator: activator,
     log: log)
 
-  await handler.handle(.focus(slot: 0))
+  let outcome = await handler.handle(.focus(slot: 0))
 
+  #expect(outcome == .unsupportedProvider)
   #expect(activator.activations == 0)
   #expect(activator.openedThreadIDs.isEmpty)
   let messages = await log.messages
@@ -81,8 +83,9 @@ private func makeHandler(
   let log = EventLog()
   let handler = makeHandler(sessions: [:], activator: activator, log: log)
 
-  await handler.handle(.focus(slot: 2))
+  let outcome = await handler.handle(.focus(slot: 2))
 
+  #expect(outcome == .noWorkItem)
   #expect(activator.activations == 0)
   #expect(activator.openedThreadIDs.isEmpty)
   let messages = await log.messages
@@ -99,8 +102,9 @@ private func makeHandler(
     activator: activator,
     log: log)
 
-  await handler.handle(.focus(slot: 0))
+  let outcome = await handler.handle(.focus(slot: 0))
 
+  #expect(outcome == .desktopUnavailable)
   #expect(activator.openedThreadIDs == ["thread-9"])
   #expect(activator.activations == 1)
   let messages = await log.messages
@@ -115,8 +119,9 @@ private func makeHandler(
     activator: activator,
     log: log)
 
-  await handler.handle(.focus(slot: 0))
+  let outcome = await handler.handle(.focus(slot: 0))
 
+  #expect(outcome == .activatedFallback)
   #expect(activator.openedThreadIDs.isEmpty)
   #expect(activator.activations == 1)
   #expect(await log.messages.contains { $0.contains("session link unavailable") })
@@ -135,8 +140,10 @@ private func makeHandler(
     log: log,
     onRefresh: { counter.increment() })
 
-  await handler.handle(.refresh)
-  await handler.handle(.refresh)
+  let first = await handler.handle(.refresh)
+  let second = await handler.handle(.refresh)
 
+  #expect(first == nil)
+  #expect(second == nil)
   #expect(counter.value == 2)
 }

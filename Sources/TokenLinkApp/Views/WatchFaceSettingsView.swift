@@ -157,13 +157,78 @@ struct WatchFaceSettingsView: View {
               saveName(for: item)
             }
             .disabled(draftNames[item.id] == nil)
+            if item.source == .codex {
+              Button {
+                Task { await model.focusWorkItemOnMac(slot: item.slot) }
+              } label: {
+                Image(systemName: "arrow.up.forward.app")
+              }
+              .help(
+                localized("Test task focus on this Mac", "在这台 Mac 上测试任务聚焦", "この Mac でタスクフォーカスをテスト"))
+            }
           }
         }
         Text(model.text(.watchFocusNote))
           .font(.caption)
           .foregroundStyle(.secondary)
           .fixedSize(horizontal: false, vertical: true)
+        if let outcome = model.lastWatchFocusOutcome {
+          focusOutcome(outcome)
+        }
       }
+    }
+  }
+
+  private func focusOutcome(_ outcome: WatchFocusOutcome) -> some View {
+    HStack(alignment: .top, spacing: 8) {
+      Image(
+        systemName: outcome.succeeded ? "checkmark.circle.fill" : "exclamationmark.triangle.fill"
+      )
+      .foregroundStyle(outcome.succeeded ? Color.green : Color.orange)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(focusOutcomeText(outcome))
+          .font(.caption.weight(.medium))
+        if let date = model.lastWatchFocusAt {
+          Text(date.formatted(date: .omitted, time: .standard))
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding(9)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(
+      (outcome.succeeded ? Color.green : Color.orange).opacity(0.09),
+      in: RoundedRectangle(cornerRadius: 9))
+  }
+
+  private func focusOutcomeText(_ outcome: WatchFocusOutcome) -> String {
+    switch outcome {
+    case .openedThread:
+      localized(
+        "The matching task link was delivered to Codex Desktop.",
+        "对应任务链接已发送到 Codex Desktop。",
+        "対応するタスクリンクを Codex Desktop に渡しました。")
+    case .activatedFallback:
+      localized(
+        "Codex Desktop came forward, but the installed build did not accept the task link.",
+        "Codex Desktop 已切到前台，但当前安装版本未接受任务链接。",
+        "Codex Desktop を前面に出しましたが、インストール済みビルドはタスクリンクを受け付けませんでした。")
+    case .noWorkItem:
+      localized(
+        "That watch slot no longer maps to a current task. Refresh and retry.",
+        "该手表槽位已不再对应当前任务，请刷新后重试。",
+        "そのウォッチスロットは現在のタスクに対応していません。更新して再試行してください。")
+    case .unsupportedProvider:
+      localized(
+        "Only Codex tasks can be focused on the Mac.",
+        "只有 Codex 任务可以在 Mac 上聚焦。",
+        "Mac でフォーカスできるのは Codex タスクだけです。")
+    case .desktopUnavailable:
+      localized(
+        "Codex Desktop is not running or could not be activated.",
+        "Codex Desktop 未运行或无法激活。",
+        "Codex Desktop が起動していないか、アクティブにできませんでした。")
     }
   }
 
@@ -221,5 +286,13 @@ struct WatchFaceSettingsView: View {
     guard let name = draftNames[item.id] else { return }
     draftNames[item.id] = nil
     Task { await model.renameWorkItem(id: item.id, to: name) }
+  }
+
+  private func localized(_ english: String, _ chinese: String, _ japanese: String) -> String {
+    switch model.currentLanguage {
+    case .english: english
+    case .simplifiedChinese: chinese
+    case .japanese: japanese
+    }
   }
 }
