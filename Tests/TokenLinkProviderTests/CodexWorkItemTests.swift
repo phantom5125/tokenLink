@@ -169,6 +169,11 @@ private let threadListFixture = Data(
   let aborted = #"{"type":"event_msg","payload":{"type":"turn_aborted"}}"#
   try Data((started + "\n" + aborted + "\n").utf8).write(to: file)
   #expect(CodexRolloutActivityReader.state(atPath: file.path, allowedRoot: root) == .failed)
+
+  let nonLifecycle = #"{"type":"response_item","payload":{"type":"tool_output"}}"#
+  let longRunning = started + "\n" + String(repeating: nonLifecycle + "\n", count: 6_000)
+  try Data(longRunning.utf8).write(to: file)
+  #expect(CodexRolloutActivityReader.state(atPath: file.path, allowedRoot: root) == .running)
 }
 
 @Test func rolloutReaderRejectsSymlinksEscapingTheAllowedRoot() throws {

@@ -111,7 +111,7 @@ public enum CodexThreadListParser {
 /// state. A separately launched app-server reports Desktop-owned tasks as
 /// `notLoaded`, so the rollout lifecycle is the reliable local signal.
 public enum CodexRolloutActivityReader {
-  private static let tailBytes: UInt64 = 256 * 1_024
+  private static let chunkBytes: UInt64 = 256 * 1_024
   private static let freshness: TimeInterval = 15 * 60
 
   public static func state(
@@ -132,31 +132,43 @@ public enum CodexRolloutActivityReader {
     else { return nil }
     defer { try? handle.close() }
 
-    let length = (try? handle.seekToEnd()) ?? 0
-    let offset = length > tailBytes ? length - tailBytes : 0
-    try? handle.seek(toOffset: offset)
-    guard let data = try? handle.readToEnd(),
-      let text = String(data: data, encoding: .utf8)
-    else { return nil }
-
-    var lastLifecycle: String?
-    for (index, line) in text.split(separator: "\n").enumerated() {
-      if offset > 0 && index == 0 { continue }  // possibly a partial JSON line
-      guard let data = String(line).data(using: .utf8),
-        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        object["type"] as? String == "event_msg",
-        let payload = object["payload"] as? [String: Any],
-        let type = payload["type"] as? String,
-        type == "task_started" || type == "task_complete" || type == "turn_aborted"
-      else { continue }
-      lastLifecycle = type
+    // A long-running task can emit more than one tail chunk of tool output
+    // after task_started. Walk backward until the newest lifecycle event is
+    // found instead of silently turning that still-running task into unknown.
+    var endOffset = (try? handle.seekToEnd()) ?? 0
+    var trailingFragment = Data()
+    while endOffset > 0 {
+      let startOffset = endOffset > chunkBytes ? endOffset - chunkBytes : 0
+      try? handle.seek(toOffset: startOffset)
+      guard let chunk = try? handle.read(upToCount: Int(endOffset - startOffset)) else {
+        return nil
+      }
+      var data = chunk
+      data.append(trailingFragment)
+      let lines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
+      let completeLines = startOffset > 0 ? lines.dropFirst() : lines[...]
+      for line in completeLines.reversed() {
+        guard
+          let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+          object["type"] as? String == "event_msg",
+          let payload = object["payload"] as? [String: Any],
+          let type = payload["type"] as? String
+        else { continue }
+        switch type {
+        case "task_started": return .running
+        case "task_complete": return .completed
+        case "turn_aborted": return .failed
+        default: continue
+        }
+      }
+      if startOffset > 0, let firstLine = lines.first {
+        trailingFragment = Data(firstLine)
+      } else {
+        trailingFragment = Data()
+      }
+      endOffset = startOffset
     }
-    switch lastLifecycle {
-    case "task_started": return .running
-    case "task_complete": return .completed
-    case "turn_aborted": return .failed
-    default: return nil
-    }
+    return nil
   }
 }
 

@@ -42,7 +42,8 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 - Refresh Codex session lifecycle independently every ten seconds and consult
   the local rollout lifecycle before treating Desktop-owned tasks as terminal.
   Ambiguous tasks stay neutral `UNKNOWN`; only explicit completion evidence
-  gets a green `DONE` check.
+  gets a green `DONE` check. Scan recent rollouts backward by chunks so a
+  long-running task remains running after more than 256 KB of tool output.
 - Keep execution state separate from acknowledgement. Opening a pending task
   changes its amber attention pulse from `ACTION` to a static `OPENED` ring;
   it does not mark the task complete, and a newer provider event makes it
