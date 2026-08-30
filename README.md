@@ -466,6 +466,17 @@ physical UI, and session-focus acceptance record. The 0.2.2 integration adds
 diagnostics, complete pagination, focus feedback, and clearer session status;
 its physical checklist and the 24-hour power soak remain separate evidence.
 
+## Roadmap: extensible watch faces
+
+The 0.3.x line will gradually separate semantic watch state from rendering.
+0.3.0 introduces a shared face-state/runtime boundary for the built-in Data and
+Pet faces without enabling third-party installation. Later 0.3.x releases add a
+declarative `.tokenface` package schema, deterministic validation and preview,
+then a hash-verified BLE install/rollback flow and an opt-in local-authoring beta.
+Packages will not execute native code or scripts. A public community gallery is
+a separate 0.4.0+ decision, not a prerequisite for local packages. See the
+[extensible watch-face roadmap](docs/plans/2026-08-30-extensible-watch-face-roadmap.md).
+
 ## Contributing
 
 Contributions and well-formed ideas are welcome. Small fixes may be submitted
