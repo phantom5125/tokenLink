@@ -41,9 +41,12 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-31 — Mac 直接安装已进入正式签名准备状态。** Mac 构建现在会生成经过
+  校验的 Universal 2 `TokenLink-0.2.2.dmg`，并包含 Applications 快捷方式；公开 tag
+  缺少 Developer ID 签名或 Apple 公证凭据时会直接失败，不会发布 ad-hoc 制品。
 - **2026-08-30 — 0.2.2 稳定性候选已完成整合。** 蓝牙诊断、明确的 Codex 任务链接
   结果、完整 thread 分页、稳定优先级槽位和无障碍 C152 session 指示器已进入同一
-  release 分支；组合测试为 190 项 Swift 测试和 12 个固件测试程序。
+  release 分支；组合测试为 190 项 Swift 测试和 13 个固件测试程序。
 - **2026-08-30 — C152 固件已迁入 TokenLink。** 当前默认无线版源码、模拟器测试、
   分区表、MIT/OFL 声明及固定版本 PlatformIO 构建都位于
   `firmware/stopwatch-c152`；全新 checkout 不再需要另一个仓库即可构建 Mac 与固件制品。
@@ -95,24 +98,32 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ### 没有 M5Stack StopWatch
 
-只体验 macOS 菜单栏时，这就是完整路径。需要 macOS 14+，以及 Xcode 26+ 或
-Swift 6.2+ 工具链：
+在 macOS 14 或更高版本上，最快的安装方式是 Universal 2 磁盘映像：
+
+1. 下载
+   [`TokenLink-0.2.2.dmg`](https://github.com/phantom5125/tokenLink/releases/download/v0.2.2/TokenLink-0.2.2.dmg)。
+2. 打开磁盘映像，将 **TokenLink** 拖到 **Applications**。
+3. 推出磁盘映像，再从「应用程序」启动 TokenLink。
+
+正式 tag 的公开 DMG 必须经过 Developer ID 签名、Apple 公证并附加公证票据。
+CI 开发用 DMG 仅使用 ad-hoc 签名，不作为公开下载。
+
+如需从源码构建，请安装 Xcode 26+ 或 Swift 6.2+ 工具链：
 
 ```bash
 git clone https://github.com/phantom5125/tokenLink.git
 cd tokenLink
 bash scripts/package_app.sh
-open TokenLink.app
+open .build/artifacts/TokenLink.app
 ```
 
 打开 **控制中心 → 额度源**，启用 Codex 后刷新。TokenLink 会复用本机 Codex CLI
 登录态，不保存 Codex API key；其他 provider 可以单独启用。
 
 打包脚本会把 SwiftPM 图片资源和正式 TokenLink App 图标装入 release-mode app，默认
-进行 ad-hoc 签名，并校验最终 bundle；每个 CI revision 也会生成开发用 artifact。
-当前 Mac 下载仅支持
-Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple 公证版发布前，
-从源码构建仍是受支持的首次体验路径。
+进行 ad-hoc 签名并校验最终 bundle。本地 bundle 写入隐藏的 `.build/artifacts`
+目录，避免 LaunchServices 把 worktree 构建索引成第二个已安装的 TokenLink。发布构建
+会合并 arm64 与 x86_64，加入 Applications 快捷方式，并在发布前重新挂载和校验 DMG。
 
 ### 有 M5Stack StopWatch C152
 

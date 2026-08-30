@@ -3,12 +3,13 @@
 TokenLink has three artifact classes. Keep their names and expectations
 explicit:
 
-- **Mac development artifact:** ad-hoc signed and architecture-specific. It is
-  for source/CI testing, not a notarized default download.
+- **Mac development artifact:** an ad-hoc-signed Universal 2 DMG for source/CI
+  testing, not a notarized default download.
 - **C152 firmware release:** a merged image, split-image archive, product/image
   manifests, and SHA-256 checksums built from `firmware/stopwatch-c152`.
-- **Mac public release:** Developer ID signed, Apple-notarized, stapled,
-  checksummed, and attached to a versioned GitHub Release.
+- **Mac public release:** `TokenLink-<version>.dmg`, containing the Universal 2
+  app and an Applications shortcut, Developer ID signed, Apple-notarized,
+  stapled, checksummed, and attached to a versioned GitHub Release.
 
 ## Release gates
 
@@ -30,8 +31,8 @@ Before publishing a release:
 5. Push, review, tag, and publish only in the TokenLink repository. Never push a
    branch or open a PR in an external firmware repository as part of a TokenLink
    release.
-6. Build and test each advertised Mac architecture. Do not label an arm64-only
-   archive as Intel-compatible.
+6. Verify both arm64 and x86_64 slices in the mounted Mac DMG. Do not publish the
+   architecture-neutral filename if either slice is missing.
 7. Observe the hosted CI run on the final commit before tagging, then observe
    the tag-triggered Release workflow before publishing the final URL.
 
@@ -41,9 +42,10 @@ Before publishing a release:
 bash scripts/build_release_artifact.sh
 ```
 
-This creates `dist/TokenLink-<version>-macos-<architecture>.zip` and a matching
-`.sha256`, then extracts the archive and checks the executable, Info.plist,
-SwiftPM resources, signature, and checksum.
+This creates `dist/TokenLink-<version>.dmg` and a matching `.dmg.sha256`. It
+cross-compiles arm64 and x86_64, combines them into a Universal 2 executable,
+adds an Applications shortcut, mounts the finished image, and checks both
+architectures, Info.plist, SwiftPM resources, signature, and checksum.
 
 ## Build C152 release artifacts
 
@@ -83,21 +85,40 @@ TOKENLINK_NOTARY_PROFILE="tokenlink-notary" \
 bash scripts/build_release_artifact.sh
 ```
 
-The script exits before producing a public artifact if notarization or stapling
+The script notarizes and staples the app before creating the DMG, then signs,
+notarizes, and staples the DMG itself. It exits if any public-release check
 fails. Validate the checksum from the directory containing both downloads:
 
 ```bash
 cd dist
-shasum -a 256 -c TokenLink-<version>-macos-<architecture>.zip.sha256
+shasum -a 256 -c TokenLink-<version>.dmg.sha256
 ```
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, rebuilds both artifact
-classes from that tag, verifies their versions/checksums, and creates a GitHub
-prerelease from `docs/releases/<version>.md`. The firmware source is already in
-the tag. Do not add a source ZIP copied from another repository.
+## Configure GitHub release signing
 
-Until Apple signing credentials are configured, release notes must repeat that
-the attached Mac archive is ad-hoc signed, not notarized, and limited to the
-runner architecture. A Developer ID-signed, notarized artifact may be promoted
-only after the public-release command above and Gatekeeper verification on a
-separate Mac.
+The tag workflow requires these GitHub Actions secrets and fails closed if any
+are missing:
+
+| Secret | Content |
+| --- | --- |
+| `TOKENLINK_DEVELOPER_ID_P12_BASE64` | Base64-encoded Developer ID Application certificate and private key (`.p12`) |
+| `TOKENLINK_DEVELOPER_ID_P12_PASSWORD` | Password used when exporting the `.p12` |
+| `TOKENLINK_CODESIGN_IDENTITY` | Full `Developer ID Application: ...` identity |
+| `TOKENLINK_NOTARY_KEY_P8_BASE64` | Base64-encoded App Store Connect API private key (`.p8`) |
+| `TOKENLINK_NOTARY_KEY_ID` | App Store Connect API key ID |
+| `TOKENLINK_NOTARY_ISSUER_ID` | App Store Connect API issuer ID |
+
+Never store the decoded certificate, private keys, or passwords in the
+repository or release artifacts.
+
+Pushing a `v*` tag runs `.github/workflows/release.yml`, imports the release
+identity into an ephemeral keychain, rebuilds both artifact classes from that
+tag, verifies their versions/checksums, and creates a GitHub Release from
+`docs/releases/<version>.md`. A tag containing a hyphen is published as a
+prerelease; a plain version tag such as `v0.2.2` is published as stable. The
+firmware source is already in the tag. Do not add a source ZIP copied from
+another repository.
+
+Until Apple signing credentials are configured, ordinary CI may still create an
+ad-hoc development DMG, but the tag workflow will refuse to publish it. Promote
+a public DMG only after Gatekeeper verification on a separate Mac.

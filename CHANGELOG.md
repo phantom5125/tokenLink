@@ -6,6 +6,16 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## 0.2.2 — Unreleased
 
+- Added a Universal 2 `TokenLink-0.2.2.dmg` with a drag-to-Applications layout,
+  mounted-image verification, checksums, and a tag workflow that refuses to
+  publish without Developer ID signing and Apple notarization credentials.
+- Added the TokenLink dashboard-and-link mark to the macOS app, menu bar, and
+  menu panel, with an adaptive monochrome status-item variant.
+- Keep local app bundles under the hidden SwiftPM build directory so macOS
+  LaunchServices cannot rediscover worktree artifacts as a second TokenLink.
+- Give every full C152 installation a new persistent random-static BLE identity
+  so a firmware flash cannot reconnect with stale macOS bond keys. Binding a
+  selected watch now immediately connects and proves the new identity.
 - Keep watch-to-Mac focus commands within the 20-byte default ATT payload so
   they are delivered even when the C152 also has a low-MTU HID connection.
   TokenLink accepts both the compact on-device frame and the earlier verbose

@@ -2,24 +2,68 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
-bundle="$repo_dir/TokenLink.app"
+bundle="$repo_dir/.build/artifacts/TokenLink.app"
 resource_bundle_name="TokenLink_TokenLinkApp.bundle"
 app_icon="$repo_dir/packaging/TokenLink.icns"
+build_archs_value="${TOKENLINK_BUILD_ARCHS:-$(uname -m)}"
 
 cd "$repo_dir"
-swift build -c release --product tokenlink
-release_bin_dir="$(swift build -c release --show-bin-path)"
-executable="$release_bin_dir/tokenlink"
-resource_bundle="$release_bin_dir/$resource_bundle_name"
+read -r -a build_archs <<< "$build_archs_value"
+built_executables=()
+resource_bundle=""
 
-if [[ ! -x "$executable" ]]; then
-  echo "Release executable was not produced at $executable" >&2
+if [[ "${#build_archs[@]}" -eq 0 ]]; then
+  echo "TOKENLINK_BUILD_ARCHS must contain at least one architecture." >&2
   exit 1
 fi
 
-if [[ ! -d "$resource_bundle" ]]; then
-  echo "SwiftPM resource bundle was not produced at $resource_bundle" >&2
-  exit 1
+for architecture in "${build_archs[@]}"; do
+  case "$architecture" in
+    arm64 | x86_64) ;;
+    *)
+      echo "Unsupported Mac architecture: $architecture" >&2
+      exit 1
+      ;;
+  esac
+
+  triple="$architecture-apple-macosx14.0"
+  scratch_path="$repo_dir/.build/package-$architecture"
+  swift build -c release --product tokenlink \
+    --triple "$triple" \
+    --scratch-path "$scratch_path"
+  release_bin_dir="$(swift build -c release \
+    --triple "$triple" \
+    --scratch-path "$scratch_path" \
+    --show-bin-path)"
+  architecture_executable="$release_bin_dir/tokenlink"
+  architecture_resource_bundle="$release_bin_dir/$resource_bundle_name"
+
+  if [[ ! -x "$architecture_executable" ]]; then
+    echo "Release executable was not produced at $architecture_executable" >&2
+    exit 1
+  fi
+
+  if [[ ! -d "$architecture_resource_bundle" ]]; then
+    echo "SwiftPM resource bundle was not produced at $architecture_resource_bundle" >&2
+    exit 1
+  fi
+
+  built_executables+=("$architecture_executable")
+  if [[ -z "$resource_bundle" ]]; then
+    resource_bundle="$architecture_resource_bundle"
+  fi
+done
+
+if [[ "${#built_executables[@]}" -eq 1 ]]; then
+  executable="${built_executables[0]}"
+else
+  universal_dir="$repo_dir/.build/package-universal"
+  executable="$universal_dir/tokenlink"
+  mkdir -p "$universal_dir"
+  lipo -create "${built_executables[@]}" -output "$executable"
+  for architecture in "${build_archs[@]}"; do
+    lipo "$executable" -verify_arch "$architecture"
+  done
 fi
 
 if [[ ! -f "$app_icon" ]]; then
@@ -27,11 +71,12 @@ if [[ ! -f "$app_icon" ]]; then
   exit 1
 fi
 
-if [[ "$bundle" != "$repo_dir/TokenLink.app" ]]; then
+if [[ "$bundle" != "$repo_dir/.build/artifacts/TokenLink.app" ]]; then
   echo "Refusing to replace an unexpected bundle path." >&2
   exit 1
 fi
 
+mkdir -p "$(dirname "$bundle")"
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$repo_dir/packaging/Info.plist" "$bundle/Contents/Info.plist"

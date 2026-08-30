@@ -44,10 +44,14 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-31 — Direct Mac installation is ready for release signing.** The Mac
+  builder now produces a checked Universal 2 `TokenLink-0.2.2.dmg` with an
+  Applications shortcut. Public tags fail closed unless Developer ID signing
+  and Apple notarization credentials are configured.
 - **2026-08-30 — The 0.2.2 stability candidate is integrated.** Bluetooth
   diagnostics, explicit Codex task-link outcomes, complete thread pagination,
   stable priority slots, and accessible C152 session indicators now share one
-  release branch with 190 Swift tests and twelve firmware test executables.
+  release branch with 190 Swift tests and thirteen firmware test executables.
 - **2026-08-30 — C152 firmware moved into TokenLink.** The exact default wireless
   source, simulator tests, partition layout, MIT/OFL notices, and a pinned
   PlatformIO build now live under `firmware/stopwatch-c152`. A fresh checkout can
@@ -115,14 +119,24 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ### Without an M5Stack StopWatch
 
-This is the complete path for trying the macOS menu-bar experience. It needs
-macOS 14+ and Xcode 26+ or a Swift 6.2+ toolchain:
+The fastest installation path on macOS 14 or later is the Universal 2 disk
+image:
+
+1. Download
+   [`TokenLink-0.2.2.dmg`](https://github.com/phantom5125/tokenLink/releases/download/v0.2.2/TokenLink-0.2.2.dmg).
+2. Open the disk image and drag **TokenLink** onto **Applications**.
+3. Eject the disk image, then launch TokenLink from Applications.
+
+The tagged public DMG is required to be Developer ID signed, Apple-notarized,
+and stapled. CI development DMGs are ad-hoc signed and are not public downloads.
+
+To build from source instead, install Xcode 26+ or a Swift 6.2+ toolchain:
 
 ```bash
 git clone https://github.com/phantom5125/tokenLink.git
 cd tokenLink
 bash scripts/package_app.sh
-open TokenLink.app
+open .build/artifacts/TokenLink.app
 ```
 
 Open **Control Center → Providers**, enable Codex, and refresh. TokenLink reuses
@@ -131,11 +145,10 @@ enabled independently.
 
 The package script includes SwiftPM resources and the production TokenLink app
 icon, creates a release-mode app, applies an ad-hoc signature by default, and
-verifies the resulting bundle. A CI development artifact is also produced for
-each revision. The current Mac
-download is Apple-Silicon-only and ad-hoc signed, so building from source remains
-the supported first-run path until a Developer ID-signed, notarized release
-exists.
+verifies the resulting bundle. It writes local bundles under the hidden
+`.build/artifacts` directory so LaunchServices does not index a worktree build
+as a second installed TokenLink. The release builder combines arm64 and x86_64,
+adds an Applications shortcut, and verifies the mounted DMG before publication.
 
 ### With an M5Stack StopWatch C152
 
