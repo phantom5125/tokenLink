@@ -109,6 +109,8 @@ public final class AppModel {
   public private(set) var isScanningLocalUsage = false
   public private(set) var isAuthorizingClaudeCredential = false
   public private(set) var isMigratingLegacyCredentials = false
+  public private(set) var lastWatchFocusOutcome: WatchFocusOutcome?
+  public private(set) var lastWatchFocusAt: Date?
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -138,6 +140,7 @@ public final class AppModel {
   @ObservationIgnored private let localUsageObserver: LocalUsageObserver?
   @ObservationIgnored private let workItemStore: WorkItemStore
   @ObservationIgnored private let codexWorkItemTracker: CodexWorkItemTracker?
+  @ObservationIgnored private let codexDesktopActivator: any CodexDesktopActivating
   @ObservationIgnored private var watchCommandTask: Task<Void, Never>?
   /// Current watch work items (cache of the actor store for UI binding).
   public private(set) var workItems: [WorkItem] = []
@@ -163,7 +166,8 @@ public final class AppModel {
     notificationManager: (any NotificationManaging)? = nil,
     localUsageObserver: LocalUsageObserver? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
-    codexWorkItemTracker: CodexWorkItemTracker? = nil
+    codexWorkItemTracker: CodexWorkItemTracker? = nil,
+    codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator()
   ) {
     self.refresher = refresher
     self.refresherBuilder = refresherBuilder
@@ -179,6 +183,7 @@ public final class AppModel {
     self.localUsageObserver = localUsageObserver
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
+    self.codexDesktopActivator = codexDesktopActivator
     self.states = [:]
     self.devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
     self.scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
@@ -837,6 +842,13 @@ public final class AppModel {
     await syncCodex(allowStale: true, attempts: 2, automatic: false)
   }
 
+  /// Uses the exact same path as a watch focus command, making the task link
+  /// testable from the Mac before relying on BLE and C04 delivery.
+  public func focusWorkItemOnMac(slot: Int) async {
+    let outcome = await makeFocusHandler().handle(.focus(slot: slot))
+    applyFocusOutcome(outcome)
+  }
+
   public func setWatchSyncedProvider(_ provider: ProviderID, enabled: Bool) throws {
     if enabled {
       configuration.watchSettings.syncedProviders.insert(provider)
@@ -1105,25 +1117,13 @@ public final class AppModel {
     guard bridgeEventTask == nil, let bridge else { return }
     await bridge.startObservingTransport()
     let generation = bindingGeneration
-    let workItemStore = workItemStore
-    let focusHandler = FocusHandler(
-      sessionProvider: { slot in
-        await workItemStore.item(forSlot: slot).map {
-          FocusSession(slot: $0.slot, source: $0.source, threadID: $0.id)
-        }
-      },
-      activator: SystemCodexDesktopActivator(),
-      onRefresh: { [weak self] in
-        await self?.requestRefresh(reason: "Watch requested refresh")
-      },
-      record: { [weak self] message in
-        await self?.record(message)
-      })
+    let focusHandler = makeFocusHandler()
     watchCommandTask = Task { @MainActor [weak self] in
       for await command in bridge.commandStream {
         guard !Task.isCancelled, let self else { return }
         guard self.isCurrentBinding(generation, bridge: bridge) else { return }
-        await focusHandler.handle(command)
+        let outcome = await focusHandler.handle(command)
+        self.applyFocusOutcome(outcome)
       }
     }
     bridgeEventTask = Task { @MainActor [weak self] in
@@ -1143,6 +1143,29 @@ public final class AppModel {
         }
       }
     }
+  }
+
+  private func makeFocusHandler() -> FocusHandler {
+    let workItemStore = workItemStore
+    return FocusHandler(
+      sessionProvider: { slot in
+        await workItemStore.item(forSlot: slot).map {
+          FocusSession(slot: $0.slot, source: $0.source, threadID: $0.id)
+        }
+      },
+      activator: codexDesktopActivator,
+      onRefresh: { [weak self] in
+        await self?.requestRefresh(reason: "Watch requested refresh")
+      },
+      record: { [weak self] message in
+        await self?.record(message)
+      })
+  }
+
+  private func applyFocusOutcome(_ outcome: WatchFocusOutcome?) {
+    guard let outcome else { return }
+    lastWatchFocusOutcome = outcome
+    lastWatchFocusAt = now()
   }
 
   private func cancelActiveWatchSync() async {

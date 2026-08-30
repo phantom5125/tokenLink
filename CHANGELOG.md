@@ -4,6 +4,16 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## Unreleased — v0.2.2 Session focus feedback
+
+- Target Codex Desktop's installed application bundle when opening a
+  `codex://threads/<id>` task link instead of treating generic LaunchServices
+  scheme acceptance as proof that Codex received it.
+- Added a per-task Mac-side focus test and a visible last-outcome status so BLE
+  command delivery can be distinguished from app-link delivery.
+- Preserve the app-activation fallback while reporting it as a partial result,
+  rather than implying that the matching task was focused.
+
 ## 0.2.1 — 2026-08-30
 
 - Moved the exact default wireless M5Stack StopWatch C152 firmware source into

@@ -29,6 +29,17 @@ private final class TestNow: @unchecked Sendable {
   func callAsFunction() -> Date { value }
 }
 
+private final class TestCodexDesktopActivator: CodexDesktopActivating, @unchecked Sendable {
+  private(set) var openedThreadIDs: [String] = []
+
+  func openCodexThread(_ threadID: String) async -> Bool {
+    openedThreadIDs.append(threadID)
+    return true
+  }
+
+  func activateCodexDesktop() -> Bool { true }
+}
+
 private actor TestBLETransport: BLETransport {
   nonisolated let eventStream: AsyncStream<BLETransportEvent>
   nonisolated let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
@@ -139,6 +150,29 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   clock.value = Date(timeIntervalSince1970: 111)
   await model.refreshManually()
   #expect(await refresher.count == 2)
+}
+
+@MainActor @Test func macFocusTestUsesWatchSlotMappingAndPublishesOutcome() async {
+  let store = WorkItemStore()
+  await store.upsert(
+    id: "thread-123",
+    name: "TokenLink",
+    source: .codex,
+    state: .running,
+    updatedAt: Date(timeIntervalSince1970: 90))
+  let activator = TestCodexDesktopActivator()
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    now: { Date(timeIntervalSince1970: 100) },
+    workItemStore: store,
+    codexDesktopActivator: activator)
+
+  await model.focusWorkItemOnMac(slot: 0)
+
+  #expect(activator.openedThreadIDs == ["thread-123"])
+  #expect(model.lastWatchFocusOutcome == .openedThread)
+  #expect(model.lastWatchFocusAt == Date(timeIntervalSince1970: 100))
+  model.stop()
 }
 
 @MainActor @Test func schedulerUsesConfiguredFiveMinuteInterval() {
