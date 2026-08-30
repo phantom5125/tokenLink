@@ -2,10 +2,25 @@
 
 **English** | [简体中文](README.zh-Hans.md)
 
-[![CI](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
 <!-- markdownlint-disable MD033 -->
+<p align="center">
+  <strong>All your AI coding quotas — on your Mac and, optionally, your wrist.</strong>
+</p>
+<p align="center">
+  <a href="#without-an-m5stack-stopwatch"><img alt="Native macOS 14+" src="https://img.shields.io/badge/native_macOS-14%2B-111111?logo=apple&amp;logoColor=white"></a>
+  <a href="#provider-setup"><img alt="Five coding plans" src="https://img.shields.io/badge/coding_plans-5-7c3aed"></a>
+  <a href="#with-an-m5stack-stopwatch-c152"><img alt="M5Stack StopWatch C152" src="https://img.shields.io/badge/M5Stack-StopWatch_C152-f7d000?logo=m5stack&amp;logoColor=111111"></a>
+  <a href="firmware/stopwatch-c152/README.md"><img alt="ESP32-S3 firmware" src="https://img.shields.io/badge/ESP32--S3-firmware-e7352c?logo=espressif&amp;logoColor=white"></a>
+  <a href="#stopwatch-binding-and-protocol-v1v2"><img alt="BLE protocol v1 and v2" src="https://img.shields.io/badge/BLE_protocol-v1_%E2%86%94_v2-0082fc?logo=bluetooth&amp;logoColor=white"></a>
+  <a href="#privacy-and-security"><img alt="Local-first and no telemetry" src="https://img.shields.io/badge/local--first-no_telemetry-159957"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/phantom5125/tokenLink/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/phantom5125/tokenLink?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/phantom5125/tokenLink/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/phantom5125/tokenLink?style=flat&amp;logo=github&amp;label=stars"></a>
+  <a href="https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml"><img alt="CI status" src="https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="Apache 2.0 license" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+</p>
+
 <p align="center">
   <img
     src="assets/readme/tokenlink-watch-v2-hero.png"
@@ -19,6 +34,10 @@ TokenLink is a native macOS menu-bar control plane for coding-plan quota and an
 M5Stack StopWatch companion. Version 0.2 shows Codex, Claude, Kimi, MiniMax,
 and GLM in one local interface, adds a negotiated watch protocol v2, and keeps
 the existing protocol-v1 firmware path byte-compatible.
+
+**Runs fully on your Mac without a watch.** The native menu-bar app provides the
+complete experience; the C152 adds an optional ambient display and interaction
+surface.
 
 > Status: early development. Provider APIs can change without notice. The v0.2
 > interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
