@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import TokenLinkCore
 
@@ -162,6 +163,10 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
   private var previousTotal: CodexCostUsage?
   private var needsChildBaseline = false
   private var currentProcessingTier: CostProcessingTier?
+  private var currentProjectID = "unassigned"
+  private var currentProjectName = "Unassigned"
+  private var currentSessionID = "unknown"
+  private var currentReasoningEffort = "unspecified"
   private let fallbackProcessingTier: CostProcessingTier
 
   public init() {
@@ -181,6 +186,16 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
       currentModel = nil
       previousTotal = nil
       currentProcessingTier = nil
+      currentProjectID = "unassigned"
+      currentProjectName = "Unassigned"
+      currentSessionID = "unknown"
+      currentReasoningEffort = "unspecified"
+      if let cwd = decoded.payload.cwd {
+        (currentProjectID, currentProjectName) = LocalUsageIdentity.project(from: cwd)
+      }
+      if let session = decoded.payload.sessionID ?? decoded.payload.id {
+        currentSessionID = LocalUsageIdentity.hash(session)
+      }
       needsChildBaseline =
         decoded.payload.threadSource == "subagent"
         || decoded.payload.source?.isSubagent == true
@@ -188,6 +203,12 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
     case "turn_context":
       if let model = decoded.payload.model, !model.isEmpty {
         currentModel = model
+      }
+      if let cwd = decoded.payload.cwd {
+        (currentProjectID, currentProjectName) = LocalUsageIdentity.project(from: cwd)
+      }
+      if let effort = decoded.payload.effort, !effort.isEmpty {
+        currentReasoningEffort = LocalUsageIdentity.effort(effort)
       }
       return nil
     case "event_msg":
@@ -198,6 +219,12 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
           case "default", "standard": currentProcessingTier = .standard
           default: currentProcessingTier = nil
           }
+        }
+        if let cwd = decoded.payload.threadSettings?.cwd {
+          (currentProjectID, currentProjectName) = LocalUsageIdentity.project(from: cwd)
+        }
+        if let effort = decoded.payload.threadSettings?.reasoningEffort, !effort.isEmpty {
+          currentReasoningEffort = LocalUsageIdentity.effort(effort)
         }
         return nil
       }
@@ -265,7 +292,11 @@ public struct CodexCostRecordParser: LocalUsageRecordParser {
       cacheReadTokens: cacheReadTokens,
       cacheWriteTokens: cacheWriteTokens,
       outputTokens: usage.outputTokens,
-      processingTier: currentProcessingTier ?? fallbackProcessingTier)
+      processingTier: currentProcessingTier ?? fallbackProcessingTier,
+      projectID: currentProjectID,
+      projectName: currentProjectName,
+      sessionID: currentSessionID,
+      reasoningEffort: currentReasoningEffort)
   }
 }
 
@@ -297,7 +328,12 @@ public struct ClaudeCostRecordParser: LocalUsageRecordParser {
       cacheReadTokens: usage.cacheReadInputTokens,
       cacheWriteTokens: usage.cacheCreationInputTokens,
       outputTokens: usage.outputTokens,
-      deduplicationKey: messageID)
+      processingTier: message.serviceTier == "priority" || message.serviceTier == "fast"
+        ? .fast : .standard,
+      deduplicationKey: messageID,
+      projectID: LocalUsageIdentity.project(from: decoded.cwd).id,
+      projectName: LocalUsageIdentity.project(from: decoded.cwd).name,
+      sessionID: decoded.sessionID.map { LocalUsageIdentity.hash($0) } ?? "unknown")
   }
 
   public mutating func finish() {
@@ -343,6 +379,10 @@ private struct CodexCostRecord: Decodable {
     let source: Source?
     let threadSource: String?
     let threadSettings: ThreadSettings?
+    let cwd: String?
+    let id: String?
+    let sessionID: String?
+    let effort: String?
 
     enum CodingKeys: String, CodingKey {
       case type
@@ -351,14 +391,22 @@ private struct CodexCostRecord: Decodable {
       case source
       case threadSource = "thread_source"
       case threadSettings = "thread_settings"
+      case cwd
+      case id
+      case sessionID = "session_id"
+      case effort
     }
   }
 
   struct ThreadSettings: Decodable {
     let serviceTier: String?
+    let reasoningEffort: String?
+    let cwd: String?
 
     enum CodingKeys: String, CodingKey {
       case serviceTier = "service_tier"
+      case reasoningEffort = "reasoning_effort"
+      case cwd
     }
   }
 
@@ -447,12 +495,29 @@ private struct CodexCostUsage: Decodable, Equatable {
 
 private struct ClaudeCostRecord: Decodable {
   let timestamp: String
+  let cwd: String?
+  let sessionID: String?
   let message: Message?
+
+  enum CodingKeys: String, CodingKey {
+    case timestamp
+    case cwd
+    case sessionID = "sessionId"
+    case message
+  }
 
   struct Message: Decodable {
     let id: String?
     let model: String?
     let usage: Usage?
+    let serviceTier: String?
+
+    enum CodingKeys: String, CodingKey {
+      case id
+      case model
+      case usage
+      case serviceTier = "service_tier"
+    }
   }
 
   struct Usage: Decodable {
@@ -510,5 +575,35 @@ private struct DynamicCodingKey: CodingKey {
 
   init?(intValue: Int) {
     return nil
+  }
+}
+
+enum LocalUsageIdentity {
+  static func hash(_ value: String, length: Int = 16) -> String {
+    let digest = SHA256.hash(data: Data(value.utf8))
+    return digest.map { String(format: "%02x", $0) }.joined().prefix(max(8, length)).description
+  }
+
+  static func project(from path: String?) -> (id: String, name: String) {
+    guard let path, !path.isEmpty else { return ("unassigned", "Unassigned") }
+    let name = sanitizedLabel(URL(fileURLWithPath: path).lastPathComponent, fallback: "Project")
+    return (hash(path), name)
+  }
+
+  static func effort(_ value: String) -> String {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    switch normalized {
+    case "minimal", "low", "medium", "high", "xhigh", "max", "ultra": return normalized
+    default: return "unspecified"
+    }
+  }
+
+  static func sanitizedLabel(_ value: String, fallback: String) -> String {
+    let visible = value.unicodeScalars.filter {
+      !CharacterSet.controlCharacters.contains($0) && $0.value != 0x2F && $0.value != 0x5C
+    }
+    let trimmed = String(String.UnicodeScalarView(visible))
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? fallback : String(trimmed.prefix(48))
   }
 }

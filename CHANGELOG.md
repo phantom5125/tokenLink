@@ -6,6 +6,24 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+## 0.3.0-rc.1 — 2026-08-31
+
+- Expanded the Mac Cost Center into a local Usage & Cost workspace with
+  Overview, Trends, Attribution, and Costs sections.
+- Added project, model, reasoning-effort, and privacy-safe Session attribution
+  across locally recorded Codex, Claude, and Kimi token usage.
+- Added a GitHub-style activity calendar, metric-switchable Token/cost/active-
+  time views, hourly distribution, and an immediately preceding equal-length
+  period comparison aligned by local calendar day.
+- Added custom date ranges and a documented active-time estimate based on
+  per-Session activity gaps of up to five minutes, including explicit overlap
+  and isolated-event caveats.
+- Added a local incremental history store with changed-file reparsing, unchanged-
+  file reuse, a 400-day/250,000-event bound, atomic owner-only persistence, and
+  no prompt, response, tool-output, full-path, or raw Session-ID retention.
+- Added API-equivalent pricing coverage directly to the dashboard so unpriced
+  usage cannot be mistaken for zero-cost usage.
+
 ## 0.2.3-rc.1 — 2026-08-31
 
 - Reworked the Data watch face around a TokenLink-style open quota arc, with

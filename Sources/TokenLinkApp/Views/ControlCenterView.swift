@@ -12,7 +12,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "square.grid.2x2"
     case .providers: "bolt.horizontal.circle"
-    case .costs: "dollarsign.circle"
+    case .costs: "chart.bar.xaxis"
     case .stopwatch: "stopwatch"
     case .settings: "gearshape.2"
     }

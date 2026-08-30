@@ -115,6 +115,7 @@ public final class AppModel {
   public private(set) var lastWatchFocusOutcome: WatchFocusOutcome?
   public private(set) var lastWatchFocusAt: Date?
   public private(set) var costDashboard: CostDashboardModel
+  public private(set) var usageAnalytics: UsageAnalyticsModel
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -175,6 +176,7 @@ public final class AppModel {
     localUsageObserver: LocalUsageObserver? = nil,
     costDashboard: CostDashboardModel? = nil,
     costDashboardBuilder: ((AppConfiguration) -> CostDashboardModel)? = nil,
+    usageAnalytics: UsageAnalyticsModel? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
     codexWorkItemTracker: CodexWorkItemTracker? = nil,
     codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator(),
@@ -205,6 +207,7 @@ public final class AppModel {
           .failure(.configuration("No local cost source is configured."))
         })
     self.costDashboardBuilder = costDashboardBuilder
+    self.usageAnalytics = usageAnalytics ?? UsageAnalyticsModel.empty()
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
     self.codexDesktopActivator = codexDesktopActivator
@@ -257,6 +260,24 @@ public final class AppModel {
         observer: localUsageObserver,
         catalog: catalog)
     }
+    let usageAnalytics: UsageAnalyticsModel
+    if let catalog, let analyticsStore = try? UsageAnalyticsStore.applicationSupport() {
+      let service = UsageAnalyticsService(
+        store: analyticsStore,
+        catalog: catalog)
+      usageAnalytics = UsageAnalyticsModel {
+        let task = Task.detached(priority: .utility) {
+          try service.refresh()
+        }
+        return try await withTaskCancellationHandler {
+          try await task.value
+        } onCancel: {
+          task.cancel()
+        }
+      }
+    } else {
+      usageAnalytics = UsageAnalyticsModel.empty()
+    }
     return AppModel(
       refresher: makeCoordinator(configuration),
       refresherBuilder: makeCoordinator,
@@ -276,6 +297,7 @@ public final class AppModel {
       localUsageObserver: localUsageObserver,
       costDashboard: makeCostDashboard(configuration),
       costDashboardBuilder: makeCostDashboard,
+      usageAnalytics: usageAnalytics,
       codexWorkItemTracker: CodexWorkItemTracker(
         executable: CodexExecutableResolver.resolve(configuredPath: configuration.codexPath),
         transport: ProcessAppServerTransport(
@@ -1246,6 +1268,7 @@ public final class AppModel {
         throw error
       }
       await costDashboard.disable()
+      usageAnalytics.cancelRefresh()
     }
   }
 
@@ -1272,12 +1295,16 @@ public final class AppModel {
 
   public func loadCostsIfNeeded() async {
     guard configuration.betaCostsEnabled else { return }
-    await costDashboard.loadIfNeeded()
+    async let costs: Void = costDashboard.loadIfNeeded()
+    async let analytics: Void = usageAnalytics.loadIfNeeded()
+    _ = await (costs, analytics)
   }
 
   public func refreshCosts(force: Bool) async {
     guard configuration.betaCostsEnabled else { return }
-    await costDashboard.refreshCosts(force: force)
+    async let costs: Void = costDashboard.refreshCosts(force: force)
+    async let analytics: Void = usageAnalytics.refresh()
+    _ = await (costs, analytics)
   }
 
   /// Beta: scans local CLI transcripts (last 7 days) on a background task.

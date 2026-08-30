@@ -52,10 +52,11 @@ surface.
 > interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
 > active count, three-provider sync, and physical UI feedback. Version 0.2.1
 > moved that firmware into this repository and passed its physical release
-> checks. The 0.2.3 release candidate adds a quota-pace watch face, a dedicated
-> Mac Cost Center, community-aligned Codex API-equivalent estimates, and clearer
-> small-size TokenLink icon artwork. Long-duration power behavior remains
-> follow-up validation.
+> checks. The 0.3.0 release candidate expands the Mac Cost Center into a local
+> Usage & Cost workspace with multidimensional attribution, a GitHub-style
+> activity calendar, period comparison, active-time estimates, custom ranges,
+> and incremental history. Long-duration power behavior remains follow-up
+> validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
 endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
@@ -63,6 +64,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-31 — TokenLink 0.3.0 RC 1 adds local usage analytics.** Project,
+  model, reasoning-effort, and privacy-safe Session attribution now share one
+  dashboard with an activity calendar, hourly trends, prior-period comparison,
+  active-time estimates, custom ranges, and bounded incremental history.
 - **2026-08-31 — TokenLink 0.2.3 RC 1 is ready for public testing.** The new
   TokenLink-arc quota face and Mac Cost Center ship together with request-level
   Codex token accounting, current reviewed prices, and explicit separation
@@ -105,12 +110,18 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 ## What it does
 
 - Native `MenuBarExtra` plus a five-route Control Center: Overview, Providers,
-  Costs, StopWatch, and Settings & Diagnostics.
+  Usage & Cost, StopWatch, and Settings & Diagnostics.
 - Normalizes several quota windows without inventing plan limits.
 - Projects burn rate per window ("runs out in ~3h at this pace") from recent
   local samples — no extra API calls.
 - Optionally draws a fair-pace marker showing where a window would be under
   even consumption.
+- Explores up to 400 days of local token usage by project, model, reasoning
+  effort, and privacy-safe Session, with an activity calendar, hourly trends,
+  equal-length period comparison, active-time estimates, and custom ranges.
+- Persists a bounded incremental aggregate locally: unchanged transcript files
+  are reused, changed files are reparsed, and prompts, replies, tool output,
+  full paths, and raw Session IDs are never stored in the analytics history.
 - Offers an opt-in beta scan of documented local Codex, Claude, and Kimi CLI
   transcript directories to summarize recent token counters on-device.
 - Keeps cost data in a separate opt-in beta: official OpenRouter/DeepSeek

@@ -54,12 +54,17 @@ class PackageFirmwareReleaseTests(unittest.TestCase):
             self.make_repository(root)
             with patch.object(MODULE, "merge_binary", side_effect=self.fake_merge):
                 manifest_path = MODULE.package_release(
-                    root, root / "dist", "1.2.3", Path("pio")
+                    root,
+                    root / "dist",
+                    "1.2.3",
+                    Path("pio"),
+                    channel="prerelease",
                 )
 
             manifest = json.loads(manifest_path.read_text())
             self.assertEqual(manifest["product"]["id"], "m5stack-stopwatch-c152")
             self.assertEqual(manifest["protocol_versions"], [1, 2])
+            self.assertEqual(manifest["release"]["channel"], "prerelease")
             image = manifest["images"][0]
             self.assertEqual(image["artifact"]["flash_offset"], 0)
             archive = root / "dist" / image["archive"]["file"]
@@ -78,6 +83,20 @@ class PackageFirmwareReleaseTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "does not match"):
                 MODULE.package_release(
                     root, root / "dist", "9.9.9", Path("pio"), revision="a" * 40
+                )
+
+    def test_rejects_unknown_release_channel(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            self.make_repository(root)
+            with self.assertRaisesRegex(ValueError, "Unsupported release channel"):
+                MODULE.package_release(
+                    root,
+                    root / "dist",
+                    "1.2.3",
+                    Path("pio"),
+                    revision="a" * 40,
+                    channel="nightly",
                 )
 
 

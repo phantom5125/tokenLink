@@ -132,6 +132,13 @@ public struct NormalizedModelUsage: Equatable, Sendable {
   public let outputTokens: Int
   public let processingTier: CostProcessingTier
   public let deduplicationKey: String
+  /// Privacy-safe local attribution. Project IDs and session IDs are hashed
+  /// before entering this model; project names contain only a directory's
+  /// final component, never a full path.
+  public let projectID: String
+  public let projectName: String
+  public let sessionID: String
+  public let reasoningEffort: String
 
   public init(
     provider: ProviderID,
@@ -143,7 +150,11 @@ public struct NormalizedModelUsage: Equatable, Sendable {
     cacheWriteDuration: CacheWriteDuration? = nil,
     outputTokens: Int = 0,
     processingTier: CostProcessingTier = .standard,
-    deduplicationKey: String = ""
+    deduplicationKey: String = "",
+    projectID: String = "unassigned",
+    projectName: String = "Unassigned",
+    sessionID: String = "unknown",
+    reasoningEffort: String = "unspecified"
   ) {
     self.provider = provider
     self.modelID = modelID
@@ -155,6 +166,10 @@ public struct NormalizedModelUsage: Equatable, Sendable {
     self.outputTokens = max(0, outputTokens)
     self.processingTier = processingTier
     self.deduplicationKey = deduplicationKey
+    self.projectID = projectID
+    self.projectName = projectName
+    self.sessionID = sessionID
+    self.reasoningEffort = reasoningEffort
   }
 
   public var totalInputTokens: Int {
