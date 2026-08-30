@@ -8,8 +8,10 @@ public enum WatchCommand: Equatable, Sendable {
   case refresh
 
   private struct Envelope: Decodable {
-    let action: String
+    let action: String?
     let slot: Int?
+    let a: String?
+    let s: Int?
   }
 
   /// Decodes a command frame. Malformed JSON, unknown actions, and
@@ -18,12 +20,14 @@ public enum WatchCommand: Equatable, Sendable {
   public static func decode(_ data: Data) -> WatchCommand? {
     guard let envelope = try? JSONDecoder().decode(Envelope.self, from: data)
     else { return nil }
-    switch envelope.action {
-    case "focus":
-      guard let slot = envelope.slot, WorkItemPayload.slotRange.contains(slot)
+    guard let action = envelope.action ?? envelope.a else { return nil }
+    switch action {
+    case "focus", "f":
+      guard let slot = envelope.slot ?? envelope.s,
+        WorkItemPayload.slotRange.contains(slot)
       else { return nil }
       return .focus(slot: slot)
-    case "refresh":
+    case "refresh", "r":
       return .refresh
     default:
       return nil

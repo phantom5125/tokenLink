@@ -33,10 +33,13 @@ struct TokenLinkApplication: App {
       MenuBarView(model: model)
         .task { await model.start() }
     } label: {
-      Label(
-        model.menuBarLabel,
-        systemImage: "gauge.with.dots.needle.33percent"
-      )
+      HStack(spacing: 4) {
+        TokenLinkMark(appearance: .template)
+          .frame(width: 17, height: 17)
+        Text(model.menuBarLabel)
+      }
+      .accessibilityElement(children: .combine)
+      .accessibilityLabel("TokenLink, \(model.menuBarLabel)")
       // MenuBarExtra content is lazy. Starting from the always-present label
       // guarantees the first refresh/BLE sync without requiring a click.
       .task { await model.start() }

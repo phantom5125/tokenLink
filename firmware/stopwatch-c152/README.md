@@ -12,6 +12,6 @@ TokenLink does not use an external checkout, submodule, or binary blob to build
 this target.
 
 Run build, test, package, and flash commands from the TokenLink repository root;
-see [`../README.md`](../README.md). The only release target in v0.2.1 is
+see [`../README.md`](../README.md). The only release target in v0.2.2 is
 `m5stack-stopwatch`. Source hooks for an earlier USB-microphone experiment remain
 compile-time disabled and are not a supported build variant.

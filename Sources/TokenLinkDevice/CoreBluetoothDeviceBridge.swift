@@ -57,8 +57,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   private let queue = DispatchQueue(label: "app.tokenlink.bluetooth")
   private let connectTimeoutSeconds: TimeInterval
   private let writeTimeoutSeconds: TimeInterval
-  private let eventStream: AsyncStream<BLETransportEvent>
-  private let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
+  private let eventHub = AsyncEventHub<BLETransportEvent>()
   private var central: CBCentralManager?
   private var discovered: [UUID: CBPeripheral] = [:]
   private var connectedPeripheral: CBPeripheral?
@@ -77,8 +76,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   private var connectionStage: ConnectionStage?
   private var writeConnectionGeneration: UInt64?
   private var readConnectionGeneration: UInt64?
-  private let commandStream: AsyncStream<Data>
-  private let commandContinuation: AsyncStream<Data>.Continuation
+  private let commandHub = AsyncEventHub<Data>()
   private var disconnectingPeripheral: CBPeripheral?
   private var disconnectOperationID: UUID?
   private var disconnectContinuations: [CheckedContinuation<Void, Never>] = []
@@ -94,24 +92,66 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   ) {
     self.connectTimeoutSeconds = connectTimeoutSeconds
     self.writeTimeoutSeconds = writeTimeoutSeconds
-    (eventStream, eventContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
-    (commandStream, commandContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
     super.init()
   }
 
   deinit {
-    eventContinuation.finish()
-    commandContinuation.finish()
+    eventHub.finish()
+    commandHub.finish()
   }
 
   public func connectionEvents() -> AsyncStream<BLETransportEvent> {
-    eventStream
+    eventHub.stream()
   }
 
   public func commandEvents() -> AsyncStream<Data> {
-    commandStream
+    commandHub.stream()
+  }
+
+  public func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot {
+    await withCheckedContinuation { continuation in
+      queue.async { [self] in
+        let authorization: BluetoothAuthorizationState =
+          switch CBManager.authorization {
+          case .notDetermined: .notDetermined
+          case .restricted: .restricted
+          case .denied: .denied
+          case .allowedAlways: .allowed
+          @unknown default: .unavailable
+          }
+        let centralState: BluetoothCentralState =
+          switch central?.state {
+          case nil: .notInitialized
+          case .unknown: .unknown
+          case .resetting: .resetting
+          case .unsupported: .unsupported
+          case .unauthorized: .unauthorized
+          case .poweredOff: .poweredOff
+          case .poweredOn: .poweredOn
+          @unknown default: .unknown
+          }
+        let connectionStep: BluetoothConnectionStep =
+          switch connectionStage {
+          case nil: scanContinuation == nil ? .idle : .scanning
+          case .waitingForPower: .waitingForPower
+          case .connecting: .connecting
+          case .discoveringServices: .discoveringServices
+          case .discoveringCharacteristics: .discoveringCharacteristics
+          case .subscribingCommands: .subscribingCommands
+          case .ready: .ready
+          }
+        continuation.resume(
+          returning: BluetoothDiagnosticSnapshot(
+            authorization: authorization,
+            centralState: centralState,
+            connectionStep: connectionStep,
+            connectedIdentifier: connectedPeripheral?.identifier,
+            quotaCharacteristicAvailable: quotaCharacteristic != nil,
+            capabilitiesCharacteristicAvailable: capabilitiesCharacteristic != nil,
+            commandCharacteristicAvailable: commandCharacteristic != nil,
+            commandNotificationsActive: commandCharacteristic?.isNotifying == true))
+      }
+    }
   }
 
   public func discoveredIdentifiers() async throws -> [UUID] {
@@ -354,7 +394,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
   private func finishConnect(peripheral: CBPeripheral, generation: UInt64) {
     connectionStage = .ready(generation)
     resumeConnect()
-    eventContinuation.yield(.connected(peripheral.identifier))
+    eventHub.yield(.connected(peripheral.identifier))
   }
 
   private func resumeConnect(throwing error: Error? = nil) {
@@ -448,7 +488,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     writeConnectionGeneration = nil
     readConnectionGeneration = nil
     if let identifier {
-      eventContinuation.yield(.disconnected(identifier))
+      eventHub.yield(.disconnected(identifier))
     }
     let continuations = disconnectContinuations
     disconnectContinuations.removeAll()
@@ -585,7 +625,7 @@ extension CoreBluetoothTransport: CBCentralManagerDelegate {
     resumeConnect(throwing: failure)
     resumeWrite(throwing: failure)
     resumeRead(throwing: failure)
-    eventContinuation.yield(.disconnected(peripheral.identifier))
+    eventHub.yield(.disconnected(peripheral.identifier))
   }
 }
 
@@ -687,7 +727,7 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
       characteristic === commandCharacteristic
     {
       if let value = characteristic.value, !value.isEmpty {
-        commandContinuation.yield(value)
+        commandHub.yield(value)
       }
       return
     }

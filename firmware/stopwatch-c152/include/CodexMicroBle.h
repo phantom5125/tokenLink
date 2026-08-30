@@ -51,7 +51,7 @@ class CodexMicroBle {
   static constexpr uint16_t kVendorId = 0x303A;
   static constexpr uint16_t kProductId = 0x8360;
   static constexpr uint8_t kReportId = 6;
-  static constexpr char kFirmwareVersion[] = "0.2.1-tokenlink";
+  static constexpr char kFirmwareVersion[] = "0.2.2-tokenlink";
 
   void begin();
   void poll();

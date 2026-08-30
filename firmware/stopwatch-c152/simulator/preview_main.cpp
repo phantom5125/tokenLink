@@ -98,6 +98,9 @@ watch_model::Store previewStore(const char* scenario) {
                       sizeof(codex.workItems[2].source), "kimi");
   codex.workItems[2].state = watch_v2::WorkState::Complete;
   codex.workItems[2].latest = true;
+  if (std::strcmp(scenario, "v2-sessions-failed") == 0) {
+    codex.workItems[2].state = watch_v2::WorkState::Failed;
+  }
   codex.activeCount = 2;
   codex.hasActiveCount = true;
   store.apply(codex, 4000);
@@ -119,7 +122,7 @@ watchface::State previewFaceState(const char* scenario) {
   state.hour = 21;
   state.minute = 45;
   state.batteryPercent = 82;
-  state.firmwareVersion = "0.2.1-tokenlink";
+  state.firmwareVersion = "0.2.2-tokenlink";
   state.protocolVersion = 2;
 
   if (std::strcmp(scenario, "v2-home") == 0) {
@@ -131,7 +134,8 @@ watchface::State previewFaceState(const char* scenario) {
     state.page = watchface::Page::Quota;
     state.selectedIndex = 0;
     state.quotaExpanded = true;
-  } else if (std::strcmp(scenario, "v2-sessions") == 0) {
+  } else if (std::strcmp(scenario, "v2-sessions") == 0 ||
+             std::strcmp(scenario, "v2-sessions-failed") == 0) {
     state.page = watchface::Page::Sessions;
     state.selectedIndex = 1;
   } else if (std::strcmp(scenario, "v2-system") == 0) {
@@ -170,6 +174,7 @@ bool validScenario(const char* scenario) {
          std::strcmp(scenario, "v2-quota") == 0 ||
          std::strcmp(scenario, "v2-quota-expanded") == 0 ||
          std::strcmp(scenario, "v2-sessions") == 0 ||
+         std::strcmp(scenario, "v2-sessions-failed") == 0 ||
          std::strcmp(scenario, "v2-system") == 0 ||
          std::strcmp(scenario, "v2-pet") == 0 ||
          std::strcmp(scenario, "v2-pet-sleep") == 0 ||

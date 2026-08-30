@@ -612,11 +612,11 @@ public enum L10n {
     ],
     .watchFocusNote: [
       .english:
-        "Selecting a Codex item opens its matching task in Codex Desktop. If the installed Codex build rejects the task link, TokenLink falls back to bringing the app forward.",
+        "Selecting a Codex item on the watch sends its matching task link over the protocol-v2 C04 channel. Use the arrow button to test the same link directly on this Mac; TokenLink shows the last outcome below.",
       .simplifiedChinese:
-        "在手表选择 Codex 工作单元会在 Codex Desktop 打开对应任务；如果当前 Codex 版本不接受任务链接，TokenLink 会回退为仅将应用切到前台。",
+        "在手表选择 Codex 工作单元会通过协议 v2 的 C04 通道发送对应任务链接。可点击箭头按钮直接在这台 Mac 上测试同一链接；TokenLink 会在下方显示最近结果。",
       .japanese:
-        "ウォッチで Codex の作業ユニットを選ぶと、Codex Desktop で対応するタスクが開きます。インストール済み Codex がリンクを受け付けない場合は、アプリを前面に出す動作へフォールバックします。",
+        "ウォッチで Codex の作業ユニットを選ぶと、プロトコル v2 の C04 チャネルで対応するタスクリンクを送ります。矢印ボタンで同じリンクをこの Mac から直接テストでき、直近の結果が下に表示されます。",
     ],
     .watchNoPayload: [
       .english: "No payload has been sent in this session.",

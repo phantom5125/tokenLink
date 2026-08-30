@@ -31,15 +31,15 @@ jobs:
       - name: Package with distribution notices
         run: |
           bash scripts/build_release_artifact.sh
-          cmp LICENSE TokenLink.app/Contents/Resources/LICENSE
-          cmp NOTICE TokenLink.app/Contents/Resources/NOTICE
+          cmp LICENSE .build/artifacts/TokenLink.app/Contents/Resources/LICENSE
+          cmp NOTICE .build/artifacts/TokenLink.app/Contents/Resources/NOTICE
       - name: Upload development artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TokenLink-macos-${{ runner.arch }}
+          name: TokenLink-macos-universal
           path: |
-            dist/*.zip
-            dist/*.sha256
+            dist/*.dmg
+            dist/*.dmg.sha256
           if-no-files-found: error
 
   firmware:

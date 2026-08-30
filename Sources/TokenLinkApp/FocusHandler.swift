@@ -18,7 +18,7 @@ public struct FocusSession: Equatable, Sendable {
 }
 
 public protocol CodexDesktopActivating: Sendable {
-  @MainActor func openCodexThread(_ threadID: String) -> Bool
+  @MainActor func openCodexThread(_ threadID: String) async -> Bool
   @MainActor func activateCodexDesktop() -> Bool
 }
 
@@ -28,11 +28,30 @@ public protocol CodexDesktopActivating: Sendable {
 public struct SystemCodexDesktopActivator: CodexDesktopActivating {
   public init() {}
 
-  @MainActor public func openCodexThread(_ threadID: String) -> Bool {
-    guard runningCodex != nil, isSafeThreadID(threadID),
+  @MainActor public func openCodexThread(_ threadID: String) async -> Bool {
+    guard let runningCodex, let applicationURL = runningCodex.bundleURL,
+      isSafeThreadID(threadID),
       let url = URL(string: "codex://threads/\(threadID)")
     else { return false }
-    return NSWorkspace.shared.open(url)
+    let configuration = NSWorkspace.OpenConfiguration()
+    configuration.activates = true
+    return await withCheckedContinuation { continuation in
+      // Target the currently running Codex bundle explicitly. A bare
+      // `NSWorkspace.open(url)` only confirms LaunchServices accepted the
+      // scheme; it can report success without proving which app received it.
+      NSWorkspace.shared.open(
+        [url],
+        withApplicationAt: applicationURL,
+        configuration: configuration
+      ) { application, error in
+        if let application, error == nil {
+          _ = application.activate(options: [.activateAllWindows])
+          continuation.resume(returning: true)
+        } else {
+          continuation.resume(returning: false)
+        }
+      }
+    }
   }
 
   @MainActor public func activateCodexDesktop() -> Bool {
@@ -50,6 +69,18 @@ public struct SystemCodexDesktopActivator: CodexDesktopActivating {
       && value.unicodeScalars.allSatisfy {
         CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_"
       }
+  }
+}
+
+public enum WatchFocusOutcome: String, Equatable, Sendable {
+  case openedThread
+  case activatedFallback
+  case noWorkItem
+  case unsupportedProvider
+  case desktopUnavailable
+
+  public var succeeded: Bool {
+    self == .openedThread
   }
 }
 
@@ -77,34 +108,37 @@ public struct FocusHandler: Sendable {
     self.record = record
   }
 
-  public func handle(_ command: WatchCommand) async {
+  @discardableResult
+  public func handle(_ command: WatchCommand) async -> WatchFocusOutcome? {
     switch command {
     case .refresh:
       await onRefresh()
+      return nil
     case .focus(let slot):
-      await focus(slot: slot)
+      return await focus(slot: slot)
     }
   }
 
-  private func focus(slot: Int) async {
+  private func focus(slot: Int) async -> WatchFocusOutcome {
     guard let session = await sessionProvider(slot) else {
       await record("Watch focus ignored: no work item in slot \(slot)")
-      return
+      return .noWorkItem
     }
     guard session.source == .codex else {
       await record("Watch focus ignored: slot \(slot) is not a Codex session")
-      return
+      return .unsupportedProvider
     }
     if let threadID = session.threadID,
       await activator.openCodexThread(threadID)
     {
       await record("Watch focus opened Codex session")
-      return
+      return .openedThread
     }
     guard await activator.activateCodexDesktop() else {
       await record("Watch focus failed: Codex Desktop is not running")
-      return
+      return .desktopUnavailable
     }
     await record("Watch focus activated Codex Desktop (session link unavailable)")
+    return .activatedFallback
   }
 }

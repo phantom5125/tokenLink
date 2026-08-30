@@ -1,9 +1,10 @@
 import Foundation
 import Testing
 import TokenLinkCore
-import TokenLinkDevice
 
 @testable import TokenLinkApp
+@testable import TokenLinkDevice
+@testable import TokenLinkProviders
 
 private actor CountingRefresher: AppRefreshing {
   private(set) var count = 0
@@ -29,15 +30,27 @@ private final class TestNow: @unchecked Sendable {
   func callAsFunction() -> Date { value }
 }
 
+private final class TestCodexDesktopActivator: CodexDesktopActivating, @unchecked Sendable {
+  private(set) var openedThreadIDs: [String] = []
+
+  func openCodexThread(_ threadID: String) async -> Bool {
+    openedThreadIDs.append(threadID)
+    return true
+  }
+
+  func activateCodexDesktop() -> Bool { true }
+}
+
 private actor TestBLETransport: BLETransport {
-  nonisolated let eventStream: AsyncStream<BLETransportEvent>
-  nonisolated let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
+  nonisolated let eventHub = AsyncEventHub<BLETransportEvent>()
+  nonisolated let commandHub = AsyncEventHub<Data>()
   let failuresBeforeSuccess: Int
   let connectDelay: Duration?
   let writeDelay: Duration?
   let disconnectDelay: Duration?
   let noncancellableWriteDelays: [Duration]
   let capabilities: WatchCapabilities?
+  let diagnostics: BluetoothDiagnosticSnapshot
   private(set) var connectCount = 0
   private(set) var writeAttempts = 0
   private(set) var writes: [Data] = []
@@ -48,7 +61,8 @@ private actor TestBLETransport: BLETransport {
     writeDelay: Duration? = nil,
     disconnectDelay: Duration? = nil,
     noncancellableWriteDelays: [Duration] = [],
-    capabilities: WatchCapabilities? = nil
+    capabilities: WatchCapabilities? = nil,
+    diagnostics: BluetoothDiagnosticSnapshot = BluetoothDiagnosticSnapshot()
   ) {
     self.failuresBeforeSuccess = failuresBeforeSuccess
     self.connectDelay = connectDelay
@@ -56,8 +70,7 @@ private actor TestBLETransport: BLETransport {
     self.disconnectDelay = disconnectDelay
     self.noncancellableWriteDelays = noncancellableWriteDelays
     self.capabilities = capabilities
-    (eventStream, eventContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
+    self.diagnostics = diagnostics
   }
 
   func discoveredIdentifiers() async throws -> [UUID] { [] }
@@ -68,7 +81,7 @@ private actor TestBLETransport: BLETransport {
     if connectCount <= failuresBeforeSuccess {
       throw BluetoothTransportError.disconnected
     }
-    eventContinuation.yield(.connected(identifier))
+    eventHub.yield(.connected(identifier))
   }
 
   func writeWithResponse(_ data: Data) async throws {
@@ -87,18 +100,53 @@ private actor TestBLETransport: BLETransport {
     capabilities
   }
 
+  func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot {
+    diagnostics
+  }
+
   func disconnect() async {
     if let disconnectDelay { try? await Task.sleep(for: disconnectDelay) }
-    eventContinuation.yield(.disconnected(nil))
+    eventHub.yield(.disconnected(nil))
   }
 
   nonisolated func connectionEvents() -> AsyncStream<BLETransportEvent> {
-    eventStream
+    eventHub.stream()
+  }
+
+  nonisolated func commandEvents() -> AsyncStream<Data> {
+    commandHub.stream()
+  }
+
+  func emitCommand(_ data: Data) {
+    commandHub.yield(data)
   }
 
   func emitDisconnect(_ identifier: UUID) {
-    eventContinuation.yield(.disconnected(identifier))
+    eventHub.yield(.disconnected(identifier))
   }
+}
+
+private actor SequencedThreadTransport: AppServerTransport {
+  private var pages: [Data]
+  private(set) var listCount = 0
+
+  init(_ pages: [Data]) {
+    self.pages = pages
+  }
+
+  func start(executable: URL) async throws {}
+  func send(_ message: AppServerMessage) async throws {}
+
+  func response(id: Int, timeout: Duration) async throws -> Data {
+    if id == 0 { return Data(#"{"id":0,"result":{}}"#.utf8) }
+    guard id == 2, !pages.isEmpty else {
+      throw AppServerTransportError.malformedResponse
+    }
+    listCount += 1
+    return pages.count == 1 ? pages[0] : pages.removeFirst()
+  }
+
+  func stop() async {}
 }
 
 private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapshot {
@@ -141,9 +189,113 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   #expect(await refresher.count == 2)
 }
 
+@MainActor @Test func macFocusTestUsesWatchSlotMappingAndPublishesOutcome() async {
+  let store = WorkItemStore()
+  await store.upsert(
+    id: "thread-123",
+    name: "TokenLink",
+    source: .codex,
+    state: .needsInput,
+    updatedAt: Date(timeIntervalSince1970: 90))
+  let activator = TestCodexDesktopActivator()
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    now: { Date(timeIntervalSince1970: 100) },
+    workItemStore: store,
+    codexDesktopActivator: activator)
+
+  await model.focusWorkItemOnMac(slot: 0)
+
+  #expect(activator.openedThreadIDs == ["thread-123"])
+  #expect(model.lastWatchFocusOutcome == .openedThread)
+  #expect(model.lastWatchFocusAt == Date(timeIntervalSince1970: 100))
+  #expect(await store.item(forSlot: 0)?.state == .needsInput)
+  #expect(await store.payloadItems().first?.seen == true)
+  model.stop()
+}
+
+@MainActor @Test func compactWatchFocusSurvivesDeviceRebind() async throws {
+  let originalIdentifier = UUID(uuidString: "00000000-0000-0000-0000-000000000041")!
+  let replacementIdentifier = UUID(uuidString: "00000000-0000-0000-0000-000000000042")!
+  let transport = TestBLETransport(
+    capabilities: WatchCapabilities(protocolVersions: [1, 2], firmware: "0.2.2"))
+  let store = WorkItemStore()
+  await store.upsert(
+    id: "thread-compact",
+    name: "Compact focus",
+    source: .codex,
+    state: .running,
+    updatedAt: Date(timeIntervalSince1970: 90))
+  let activator = TestCodexDesktopActivator()
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = originalIdentifier
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let codex = snapshot(.codex, remaining: 72)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
+    configuration: configuration,
+    bluetoothTransport: transport,
+    workItemStore: store,
+    codexDesktopActivator: activator)
+
+  await model.requestRefresh(reason: "Initial connection")
+  await transport.emitCommand(Data(#"{"a":"f","s":0}"#.utf8))
+  for _ in 0..<50 {
+    if activator.openedThreadIDs.count == 1, await transport.writes.count >= 2 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  #expect(activator.openedThreadIDs == ["thread-compact"])
+  let acknowledgedData = try #require(await transport.writes.last)
+  let acknowledgedPayload = try JSONDecoder().decode(WatchPayloadV2.self, from: acknowledgedData)
+  #expect(acknowledgedPayload.workItems.first?.state == .running)
+  #expect(acknowledgedPayload.workItems.first?.seen == true)
+
+  try await model.bindDevice(replacementIdentifier)
+  await model.requestRefresh(reason: "Replacement connection")
+  await transport.emitCommand(Data(#"{"a":"f","s":0}"#.utf8))
+  for _ in 0..<50 {
+    if activator.openedThreadIDs.count == 2 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(activator.openedThreadIDs == ["thread-compact", "thread-compact"])
+  #expect(model.events.contains { $0.message == "Watch command received: focus slot 0" })
+  #expect(model.lastWatchFocusOutcome == .openedThread)
+  model.stop()
+}
+
 @MainActor @Test func schedulerUsesConfiguredFiveMinuteInterval() {
   let scheduler = RefreshScheduler(minutes: 5)
   #expect(scheduler.interval == .seconds(300))
+}
+
+@MainActor @Test func sessionLifecyclePollsIndependentlyOfQuotaRefresh() async {
+  let transport = SequencedThreadTransport([
+    Data(
+      #"{"id":2,"result":{"data":[{"id":"thread-live","name":"live","updatedAt":100,"status":{"type":"idle"},"turns":[{"status":"completed"}]}],"nextCursor":null}}"#
+        .utf8),
+    Data(
+      #"{"id":2,"result":{"data":[{"id":"thread-live","name":"live","updatedAt":110,"status":{"type":"active"},"turns":[{"status":"inProgress"}]}],"nextCursor":null}}"#
+        .utf8),
+  ])
+  let tracker = CodexWorkItemTracker(
+    executable: URL(filePath: "/test/codex"),
+    transport: transport)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    codexWorkItemTracker: tracker,
+    sessionPollInterval: .milliseconds(10))
+
+  await model.start()
+  for _ in 0..<100 {
+    if model.workItems.first?.state == .running { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(model.workItems.first?.state == .running)
+  #expect(await transport.listCount >= 2)
+  model.stop()
 }
 
 @MainActor @Test func explicitBindingCompletesBluetoothIdentityMigration() async throws {
@@ -160,6 +312,58 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
 
   #expect(model.configuration.boundDeviceIdentifier == identifier)
   #expect(!model.configuration.requiresBluetoothRebinding)
+  #expect(await transport.connectCount == 1)
+  #expect(model.devicePhase == .connected)
+  model.stop()
+}
+
+@MainActor @Test func bluetoothDiagnosticsExposePermissionAndCommandReadiness() async {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000045")!
+  let transport = TestBLETransport(
+    diagnostics: BluetoothDiagnosticSnapshot(
+      authorization: .allowed,
+      centralState: .poweredOn,
+      connectionStep: .ready,
+      connectedIdentifier: identifier,
+      quotaCharacteristicAvailable: true,
+      capabilitiesCharacteristicAvailable: true,
+      commandCharacteristicAvailable: true,
+      commandNotificationsActive: true))
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = identifier
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  await model.refreshBluetoothDiagnostics()
+
+  #expect(model.watchDiagnosticItems.first { $0.id == "permission" }?.level == .ready)
+  #expect(model.watchDiagnosticItems.first { $0.id == "connection" }?.level == .ready)
+  #expect(model.watchDiagnosticItems.first { $0.id == "commands" }?.level == .ready)
+  model.stop()
+}
+
+@MainActor @Test func bluetoothDiagnosticsExplainDeniedPermissionWithoutStartingAnOperation()
+  async
+{
+  let transport = TestBLETransport(
+    diagnostics: BluetoothDiagnosticSnapshot(
+      authorization: .denied,
+      centralState: .unauthorized))
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  await model.refreshBluetoothDiagnostics()
+
+  let permission = model.watchDiagnosticItems.first { $0.id == "permission" }
+  #expect(permission?.level == .blocked)
+  #expect(permission?.detail.contains("System Settings") == true)
+  #expect(await transport.connectCount == 0)
   model.stop()
 }
 

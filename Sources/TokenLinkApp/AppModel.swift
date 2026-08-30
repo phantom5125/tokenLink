@@ -109,6 +109,11 @@ public final class AppModel {
   public private(set) var isScanningLocalUsage = false
   public private(set) var isAuthorizingClaudeCredential = false
   public private(set) var isMigratingLegacyCredentials = false
+  public private(set) var bluetoothDiagnostics = BluetoothDiagnosticSnapshot()
+  public private(set) var lastWatchSyncFailure: String?
+  public private(set) var lastWatchSyncFailureAt: Date?
+  public private(set) var lastWatchFocusOutcome: WatchFocusOutcome?
+  public private(set) var lastWatchFocusAt: Date?
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -138,7 +143,11 @@ public final class AppModel {
   @ObservationIgnored private let localUsageObserver: LocalUsageObserver?
   @ObservationIgnored private let workItemStore: WorkItemStore
   @ObservationIgnored private let codexWorkItemTracker: CodexWorkItemTracker?
+  @ObservationIgnored private let codexDesktopActivator: any CodexDesktopActivating
+  @ObservationIgnored private let sessionPollInterval: Duration
   @ObservationIgnored private var watchCommandTask: Task<Void, Never>?
+  @ObservationIgnored private var sessionPollTask: Task<Void, Never>?
+  @ObservationIgnored private var isPollingWorkItems = false
   /// Current watch work items (cache of the actor store for UI binding).
   public private(set) var workItems: [WorkItem] = []
   /// Last payload actually sent to the watch (already redacted by design).
@@ -163,7 +172,9 @@ public final class AppModel {
     notificationManager: (any NotificationManaging)? = nil,
     localUsageObserver: LocalUsageObserver? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
-    codexWorkItemTracker: CodexWorkItemTracker? = nil
+    codexWorkItemTracker: CodexWorkItemTracker? = nil,
+    codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator(),
+    sessionPollInterval: Duration = .seconds(10)
   ) {
     self.refresher = refresher
     self.refresherBuilder = refresherBuilder
@@ -179,6 +190,8 @@ public final class AppModel {
     self.localUsageObserver = localUsageObserver
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
+    self.codexDesktopActivator = codexDesktopActivator
+    self.sessionPollInterval = sessionPollInterval
     self.states = [:]
     self.devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
     self.scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
@@ -378,11 +391,13 @@ public final class AppModel {
     started = true
     record("Starting")
     await ensureBridgeObservation()
+    await refreshBluetoothDiagnostics()
     await requestRefresh(reason: "Started")
     await refreshCredentialStates()
     scheduler.start { [weak self] in
       await self?.requestRefresh(reason: "Scheduled refresh")
     }
+    startSessionPolling()
     observeWake()
     observeNetwork()
   }
@@ -403,6 +418,8 @@ public final class AppModel {
     bridgeEventTask = nil
     watchCommandTask?.cancel()
     watchCommandTask = nil
+    sessionPollTask?.cancel()
+    sessionPollTask = nil
     if let bridge {
       Task { await bridge.stopObservingTransport() }
     }
@@ -429,18 +446,8 @@ public final class AppModel {
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
     burnEstimates = await estimateLoader()
     await postNotifications(previousStates: previousStates)
-    if let codexWorkItemTracker,
-      let codexAccount = configuration.defaultAccount(for: .codex),
-      states[codexAccount.id]?.phase == .healthy
-    {
-      if let failure = await codexWorkItemTracker.poll(into: workItemStore) {
-        record("Codex work items unavailable: \(failure.kind.rawValue)")
-      }
-      workItems = await workItemStore.items
-      let activeSessionCount = await workItemStore.activeSessionCount
-      record(
-        "Codex work items available: \(workItems.count); active sessions: \(activeSessionCount)")
-    }
+    _ = await refreshCodexWorkItems(
+      reason: "Quota refresh", syncWatchOnChange: false)
     if bridge != nil, hasWatchSyncCandidate(allowStale: false) {
       await syncCodex(allowStale: false, attempts: 2, automatic: true)
     } else if case .synced = devicePhase {
@@ -623,35 +630,59 @@ public final class AppModel {
     do {
       discoveredDeviceIdentifiers = try await bluetoothTransport.discoveredIdentifiers()
       devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
+      lastWatchSyncFailure = nil
+      lastWatchSyncFailureAt = nil
       record("Bluetooth discovery completed")
     } catch {
       devicePhase = .disconnected
-      record("Bluetooth discovery failed")
+      lastWatchSyncFailure = Self.watchSyncFailureName(error)
+      lastWatchSyncFailureAt = now()
+      record("Bluetooth discovery failed: \(Self.watchSyncFailureName(error))")
     }
     isDiscovering = false
+    await refreshBluetoothDiagnostics()
+  }
+
+  public func refreshBluetoothDiagnostics() async {
+    guard let bluetoothTransport else {
+      bluetoothDiagnostics = BluetoothDiagnosticSnapshot()
+      return
+    }
+    bluetoothDiagnostics = await bluetoothTransport.diagnosticSnapshot()
   }
 
   public func bindDevice(_ identifier: UUID) async throws {
     guard let bluetoothTransport, !isChangingBinding else { return }
     isChangingBinding = true
-    defer { isChangingBinding = false }
-    bindingGeneration &+= 1
-    let previousBridge = bridge
-    await cancelActiveWatchSync()
-    bridgeEventTask?.cancel()
-    bridgeEventTask = nil
-    await previousBridge?.stopObservingTransport()
-    await previousBridge?.disconnect()
-    configuration.boundDeviceIdentifier = identifier
-    configuration.requiresBluetoothRebinding = false
-    bridge = DeviceBridge(
-      transport: bluetoothTransport,
-      boundIdentifier: identifier)
-    devicePhase = .disconnected
-    try saveConfiguration()
-    await ensureBridgeObservation()
-    discoveredDeviceIdentifiers = []
-    record("Bound StopWatch")
+    do {
+      bindingGeneration &+= 1
+      let previousBridge = bridge
+      await cancelActiveWatchSync()
+      bridgeEventTask?.cancel()
+      bridgeEventTask = nil
+      watchCommandTask?.cancel()
+      watchCommandTask = nil
+      await previousBridge?.stopObservingTransport()
+      await previousBridge?.disconnect()
+      configuration.boundDeviceIdentifier = identifier
+      configuration.requiresBluetoothRebinding = false
+      bridge = DeviceBridge(
+        transport: bluetoothTransport,
+        boundIdentifier: identifier)
+      devicePhase = .disconnected
+      try saveConfiguration()
+      await ensureBridgeObservation()
+      await refreshBluetoothDiagnostics()
+      discoveredDeviceIdentifiers = []
+      record("Bound StopWatch; connecting")
+    } catch {
+      isChangingBinding = false
+      throw error
+    }
+    isChangingBinding = false
+    // Binding is an end-to-end action: connect immediately instead of showing
+    // a persisted UUID while waiting for an unrelated refresh to prove it.
+    await syncCodexNow()
   }
 
   public func unbindDevice() async throws {
@@ -663,6 +694,8 @@ public final class AppModel {
     await cancelActiveWatchSync()
     bridgeEventTask?.cancel()
     bridgeEventTask = nil
+    watchCommandTask?.cancel()
+    watchCommandTask = nil
     await previousBridge?.stopObservingTransport()
     await previousBridge?.disconnect()
     bridge = nil
@@ -670,6 +703,7 @@ public final class AppModel {
     configuration.requiresBluetoothRebinding = false
     devicePhase = .unbound
     try saveConfiguration()
+    await refreshBluetoothDiagnostics()
     record("Unbound StopWatch")
   }
 
@@ -837,6 +871,14 @@ public final class AppModel {
     await syncCodex(allowStale: true, attempts: 2, automatic: false)
   }
 
+  /// Uses the exact same path as a watch focus command, making the task link
+  /// testable from the Mac before relying on BLE and C04 delivery.
+  public func focusWorkItemOnMac(slot: Int) async {
+    let outcome = await makeFocusHandler().handle(.focus(slot: slot))
+    applyFocusOutcome(outcome)
+    await reconcileFocusedWorkItem(slot: slot, outcome: outcome)
+  }
+
   public func setWatchSyncedProvider(_ provider: ProviderID, enabled: Bool) throws {
     if enabled {
       configuration.watchSettings.syncedProviders.insert(provider)
@@ -932,6 +974,23 @@ public final class AppModel {
         ] as [String: Any]
       },
       "device_phase": deviceStatusText,
+      "bluetooth": [
+        "authorization": bluetoothDiagnostics.authorization.rawValue,
+        "central_state": bluetoothDiagnostics.centralState.rawValue,
+        "connection_step": bluetoothDiagnostics.connectionStep.rawValue,
+        "connected_to_bound_device":
+          bluetoothDiagnostics.connectedIdentifier != nil
+          && bluetoothDiagnostics.connectedIdentifier == configuration.boundDeviceIdentifier,
+        "quota_characteristic": bluetoothDiagnostics.quotaCharacteristicAvailable,
+        "capabilities_characteristic":
+          bluetoothDiagnostics.capabilitiesCharacteristicAvailable,
+        "command_characteristic": bluetoothDiagnostics.commandCharacteristicAvailable,
+        "command_notifications": bluetoothDiagnostics.commandNotificationsActive,
+        "last_failure": lastWatchSyncFailure ?? "none",
+        "last_failure_at": lastWatchSyncFailureAt.map {
+          ISO8601DateFormatter().string(from: $0)
+        } ?? "none",
+      ],
       "events": events.map { ["date": $0.date.timeIntervalSince1970, "message": $0.message] },
     ]
   }
@@ -1078,6 +1137,9 @@ public final class AppModel {
         try Task.checkCancellation()
         guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
+        lastWatchSyncFailure = nil
+        lastWatchSyncFailureAt = nil
+        await refreshBluetoothDiagnostics()
         let names = decisions.map { Self.displayName(for: $0.provider) }
           .joined(separator: ", ")
         record(
@@ -1090,7 +1152,11 @@ public final class AppModel {
       } catch {
         guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
-        record("StopWatch sync attempt failed: \(Self.watchSyncFailureName(error))")
+        let failure = Self.watchSyncFailureName(error)
+        lastWatchSyncFailure = failure
+        lastWatchSyncFailureAt = now()
+        await refreshBluetoothDiagnostics()
+        record("StopWatch sync attempt failed: \(failure)")
         if attempt + 1 < attempts {
           record("Retrying StopWatch sync")
         }
@@ -1105,25 +1171,22 @@ public final class AppModel {
     guard bridgeEventTask == nil, let bridge else { return }
     await bridge.startObservingTransport()
     let generation = bindingGeneration
-    let workItemStore = workItemStore
-    let focusHandler = FocusHandler(
-      sessionProvider: { slot in
-        await workItemStore.item(forSlot: slot).map {
-          FocusSession(slot: $0.slot, source: $0.source, threadID: $0.id)
-        }
-      },
-      activator: SystemCodexDesktopActivator(),
-      onRefresh: { [weak self] in
-        await self?.requestRefresh(reason: "Watch requested refresh")
-      },
-      record: { [weak self] message in
-        await self?.record(message)
-      })
+    let focusHandler = makeFocusHandler()
     watchCommandTask = Task { @MainActor [weak self] in
       for await command in bridge.commandStream {
         guard !Task.isCancelled, let self else { return }
         guard self.isCurrentBinding(generation, bridge: bridge) else { return }
-        await focusHandler.handle(command)
+        switch command {
+        case .focus(let slot):
+          self.record("Watch command received: focus slot \(slot)")
+        case .refresh:
+          self.record("Watch command received: refresh")
+        }
+        let outcome = await focusHandler.handle(command)
+        self.applyFocusOutcome(outcome)
+        if case .focus(let slot) = command {
+          await self.reconcileFocusedWorkItem(slot: slot, outcome: outcome)
+        }
       }
     }
     bridgeEventTask = Task { @MainActor [weak self] in
@@ -1138,9 +1201,106 @@ public final class AppModel {
           wasEstablished = false
         }
         self.devicePhase = phase
+        await self.refreshBluetoothDiagnostics()
         if phase == .disconnected, wasEstablished {
           self.record("StopWatch disconnected")
         }
+      }
+    }
+  }
+
+  private func makeFocusHandler() -> FocusHandler {
+    let workItemStore = workItemStore
+    return FocusHandler(
+      sessionProvider: { slot in
+        await workItemStore.item(forSlot: slot).map {
+          FocusSession(slot: $0.slot, source: $0.source, threadID: $0.id)
+        }
+      },
+      activator: codexDesktopActivator,
+      onRefresh: { [weak self] in
+        await self?.requestRefresh(reason: "Watch requested refresh")
+      },
+      record: { [weak self] message in
+        await self?.record(message)
+      })
+  }
+
+  private func applyFocusOutcome(_ outcome: WatchFocusOutcome?) {
+    guard let outcome else { return }
+    lastWatchFocusOutcome = outcome
+    lastWatchFocusAt = now()
+  }
+
+  /// Reconciles execution state immediately after a successful task link and
+  /// records acknowledgement independently. An item stays needs-input until
+  /// Codex reports a real lifecycle transition; opening it only sets `seen`.
+  private func reconcileFocusedWorkItem(
+    slot: Int,
+    outcome: WatchFocusOutcome?
+  ) async {
+    guard outcome == .openedThread else { return }
+    let acknowledged = await workItemStore.acknowledge(slot: slot, at: now())
+    let refreshed = await refreshCodexWorkItems(
+      reason: "Focused session", syncWatchOnChange: false)
+    workItems = await workItemStore.items
+    guard acknowledged || refreshed, bridge != nil,
+      hasWatchSyncCandidate(allowStale: true)
+    else { return }
+    await syncCodex(allowStale: true, attempts: 2, automatic: true)
+  }
+
+  /// Polls task lifecycle independently of the quota cadence. Successful
+  /// changes are the only scheduled polls that write a new watch payload.
+  @discardableResult
+  private func refreshCodexWorkItems(
+    reason: String,
+    syncWatchOnChange: Bool
+  ) async -> Bool {
+    guard !isPollingWorkItems, let codexWorkItemTracker,
+      configuration.defaultAccount(for: .codex)?.enabled == true
+    else { return false }
+    isPollingWorkItems = true
+    defer { isPollingWorkItems = false }
+
+    let previousItems = await workItemStore.items
+    let previousActiveCount = await workItemStore.activeSessionCount
+    if let failure = await codexWorkItemTracker.poll(into: workItemStore) {
+      record("Codex work items unavailable: \(failure.kind.rawValue)")
+      return false
+    }
+    let replacementItems = await workItemStore.items
+    let activeSessionCount = await workItemStore.activeSessionCount
+    workItems = replacementItems
+    let changed =
+      replacementItems != previousItems
+      || activeSessionCount != previousActiveCount
+    if changed || reason != "Scheduled session refresh" {
+      record(
+        "Codex work items available: \(replacementItems.count); active sessions: \(activeSessionCount)"
+      )
+    }
+    if changed, syncWatchOnChange, bridge != nil,
+      hasWatchSyncCandidate(allowStale: true)
+    {
+      await syncCodex(allowStale: true, attempts: 2, automatic: true)
+    }
+    return changed
+  }
+
+  private func startSessionPolling() {
+    sessionPollTask?.cancel()
+    let interval = sessionPollInterval
+    sessionPollTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(for: interval)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled, let self, self.started else { return }
+        await self.refreshCodexWorkItems(
+          reason: "Scheduled session refresh", syncWatchOnChange: true)
       }
     }
   }

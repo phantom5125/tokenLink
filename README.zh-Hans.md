@@ -1,3 +1,12 @@
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-mark-dark.png">
+    <img src="assets/branding/logo-mark-light.png" alt="TokenLink 标志" width="152">
+  </picture>
+</p>
+<!-- markdownlint-enable MD033 -->
+
 # TokenLink
 
 [English](README.md) | **简体中文**
@@ -39,9 +48,10 @@ Codex、Claude、Kimi、MiniMax 和 GLM 的额度，新增协商式手表协议 
 增加可选的常驻显示与交互界面。
 
 > 状态：早期开发。各厂商接口可能随时变动。v0.2 界面已在 C152 上完成协议 v2
-> 协商、完整 Active 计数、三家 provider 同步及实体 UI 反馈迭代。0.2.1 将这份固件
-> 移入本仓库；重新构建的迁移镜像已通过 C152 烧录、串口启动和三家 provider 的真实
-> v2 同步回归。长时功耗仍是后续验证项。
+> 协商、完整 Active 计数、三家 provider 同步及实体 UI 反馈迭代。0.2.1 已将固件移入
+> 本仓库并通过实体发布验收。0.2.2 候选新增连接诊断、明确的任务链接结果、完整 session
+> 分页和更清晰的 C152 session 状态；新增硬件行为仍需完成下方清单。长时功耗仍是
+> 后续验证项。
 
 TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、MiniMax、
 智谱 AI、M5Stack 均无隶属或背书关系，也不是它们的官方产品。各厂商名称与
@@ -49,6 +59,12 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-31 — Mac 直接安装已进入正式签名准备状态。** Mac 构建现在会生成经过
+  校验的 Universal 2 `TokenLink-0.2.2.dmg`，并包含 Applications 快捷方式；公开 tag
+  缺少 Developer ID 签名或 Apple 公证凭据时会直接失败，不会发布 ad-hoc 制品。
+- **2026-08-30 — 0.2.2 稳定性候选已完成整合。** 蓝牙诊断、明确的 Codex 任务链接
+  结果、完整 thread 分页、稳定优先级槽位和无障碍 C152 session 指示器已进入同一
+  release 分支；组合测试为 190 项 Swift 测试和 13 个固件测试程序。
 - **2026-08-30 — C152 固件已迁入 TokenLink。** 当前默认无线版源码、模拟器测试、
   分区表、MIT/OFL 声明及固定版本 PlatformIO 构建都位于
   `firmware/stopwatch-c152`；全新 checkout 不再需要另一个仓库即可构建 Mac 与固件制品。
@@ -82,10 +98,16 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
   `app.tokenlink.provider`）。升级后不会自动读取 0.2.1 以前的旧 service；用户可在
   「额度源」页面先查看授权范围，再主动迁移。
 - 按 CoreBluetooth 标识绑定一台 StopWatch，写入使用 with-response 确认。
+- 提供不含凭据的连接检查表，分别显示蓝牙权限、适配器、绑定、连接进度、C04 通知、
+  同步与脱敏失败类别。
 - 协商手表协议 v2，并在一次同步中发送全部所选额度源；v1 固件仍只接收完全不变的 Codex
   primary-window payload。
-- 跟踪最多三个可命名 Codex 工作单元，并接收 v2 刷新/聚焦命令。聚焦会打开对应的
-  `codex://threads/<id>` 任务链接，不兼容时回退为将 Codex Desktop 切到前台。
+- 分页读取完整 Codex thread 列表并报告完整 Active 数，同时保留三个稳定、按优先级
+  排列的手表聚焦行。聚焦会向 Codex 投递对应 `codex://threads/<id>` 链接，并在不暴露
+  任务标识的前提下显示准确的投递或回退结果。
+- Session 生命周期每 10 秒独立刷新；只有明确完成才显示绿色 `DONE`。待处理任务在
+  点击前为琥珀色动态 `ACTION`，点击后仍保持原执行状态，仅变为静态 `OPENED`；后续
+  新状态会再次恢复待处理提示。
 - 可配置 v2 主题、唤醒方式、时制与同步额度源，并在 StopWatch 页面预览最近 payload。
 - 诊断导出前自动脱敏密钥、用户路径、账户标签和设备标识。
 - 界面语言：English / 中文（简体）/ 日本語，跟随系统或手动选择。
@@ -94,23 +116,32 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ### 没有 M5Stack StopWatch
 
-只体验 macOS 菜单栏时，这就是完整路径。需要 macOS 14+，以及 Xcode 26+ 或
-Swift 6.2+ 工具链：
+在 macOS 14 或更高版本上，最快的安装方式是 Universal 2 磁盘映像：
+
+1. 下载
+   [`TokenLink-0.2.2.dmg`](https://github.com/phantom5125/tokenLink/releases/download/v0.2.2/TokenLink-0.2.2.dmg)。
+2. 打开磁盘映像，将 **TokenLink** 拖到 **Applications**。
+3. 推出磁盘映像，再从「应用程序」启动 TokenLink。
+
+正式 tag 的公开 DMG 必须经过 Developer ID 签名、Apple 公证并附加公证票据。
+CI 开发用 DMG 仅使用 ad-hoc 签名，不作为公开下载。
+
+如需从源码构建，请安装 Xcode 26+ 或 Swift 6.2+ 工具链：
 
 ```bash
 git clone https://github.com/phantom5125/tokenLink.git
 cd tokenLink
 bash scripts/package_app.sh
-open TokenLink.app
+open .build/artifacts/TokenLink.app
 ```
 
 打开 **控制中心 → 额度源**，启用 Codex 后刷新。TokenLink 会复用本机 Codex CLI
 登录态，不保存 Codex API key；其他 provider 可以单独启用。
 
-打包脚本会把 SwiftPM 图片资源装入 release-mode app，默认进行 ad-hoc 签名，并校验
-最终 bundle；每个 CI revision 也会生成开发用 artifact。当前 Mac 下载仅支持
-Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple 公证版发布前，
-从源码构建仍是受支持的首次体验路径。
+打包脚本会把 SwiftPM 图片资源和正式 TokenLink App 图标装入 release-mode app，默认
+进行 ad-hoc 签名并校验最终 bundle。本地 bundle 写入隐藏的 `.build/artifacts`
+目录，避免 LaunchServices 把 worktree 构建索引成第二个已安装的 TokenLink。发布构建
+会合并 arm64 与 x86_64，加入 Applications 快捷方式，并在发布前重新挂载和校验 DMG。
 
 ### 有 M5Stack StopWatch C152
 
@@ -126,7 +157,7 @@ Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple �
 
    最后一个命令会在 `dist/firmware/` 生成烧录到 `0x0` 的 C152-only 合并镜像、
    分片包、manifest 和校验清单。不想自行编译的用户可从
-   [v0.2.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.1)
+   [v0.2.2 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.2)
    下载同类制品。
 3. 阅读 M5Stack 的
    [官方恢复流程](https://docs.m5stack.com/en/guide/restore_factory/stopwatch)，识别本次
@@ -235,7 +266,8 @@ Token Plan」页面获取，与按量付费 API Key 不互通），并选择 Glo
 只有显式触发才会扫描。绑定后，所选额度源出现新鲜快照时会自动同步；连接、能力读取
 、命令通知订阅和写入都有有限超时。额度写入使用 write-with-response；对于协议 v2，
 只有 macOS 确认 C04 手表命令通知订阅成功后，连接才会显示为 ready。v1 固件只认识
-这个 payload：
+连接检查表会显示上述各项无凭据状态及恢复建议，不包含外设 UUID 或 payload。v1 固件
+只认识这个 payload：
 
 ```json
 {"remaining_percent":72,"reset_in_seconds":900}
@@ -246,9 +278,11 @@ v1 表盘上被误标为 Codex。
 
 协议 v2 通过可选的只读 capabilities characteristic 协商。兼容设备可以接收最多三个
 额度窗口、最多三个短名称工作单元、所选额度源轮转和表盘设置。只要发现、读取或解码
-能力失败，TokenLink 就静默回退 v1。Mac 端实现和 fake transport 测试已经完成，最终
-候选的完整 active count 与真实多 provider payload 也已送达 C152；实体布局/触摸检查
-和长时功耗仍是独立的验证层。最新分层结果见 [`docs/validation`](docs/validation/)。
+能力失败，TokenLink 就静默回退 v1。0.2.1 已将完整 active count 与真实多 provider
+payload 送达 C152。0.2.2 候选新增完整分页、稳定优先级槽位、聚焦投递反馈和不只依赖
+颜色的状态动画；电源键短按唤醒修复已完成烧录和启动验证，实体布局、任务聚焦、重连
+及可见睡眠/唤醒检查仍是最终候选验证层。最新
+分层结果见 [`docs/validation`](docs/validation/)。
 
 ## 隐私与安全
 
@@ -310,8 +344,9 @@ Mac 端已经实现 payload 投影、能力协商、v1 回退、provider 轮转�
 C152 固件、触摸聚焦、可选宠物主题、抬腕唤醒和 host-native 测试现已位于
 `firmware/stopwatch-c152`；该子树继续使用独立 MIT 许可证，并与 `TokenLinkDevice`
 使用同一份 v1/v2 契约。上一候选已完成 C152 烧录、启动、协议 v2、多 provider 同步
-及用户实体 UI 迭代；0.2.1 重建镜像现已有独立的烧录、启动、真实同步、重连、C04
-命令、实体 UI 与 session 聚焦验收记录。24 小时功耗浸泡仍作为后续分离验证层。
+及用户实体 UI 迭代；0.2.1 重建镜像已有独立的烧录、启动、真实同步、重连、C04
+命令、实体 UI 与 session 聚焦验收记录。0.2.2 整合新增诊断、完整分页、聚焦反馈和
+更清晰的 session 状态；实体清单与 24 小时功耗浸泡仍作为分离证据。
 
 ## 参与贡献
 

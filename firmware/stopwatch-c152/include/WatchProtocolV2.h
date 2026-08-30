@@ -25,6 +25,7 @@ enum class WorkState : std::uint8_t {
   NeedsInput,
   Complete,
   Failed,
+  Unknown,
 };
 
 enum class Theme : std::uint8_t {
@@ -53,8 +54,9 @@ struct WorkItem {
   std::uint8_t slot = 0;
   char name[kWorkItemNameCapacity] = {};
   char source[kWorkItemSourceCapacity] = {};
-  WorkState state = WorkState::Running;
+  WorkState state = WorkState::Unknown;
   bool latest = false;
+  bool seen = false;
 };
 
 struct Settings {
@@ -72,6 +74,7 @@ struct Payload {
   std::uint8_t windowCount = 0;
   WorkItem workItems[kMaxWorkItems];
   std::uint8_t workItemCount = 0;
+  bool hasWorkItems = false;
   std::uint16_t activeCount = 0;
   bool hasActiveCount = false;
   std::uint32_t syncedAt = 0;
@@ -105,6 +108,8 @@ inline bool parseWorkState(const char* text, WorkState& state) {
     state = WorkState::Complete;
   } else if (std::strcmp(text, "failed") == 0) {
     state = WorkState::Failed;
+  } else if (std::strcmp(text, "unknown") == 0) {
+    state = WorkState::Unknown;
   } else {
     return false;
   }
@@ -117,8 +122,9 @@ inline const char* workStateName(WorkState state) {
     case WorkState::NeedsInput: return "NEEDS INPUT";
     case WorkState::Complete: return "COMPLETE";
     case WorkState::Failed: return "FAILED";
+    case WorkState::Unknown: return "UNKNOWN";
   }
-  return "RUNNING";
+  return "UNKNOWN";
 }
 
 // Returns true when the JSON object is a v2 payload (has "v": 2). Callers use
@@ -163,6 +169,7 @@ inline bool parse(JsonObjectConst value, Payload& output) {
 
   output.workItemCount = 0;
   const JsonArrayConst workItems = value["work_items"].as<JsonArrayConst>();
+  output.hasWorkItems = !workItems.isNull();
   if (!workItems.isNull()) {
     for (JsonObjectConst entry : workItems) {
       if (output.workItemCount >= kMaxWorkItems) break;
@@ -180,6 +187,7 @@ inline bool parse(JsonObjectConst value, Payload& output) {
       copyAscii(item.source, sizeof(item.source), entry["source"] | "");
       item.state = state;
       item.latest = entry["latest"] | false;
+      item.seen = entry["seen"] | false;
       ++output.workItemCount;
     }
   }

@@ -4,6 +4,67 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## 0.2.2 — Unreleased
+
+- Added a Universal 2 `TokenLink-0.2.2.dmg` with a drag-to-Applications layout,
+  mounted-image verification, checksums, and a tag workflow that refuses to
+  publish without Developer ID signing and Apple notarization credentials.
+- Added the TokenLink dashboard-and-link mark to the macOS app, menu bar, and
+  menu panel, with an adaptive monochrome status-item variant.
+- Keep local app bundles under the hidden SwiftPM build directory so macOS
+  LaunchServices cannot rediscover worktree artifacts as a second TokenLink.
+- Give every full C152 installation a new persistent random-static BLE identity
+  so a firmware flash cannot reconnect with stale macOS bond keys. Binding a
+  selected watch now immediately connects and proves the new identity.
+- Keep watch-to-Mac focus commands within the 20-byte default ATT payload so
+  they are delivered even when the C152 also has a low-MTU HID connection.
+  TokenLink accepts both the compact on-device frame and the earlier verbose
+  protocol-v2 command format.
+- Recreate the watch-command listener whenever a StopWatch is rebound, and log
+  redacted command receipt before resolving its slot to a Codex task.
+
+- Added a credential-free StopWatch checklist for Bluetooth authorization,
+  adapter readiness, device binding, connection progress, protocol-v2 C04
+  command notifications, and last successful sync.
+- Added actionable recovery guidance for denied permission, stale app-identity
+  bindings, connection timeouts, and missing command notifications.
+- Included the same redacted Bluetooth state-machine fields in diagnostics
+  exports without device UUIDs, credentials, token values, or payload bodies.
+
+- Target Codex Desktop's installed application bundle when opening a
+  `codex://threads/<id>` task link instead of treating generic LaunchServices
+  scheme acceptance as proof that Codex received it.
+- Added a per-task Mac-side focus test and a visible last-outcome status so BLE
+  command delivery can be distinguished from app-link delivery.
+- Preserve the app-activation fallback while reporting it as a partial result,
+  rather than implying that the matching task was focused.
+
+- Page through the complete Codex `thread/list` result in updated-activity
+  order, deduplicate moving threads across pages, and fail closed instead of
+  presenting a bounded partial result as the full active-session count. Remove
+  sessions that disappear after a complete successful refresh.
+- Keep three glanceable watch slots while prioritizing needs-input, failed,
+  running, completed, and unknown sessions in that order; unaffected sessions
+  retain their slot when a more useful item arrives.
+- Give every Sessions state a distinct color, shape, text label, and motion
+  policy: blue running orbit, amber needs-input pulse, static green completion
+  check, and static red failure alert.
+- Refresh Codex session lifecycle independently every ten seconds and consult
+  the local rollout lifecycle before treating Desktop-owned tasks as terminal.
+  Ambiguous tasks stay neutral `UNKNOWN`; only explicit completion evidence
+  gets a green `DONE` check. Scan recent rollouts backward by chunks so a
+  long-running task remains running after more than 256 KB of tool output.
+- Keep execution state separate from acknowledgement. Opening a pending task
+  changes its amber attention pulse from `ACTION` to a static `OPENED` ring;
+  it does not mark the task complete, and a newer provider event makes it
+  actionable again.
+- Show both the aggregate active count and visible row count on Sessions, while
+  keeping protocol v2 and the three-slot focus contract unchanged.
+- Merge M5Unified's latched PM1 click event with direct power-button sampling,
+  so a short red-button click reliably wakes desk sleep even when the full
+  press falls between two samples. Live press tracking still owns held and
+  double-click gestures, preventing duplicate actions.
+
 ## 0.2.1 — 2026-08-30
 
 - Moved the exact default wireless M5Stack StopWatch C152 firmware source into

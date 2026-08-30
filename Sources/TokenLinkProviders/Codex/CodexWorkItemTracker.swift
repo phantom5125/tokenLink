@@ -27,10 +27,16 @@ public enum CodexWorkItemStateMapping {
       case "inProgress":
         // Race between polls: turn still in flight while thread shows idle.
         return .running
+      case "completed":
+        return .completed
       case "interrupted", "failed":
         return .failed
       default:
-        return .completed
+        // A separately launched app-server commonly reports Desktop-owned
+        // tasks as notLoaded without turns. Absence of evidence is not a
+        // successful terminal event, so render it as unknown until the local
+        // rollout or a later poll proves running/completed/failed.
+        return .unknown
       }
     default:
       return .unknown
@@ -75,7 +81,7 @@ public enum CodexThreadListParser {
         activeFlags: thread.status.activeFlags ?? [],
         lastTurnStatus: thread.turns?.last?.status)
       let effectiveState: WorkItemState
-      if reportedState == .completed,
+      if reportedState == .completed || reportedState == .unknown,
         let path = thread.path,
         let localState = rolloutState(path)
       {
@@ -105,7 +111,7 @@ public enum CodexThreadListParser {
 /// state. A separately launched app-server reports Desktop-owned tasks as
 /// `notLoaded`, so the rollout lifecycle is the reliable local signal.
 public enum CodexRolloutActivityReader {
-  private static let tailBytes: UInt64 = 256 * 1_024
+  private static let chunkBytes: UInt64 = 256 * 1_024
   private static let freshness: TimeInterval = 15 * 60
 
   public static func state(
@@ -126,26 +132,43 @@ public enum CodexRolloutActivityReader {
     else { return nil }
     defer { try? handle.close() }
 
-    let length = (try? handle.seekToEnd()) ?? 0
-    let offset = length > tailBytes ? length - tailBytes : 0
-    try? handle.seek(toOffset: offset)
-    guard let data = try? handle.readToEnd(),
-      let text = String(data: data, encoding: .utf8)
-    else { return nil }
-
-    var lastLifecycle: String?
-    for (index, line) in text.split(separator: "\n").enumerated() {
-      if offset > 0 && index == 0 { continue }  // possibly a partial JSON line
-      guard let data = String(line).data(using: .utf8),
-        let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
-        object["type"] as? String == "event_msg",
-        let payload = object["payload"] as? [String: Any],
-        let type = payload["type"] as? String,
-        type == "task_started" || type == "task_complete" || type == "turn_aborted"
-      else { continue }
-      lastLifecycle = type
+    // A long-running task can emit more than one tail chunk of tool output
+    // after task_started. Walk backward until the newest lifecycle event is
+    // found instead of silently turning that still-running task into unknown.
+    var endOffset = (try? handle.seekToEnd()) ?? 0
+    var trailingFragment = Data()
+    while endOffset > 0 {
+      let startOffset = endOffset > chunkBytes ? endOffset - chunkBytes : 0
+      try? handle.seek(toOffset: startOffset)
+      guard let chunk = try? handle.read(upToCount: Int(endOffset - startOffset)) else {
+        return nil
+      }
+      var data = chunk
+      data.append(trailingFragment)
+      let lines = data.split(separator: 0x0A, omittingEmptySubsequences: false)
+      let completeLines = startOffset > 0 ? lines.dropFirst() : lines[...]
+      for line in completeLines.reversed() {
+        guard
+          let object = try? JSONSerialization.jsonObject(with: Data(line)) as? [String: Any],
+          object["type"] as? String == "event_msg",
+          let payload = object["payload"] as? [String: Any],
+          let type = payload["type"] as? String
+        else { continue }
+        switch type {
+        case "task_started": return .running
+        case "task_complete": return .completed
+        case "turn_aborted": return .failed
+        default: continue
+        }
+      }
+      if startOffset > 0, let firstLine = lines.first {
+        trailingFragment = Data(firstLine)
+      } else {
+        trailingFragment = Data()
+      }
+      endOffset = startOffset
     }
-    return lastLifecycle == "task_started" ? .running : nil
+    return nil
   }
 }
 
@@ -177,23 +200,26 @@ private struct TurnSummary: Decodable {
   let status: String?
 }
 
-/// Polls codex app-server `thread/list`. No dedicated timer: AppModel hangs
-/// this on the existing quota refresh cycle and feeds the results into a
-/// `WorkItemStore` via `poll(into:)`.
+/// Polls codex app-server `thread/list`. AppModel runs this on a short session
+/// lifecycle cadence, independently of the slower quota refresh cycle, and
+/// feeds the results into a `WorkItemStore` via `poll(into:)`.
 public struct CodexWorkItemTracker: Sendable {
   private let client: CodexAppServerClient
   private let threadLimit: Int
+  private let maxThreadPages: Int
   private let startupTimeout: Duration
   private let requestTimeout: Duration
 
   public init(
     client: CodexAppServerClient,
-    threadLimit: Int = 10,
+    threadLimit: Int = 50,
+    maxThreadPages: Int = 20,
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(5)
   ) {
     self.client = client
     self.threadLimit = threadLimit
+    self.maxThreadPages = maxThreadPages
     self.startupTimeout = startupTimeout
     self.requestTimeout = requestTimeout
   }
@@ -201,28 +227,43 @@ public struct CodexWorkItemTracker: Sendable {
   public init(
     executable: URL,
     transport: any AppServerTransport = ProcessAppServerTransport(),
-    threadLimit: Int = 10,
+    threadLimit: Int = 50,
+    maxThreadPages: Int = 20,
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(5)
   ) {
     self.init(
       client: CodexAppServerClient(executable: executable, transport: transport),
       threadLimit: threadLimit,
+      maxThreadPages: maxThreadPages,
       startupTimeout: startupTimeout,
       requestTimeout: requestTimeout)
   }
 
   public func fetchThreads() async -> Result<[CodexThreadSnapshot], ProviderFailure> {
     do {
-      let data = try await client.listThreads(
+      let pages = try await client.listThreadPages(
         limit: threadLimit,
+        maxPages: maxThreadPages,
         startupTimeout: startupTimeout,
         requestTimeout: requestTimeout)
-      return .success(try CodexThreadListParser.parse(data: data))
+      var byID: [String: CodexThreadSnapshot] = [:]
+      for page in pages {
+        for thread in try CodexThreadListParser.parse(data: page) {
+          if let existing = byID[thread.id], existing.updatedAt >= thread.updatedAt {
+            continue
+          }
+          byID[thread.id] = thread
+        }
+      }
+      return .success(Array(byID.values))
     } catch AppServerTransportError.timeout {
       return .failure(
         ProviderFailure(kind: .timeout, message: "Codex app-server did not respond in time."))
-    } catch is CodexThreadListParseError, is DecodingError {
+    } catch AppServerTransportError.malformedResponse,
+      is CodexThreadListParseError,
+      is DecodingError
+    {
       return .failure(
         ProviderFailure(kind: .decoding, message: "Codex thread list could not be read."))
     } catch {
@@ -238,6 +279,7 @@ public struct CodexWorkItemTracker: Sendable {
   public func poll(into store: WorkItemStore) async -> ProviderFailure? {
     switch await fetchThreads() {
     case .success(let threads):
+      await store.removeMissing(source: .codex, keepingIDs: Set(threads.map(\.id)))
       await store.reportActiveSessionCount(
         threads.lazy.filter { $0.state.isActive }.count)
       for thread in threads.sorted(by: { $0.updatedAt > $1.updatedAt }) {

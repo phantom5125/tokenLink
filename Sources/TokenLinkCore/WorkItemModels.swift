@@ -22,6 +22,19 @@ public enum WorkItemState: String, Codable, Sendable {
   public var isActive: Bool {
     self == .running || self == .needsInput
   }
+
+  /// Lower values are more important on the watch's three-row Sessions page.
+  /// Actionable states lead, active work follows, and terminal/unknown states
+  /// yield their slot when a more useful session is available.
+  public var watchDisplayPriority: Int {
+    switch self {
+    case .needsInput: 0
+    case .failed: 1
+    case .running: 2
+    case .completed: 3
+    case .unknown: 4
+    }
+  }
 }
 
 /// One agent session tracked on the Mac. `id` stays local (it is the
@@ -35,6 +48,9 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
   public var source: ProviderID
   public var state: WorkItemState
   public var updatedAt: Date
+  /// Local acknowledgement time. A provider update newer than this makes the
+  /// item unseen again without conflating acknowledgement with completion.
+  public var seenAt: Date?
   /// Mac-side rename wins over anything a poll wants to write into `name`.
   public internal(set) var isCustomNamed: Bool
 
@@ -45,6 +61,7 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     source: ProviderID,
     state: WorkItemState,
     updatedAt: Date,
+    seenAt: Date? = nil,
     isCustomNamed: Bool = false
   ) {
     self.id = id
@@ -53,6 +70,7 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     self.source = source
     self.state = state
     self.updatedAt = updatedAt
+    self.seenAt = seenAt
     self.isCustomNamed = isCustomNamed
   }
 
@@ -81,24 +99,29 @@ public struct WorkItemPayload: Codable, Equatable, Sendable {
   /// Present only on the most recently updated session. Optional keeps the
   /// v2 payload compact and remains compatible with existing firmware.
   public let latest: Bool?
+  /// Present only after the user has opened this exact provider update.
+  public let seen: Bool?
 
   public init(
     slot: Int,
     name: String,
     source: String,
     state: WorkItemState,
-    latest: Bool = false
+    latest: Bool = false,
+    seen: Bool = false
   ) {
     self.slot = slot
     self.name = name
     self.source = source
     self.state = state
     self.latest = latest ? true : nil
+    self.seen = seen ? true : nil
   }
 }
 
-/// Tracks the (at most three) most recently active work items and assigns
-/// each a stable watch slot. AppModel owns one instance and feeds it from
+/// Tracks the three most useful work items and assigns each a stable watch
+/// slot. Existing items stay in place; a new item reuses only the slot of a
+/// lower-priority candidate. AppModel owns one instance and feeds it from
 /// provider trackers after each quota refresh cycle.
 public actor WorkItemStore {
   public static let capacity = 3
@@ -124,9 +147,10 @@ public actor WorkItemStore {
     reportedActiveSessionCount = max(0, count)
   }
 
-  /// Inserts or refreshes a work item. New items get the lowest free slot;
-  /// at capacity the least recently active item is evicted, and an incoming
-  /// item older than everything already stored is dropped (returns nil).
+  /// Inserts or refreshes a work item. New items get the lowest free slot.
+  /// At capacity, needs-input and failed work outrank running work, which
+  /// outranks completed and unknown work; recency breaks ties. Replacements
+  /// reuse the evicted item's slot so unaffected rows do not jump around.
   @discardableResult
   public func upsert(
     id: String,
@@ -137,6 +161,9 @@ public actor WorkItemStore {
   ) -> WorkItem? {
     let cleanName = WorkItem.sanitizedName(name)
     if var existing = storage[id] {
+      if state != existing.state || updatedAt > existing.updatedAt {
+        existing.seenAt = nil
+      }
       existing.state = state
       existing.updatedAt = updatedAt
       if !existing.isCustomNamed {
@@ -145,7 +172,9 @@ public actor WorkItemStore {
       storage[id] = existing
       return existing
     }
-    guard let slot = nextSlot(forNewItemUpdatedAt: updatedAt) else { return nil }
+    guard let slot = nextSlot(forNewItemState: state, updatedAt: updatedAt) else {
+      return nil
+    }
     let item = WorkItem(
       id: id,
       slot: slot,
@@ -169,33 +198,79 @@ public actor WorkItemStore {
     storage[id] = nil
   }
 
+  /// Removes items from one provider that were absent from a complete poll.
+  /// Callers must not invoke this after a partial or failed listing.
+  public func removeMissing(source: ProviderID, keepingIDs: Set<String>) {
+    let missingIDs = storage.values.compactMap { item in
+      item.source == source && !keepingIDs.contains(item.id) ? item.id : nil
+    }
+    for id in missingIDs {
+      storage[id] = nil
+    }
+  }
+
   public func item(forSlot slot: Int) -> WorkItem? {
     storage.values.first { $0.slot == slot }
+  }
+
+  /// Marks the currently displayed provider update as opened. Returns true
+  /// only when the wire-visible acknowledgement changed.
+  @discardableResult
+  public func acknowledge(slot: Int, at date: Date) -> Bool {
+    guard let id = storage.values.first(where: { $0.slot == slot })?.id,
+      var item = storage[id]
+    else { return false }
+    if let seenAt = item.seenAt, seenAt >= item.updatedAt { return false }
+    item.seenAt = max(date, item.updatedAt)
+    storage[id] = item
+    return true
   }
 
   /// Snapshot for the v2 payload `work_items` array, sorted by slot.
   public func payloadItems() -> [WorkItemPayload] {
     let latestID = storage.values.max(by: { $0.updatedAt < $1.updatedAt })?.id
-    return items.map {
+    return items.map { item in
       WorkItemPayload(
-        slot: $0.slot,
-        name: $0.name,
-        source: $0.source.rawValue,
-        state: $0.state,
-        latest: $0.id == latestID)
+        slot: item.slot,
+        name: item.name,
+        source: item.source.rawValue,
+        state: item.state,
+        latest: item.id == latestID,
+        seen: item.seenAt.map { $0 >= item.updatedAt } ?? false)
     }
   }
 
-  private func nextSlot(forNewItemUpdatedAt updatedAt: Date) -> Int? {
+  private func nextSlot(forNewItemState state: WorkItemState, updatedAt: Date) -> Int? {
     if storage.count < Self.capacity {
       let used = Set(storage.values.map(\.slot))
       return (0..<Self.capacity).first { !used.contains($0) }
     }
-    guard
-      let oldest = storage.values.min(by: { $0.updatedAt < $1.updatedAt }),
-      updatedAt > oldest.updatedAt
-    else { return nil }
-    storage[oldest.id] = nil
-    return oldest.slot
+
+    guard var lowestPriority = storage.values.first else { return nil }
+    for item in storage.values.dropFirst() {
+      if Self.outranks(lowestPriority, item) {
+        lowestPriority = item
+      }
+    }
+    guard Self.outranks(state: state, updatedAt: updatedAt, lowestPriority) else {
+      return nil
+    }
+    storage[lowestPriority.id] = nil
+    return lowestPriority.slot
+  }
+
+  private static func outranks(_ lhs: WorkItem, _ rhs: WorkItem) -> Bool {
+    outranks(state: lhs.state, updatedAt: lhs.updatedAt, rhs)
+  }
+
+  private static func outranks(
+    state: WorkItemState,
+    updatedAt: Date,
+    _ rhs: WorkItem
+  ) -> Bool {
+    if state.watchDisplayPriority != rhs.state.watchDisplayPriority {
+      return state.watchDisplayPriority < rhs.state.watchDisplayPriority
+    }
+    return updatedAt > rhs.updatedAt
   }
 }
