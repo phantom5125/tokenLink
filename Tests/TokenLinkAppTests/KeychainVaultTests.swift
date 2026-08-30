@@ -140,6 +140,24 @@ private struct FailingKeychainClient: KeychainClient {
   #expect(try await vault.apiKey(for: extraAccount, isDefault: false) == "second-key")
 }
 
+@Test func costAccountKeychainNamesUseProviderDefaultsAndUUIDNamespaces() async throws {
+  let openRouter = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  let deepSeek = ProviderAccount(provider: .deepseek, label: "DeepSeek Work")
+
+  #expect(
+    KeychainVault.keychainAccountName(
+      provider: openRouter.provider,
+      accountID: openRouter.id,
+      isDefault: true)
+      == "openrouter")
+  #expect(
+    KeychainVault.keychainAccountName(
+      provider: deepSeek.provider,
+      accountID: deepSeek.id,
+      isDefault: false)
+      == "deepseek.\(deepSeek.id.uuidString)")
+}
+
 @Test func environmentFallbackReadsOnlySpecAllowlist() async throws {
   let environment: [String: String] = [
     "ZHIPU_API_KEY": "glm-env-key",

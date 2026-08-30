@@ -12,7 +12,10 @@ let package = Package(
   ],
   targets: [
     .target(name: "TokenLinkCore"),
-    .target(name: "TokenLinkProviders", dependencies: ["TokenLinkCore"]),
+    .target(
+      name: "TokenLinkProviders",
+      dependencies: ["TokenLinkCore"],
+      resources: [.process("Resources")]),
     .target(name: "TokenLinkDevice", dependencies: ["TokenLinkCore"]),
     .executableTarget(
       name: "TokenLinkApp",

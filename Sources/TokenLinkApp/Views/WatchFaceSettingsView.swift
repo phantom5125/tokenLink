@@ -253,9 +253,7 @@ struct WatchFaceSettingsView: View {
   }
 
   private var enabledProviders: [ProviderID] {
-    ProviderID.allCases.filter { provider in
-      model.configuration.accounts.contains { $0.provider == provider && $0.enabled }
-    }
+    model.watchEligibleProviders
   }
 
   private var negotiatedProtocolText: String {

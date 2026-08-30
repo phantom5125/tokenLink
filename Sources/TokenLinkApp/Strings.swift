@@ -31,9 +31,11 @@ public enum L10n {
     // Routes and chrome
     case routeOverview = "route.overview"
     case routeProviders = "route.providers"
+    case routeCosts = "route.costs"
     case routeStopwatch = "route.stopwatch"
     case routeSettings = "route.settings"
     case actionRefresh = "action.refresh"
+    case actionRefreshCosts = "action.refreshCosts"
     case actionControlCenter = "action.controlCenter"
     case actionQuit = "action.quit"
     case actionSave = "action.save"
@@ -43,6 +45,48 @@ public enum L10n {
     // Menu bar
     case menubarNoProviders = "menubar.noProviders"
     case menubarEnableHint = "menubar.enableHint"
+    case menubarQuotaAccessibilityFormat = "menubar.quotaAccessibilityFormat"
+    case menubarEstimateAccessibilityFormat = "menubar.estimateAccessibilityFormat"
+    case menubarBalanceAccessibilityFormat = "menubar.balanceAccessibilityFormat"
+    case menubarCostFresh = "menubar.costFresh"
+    case menubarCostStale = "menubar.costStale"
+    case menubarCostRefreshing = "menubar.costRefreshing"
+    case menubarEstimateCompactFormat = "menubar.estimateCompactFormat"
+    case menubarBalanceCompactFormat = "menubar.balanceCompactFormat"
+    // Costs
+    case costsTitle = "costs.title"
+    case costsBetaBadge = "costs.betaBadge"
+    case costsSubtitle = "costs.subtitle"
+    case costsBetaOffTitle = "costs.betaOffTitle"
+    case costsBetaOffBody = "costs.betaOffBody"
+    case costsEnable = "costs.enable"
+    case costsAuthoritative = "costs.authoritative"
+    case costsAuthoritativeHint = "costs.authoritativeHint"
+    case costsNoAuthoritative = "costs.noAuthoritative"
+    case costsEstimated = "costs.estimated"
+    case costsEstimatedHint = "costs.estimatedHint"
+    case costsNoEstimates = "costs.noEstimates"
+    case costsSourceOfficialAPI = "costs.sourceOfficialAPI"
+    case costsSourceLocalTranscripts = "costs.sourceLocalTranscripts"
+    case costsEstimatedLabel = "costs.estimatedLabel"
+    case costsAvailable = "costs.available"
+    case costsPurchased = "costs.purchased"
+    case costsUsed = "costs.used"
+    case costsProviderUnavailable = "costs.providerUnavailable"
+    case costsUpdatedFormat = "costs.updatedFormat"
+    case costsPeriodFormat = "costs.periodFormat"
+    case costsCatalogFormat = "costs.catalogFormat"
+    case costsUnknownModelsFormat = "costs.unknownModelsFormat"
+    case costsDailySpend = "costs.dailySpend"
+    case costsWeeklySpend = "costs.weeklySpend"
+    case costsMonthlySpend = "costs.monthlySpend"
+    case costsLifetimeSpend = "costs.lifetimeSpend"
+    case costsNoData = "costs.noData"
+    case costsAssumedCache = "costs.assumedCache"
+    case costsPartialScanFormat = "costs.partialScanFormat"
+    case costsPartialSource = "costs.partialSource"
+    case costsUnpricedModel = "costs.unpricedModel"
+    case costsInvalidTokenCount = "costs.invalidTokenCount"
     // Quota rows and cards
     case quotaLeft = "quota.left"
     case quotaRemaining = "quota.remaining"
@@ -121,6 +165,13 @@ public enum L10n {
     case betaScanNow = "beta.scanNow"
     case betaScanning = "beta.scanning"
     case betaNoTranscripts = "beta.noTranscripts"
+    case betaCosts = "beta.costs"
+    case betaCostsHint = "beta.costsHint"
+    case betaCostsMetric = "beta.costsMetric"
+    case betaCostsMetricHint = "beta.costsMetricHint"
+    case costMetricNone = "costMetric.none"
+    case costMetricLocalFormat = "costMetric.localFormat"
+    case costMetricBalanceFormat = "costMetric.balanceFormat"
     case watchFaceTitle = "watch.faceTitle"
     case watchSyncProviders = "watch.syncProviders"
     case watchTheme = "watch.theme"
@@ -193,6 +244,11 @@ public enum L10n {
     case providersDeleteAccount = "providers.deleteAccount"
     case providersAccountAdded = "providers.accountAdded"
     case providersAccountRemoved = "providers.accountRemoved"
+    case providersCostTitle = "providers.costTitle"
+    case providersCostSubtitle = "providers.costSubtitle"
+    case providersCostBadge = "providers.costBadge"
+    case providersOpenRouterCostNote = "providers.openRouterCostNote"
+    case providersDeepSeekCostNote = "providers.deepSeekCostNote"
     case sourceKeychain = "source.keychain"
     case sourceCLI = "source.cli"
     case sourceEnvironment = "source.environment"
@@ -224,6 +280,7 @@ public enum L10n {
     .routeProviders: [
       .english: "Providers", .simplifiedChinese: "额度源", .japanese: "プロバイダー",
     ],
+    .routeCosts: [.english: "Costs β", .simplifiedChinese: "成本 β", .japanese: "コスト β"],
     .routeStopwatch: [
       .english: "StopWatch", .simplifiedChinese: "StopWatch", .japanese: "StopWatch",
     ],
@@ -232,6 +289,9 @@ public enum L10n {
       .japanese: "設定と診断",
     ],
     .actionRefresh: [.english: "Refresh", .simplifiedChinese: "刷新", .japanese: "更新"],
+    .actionRefreshCosts: [
+      .english: "Refresh costs", .simplifiedChinese: "刷新成本", .japanese: "コストを更新",
+    ],
     .actionControlCenter: [
       .english: "Control Center…", .simplifiedChinese: "控制中心…",
       .japanese: "コントロールセンター…",
@@ -254,6 +314,181 @@ public enum L10n {
       .english: "Enable a provider in Control Center.",
       .simplifiedChinese: "请在控制中心里启用一个额度源。",
       .japanese: "コントロールセンターでプロバイダーを有効にしてください。",
+    ],
+    .menubarQuotaAccessibilityFormat: [
+      .english: "%@ quota, %lld percent remaining",
+      .simplifiedChinese: "%@ 额度剩余百分之 %lld",
+      .japanese: "%@ クォータ、残り %lld パーセント",
+    ],
+    .menubarEstimateAccessibilityFormat: [
+      .english: "%@; %@ local Estimated/API-equivalent cost %@ for the last 7 days; %@",
+      .simplifiedChinese: "%@；%@ 本地 Estimated/API-equivalent 成本 %@，近 7 天；%@",
+      .japanese: "%@、%@ のローカル Estimated/API-equivalent コスト %@、直近7日間、%@",
+    ],
+    .menubarBalanceAccessibilityFormat: [
+      .english: "%@; %@ authoritative balance %@ remaining; %@",
+      .simplifiedChinese: "%@；%@ 权威余额剩余 %@；%@",
+      .japanese: "%@、%@ の正式残高は残り %@、%@",
+    ],
+    .menubarCostFresh: [
+      .english: "fresh", .simplifiedChinese: "数据新鲜", .japanese: "最新",
+    ],
+    .menubarCostStale: [
+      .english: "stale", .simplifiedChinese: "数据已过期", .japanese: "古いデータ",
+    ],
+    .menubarCostRefreshing: [
+      .english: "refreshing with last known data",
+      .simplifiedChinese: "正在刷新，显示上次数据",
+      .japanese: "更新中、前回のデータを表示",
+    ],
+    .menubarEstimateCompactFormat: [
+      .english: "≈%@/7d", .simplifiedChinese: "≈%@/7天", .japanese: "≈%@/7日",
+    ],
+    .menubarBalanceCompactFormat: [
+      .english: "%@ %@ left", .simplifiedChinese: "%@ 剩余 %@", .japanese: "%@ 残り %@",
+    ],
+    .costsTitle: [
+      .english: "Costs", .simplifiedChinese: "成本", .japanese: "コスト",
+    ],
+    .costsBetaBadge: [
+      .english: "Beta", .simplifiedChinese: "Beta", .japanese: "ベータ",
+    ],
+    .costsSubtitle: [
+      .english:
+        "Official balances and local estimates stay separate from coding-plan quota.",
+      .simplifiedChinese: "官方余额与本地估算独立于编程套餐额度。",
+      .japanese: "正式残高とローカル推定値は、コーディングプランのクォータとは別に扱われます。",
+    ],
+    .costsBetaOffTitle: [
+      .english: "Costs beta is off", .simplifiedChinese: "成本 Beta 尚未启用",
+      .japanese: "コストのベータ機能はオフです",
+    ],
+    .costsBetaOffBody: [
+      .english:
+        "Enable it to fetch opt-in official balances and estimate the API-equivalent cost of local CLI usage. Quota behavior will not change.",
+      .simplifiedChinese:
+        "启用后可获取主动配置的官方余额，并估算本地 CLI 用量的 API 等价成本；额度行为不会改变。",
+      .japanese:
+        "有効にすると、明示的に設定した正式残高を取得し、ローカル CLI 使用量の API 相当コストを推定します。クォータの動作は変わりません。",
+    ],
+    .costsEnable: [
+      .english: "Enable Costs beta", .simplifiedChinese: "启用成本 Beta",
+      .japanese: "コストのベータ機能を有効にする",
+    ],
+    .costsAuthoritative: [
+      .english: "Authoritative balances", .simplifiedChinese: "权威余额",
+      .japanese: "正式残高",
+    ],
+    .costsAuthoritativeHint: [
+      .english: "Reported by the provider's official account API.",
+      .simplifiedChinese: "由服务商官方账户 API 返回。",
+      .japanese: "プロバイダーの正式なアカウント API が返す値です。",
+    ],
+    .costsNoAuthoritative: [
+      .english: "No authoritative cost provider is enabled.",
+      .simplifiedChinese: "尚未启用权威成本源。",
+      .japanese: "有効な正式コストプロバイダーがありません。",
+    ],
+    .costsEstimated: [
+      .english: "Local estimates", .simplifiedChinese: "本地估算",
+      .japanese: "ローカル推定",
+    ],
+    .costsEstimatedHint: [
+      .english: "Seven-day, read-only pricing of supported local CLI transcripts.",
+      .simplifiedChinese: "只读扫描支持的本地 CLI 会话，并按近 7 天计价。",
+      .japanese: "対応するローカル CLI 履歴を読み取り専用で走査し、直近7日間を価格換算します。",
+    ],
+    .costsNoEstimates: [
+      .english: "No supported local estimate source is available.",
+      .simplifiedChinese: "没有可用的本地估算源。",
+      .japanese: "利用可能なローカル推定ソースがありません。",
+    ],
+    .costsSourceOfficialAPI: [
+      .english: "Official provider API", .simplifiedChinese: "服务商官方 API",
+      .japanese: "プロバイダー正式 API",
+    ],
+    .costsSourceLocalTranscripts: [
+      .english: "Source: local CLI transcripts (read-only)",
+      .simplifiedChinese: "来源：本地 CLI 会话（只读）",
+      .japanese: "ソース：ローカル CLI 履歴（読み取り専用）",
+    ],
+    .costsEstimatedLabel: [
+      .english: "Estimated/API-equivalent", .simplifiedChinese: "Estimated/API-equivalent",
+      .japanese: "Estimated/API-equivalent",
+    ],
+    .costsAvailable: [
+      .english: "Available", .simplifiedChinese: "可用余额", .japanese: "利用可能",
+    ],
+    .costsPurchased: [
+      .english: "Purchased / credited", .simplifiedChinese: "已购买 / 已入账",
+      .japanese: "購入・付与済み",
+    ],
+    .costsUsed: [
+      .english: "Authoritative usage", .simplifiedChinese: "权威累计用量",
+      .japanese: "正式な累計使用額",
+    ],
+    .costsProviderUnavailable: [
+      .english: "The provider reports that this balance is currently unavailable.",
+      .simplifiedChinese: "服务商报告当前余额不可用。",
+      .japanese: "プロバイダーは、この残高が現在利用できないと報告しています。",
+    ],
+    .costsUpdatedFormat: [
+      .english: "Updated %@", .simplifiedChinese: "更新于 %@", .japanese: "%@ に更新",
+    ],
+    .costsPeriodFormat: [
+      .english: "Period: %@ – %@", .simplifiedChinese: "周期：%@ 至 %@",
+      .japanese: "期間：%@〜%@",
+    ],
+    .costsCatalogFormat: [
+      .english: "Pricing catalog %@ · effective %@",
+      .simplifiedChinese: "价格目录 %@ · 生效于 %@",
+      .japanese: "価格カタログ %@・発効 %@",
+    ],
+    .costsUnknownModelsFormat: [
+      .english: "%lld unpriced model(s) excluded",
+      .simplifiedChinese: "已排除 %lld 个未定价模型",
+      .japanese: "価格未設定のモデル %lld 件を除外",
+    ],
+    .costsDailySpend: [
+      .english: "Daily spend", .simplifiedChinese: "当日支出", .japanese: "日次支出",
+    ],
+    .costsWeeklySpend: [
+      .english: "Weekly spend", .simplifiedChinese: "每周支出", .japanese: "週次支出",
+    ],
+    .costsMonthlySpend: [
+      .english: "Monthly spend", .simplifiedChinese: "每月支出", .japanese: "月次支出",
+    ],
+    .costsLifetimeSpend: [
+      .english: "Lifetime spend", .simplifiedChinese: "累计支出", .japanese: "累計支出",
+    ],
+    .costsNoData: [
+      .english: "No cost snapshot yet.", .simplifiedChinese: "还没有成本快照。",
+      .japanese: "コストスナップショットはまだありません。",
+    ],
+    .costsAssumedCache: [
+      .english: "Cache writes without a duration use the five-minute rate.",
+      .simplifiedChinese: "未标注时长的缓存写入按 5 分钟价格估算。",
+      .japanese: "期間が不明なキャッシュ書き込みには5分料金を使用しています。",
+    ],
+    .costsPartialScanFormat: [
+      .english: "Partial local scan: %lld file(s), %lld record(s) skipped.",
+      .simplifiedChinese: "本地扫描不完整：跳过 %lld 个文件、%lld 条记录。",
+      .japanese: "ローカル走査は一部のみ：%lld ファイル、%lld レコードをスキップ。",
+    ],
+    .costsPartialSource: [
+      .english: "The provider returned only part of the authoritative cost data.",
+      .simplifiedChinese: "服务商仅返回了部分权威成本数据。",
+      .japanese: "プロバイダーから正式コストデータの一部だけが返されました。",
+    ],
+    .costsUnpricedModel: [
+      .english: "An unpriced model was excluded from the estimate.",
+      .simplifiedChinese: "估算中排除了未定价模型。",
+      .japanese: "価格未設定のモデルを推定から除外しました。",
+    ],
+    .costsInvalidTokenCount: [
+      .english: "A record with an invalid token count was excluded from the estimate.",
+      .simplifiedChinese: "估算中排除了一条令 Token 计数溢出的记录。",
+      .japanese: "トークン数が不正なレコードを推定から除外しました。",
     ],
     .quotaLeft: [.english: "left", .simplifiedChinese: "剩余", .japanese: "残り"],
     .quotaRemaining: [
@@ -535,6 +770,38 @@ public enum L10n {
       .english: "No local transcripts found for the supported CLIs.",
       .simplifiedChinese: "没有找到支持的 CLI 本地会话记录。",
       .japanese: "対応する CLI のローカルセッション記録が見つかりません。",
+    ],
+    .betaCosts: [
+      .english: "Costs", .simplifiedChinese: "成本", .japanese: "コスト",
+    ],
+    .betaCostsHint: [
+      .english:
+        "Fetch official balances only for explicitly configured cost providers and estimate local API-equivalent cost separately. Quota remains the primary feature.",
+      .simplifiedChinese:
+        "仅为明确配置的成本源获取官方余额，并独立估算本地 API 等价成本；额度始终是首要能力。",
+      .japanese:
+        "明示的に設定したコストプロバイダーだけ正式残高を取得し、ローカルの API 相当コストは別に推定します。クォータが常に主機能です。",
+    ],
+    .betaCostsMetric: [
+      .english: "Menu bar cost metric", .simplifiedChinese: "菜单栏成本指标",
+      .japanese: "メニューバーのコスト指標",
+    ],
+    .betaCostsMetricHint: [
+      .english:
+        "One fixed metric appears after the primary quota; missing data falls back to quota only.",
+      .simplifiedChinese: "固定选择一个指标显示在主额度之后；数据缺失时仅显示额度。",
+      .japanese: "固定した1つの指標を主クォータの後に表示し、データがない場合はクォータだけに戻ります。",
+    ],
+    .costMetricNone: [
+      .english: "Quota only", .simplifiedChinese: "仅显示额度", .japanese: "クォータのみ",
+    ],
+    .costMetricLocalFormat: [
+      .english: "%@ · Estimated 7d", .simplifiedChinese: "%@ · 近 7 天估算",
+      .japanese: "%@・7日間推定",
+    ],
+    .costMetricBalanceFormat: [
+      .english: "%@ · %@ balance", .simplifiedChinese: "%@ · %@ 余额",
+      .japanese: "%@・%@ 残高",
     ],
     .watchFaceTitle: [
       .english: "Watch face (protocol v2)", .simplifiedChinese: "表盘（协议 v2）",
@@ -821,6 +1088,33 @@ public enum L10n {
     .providersAccountRemoved: [
       .english: "%@ account removed.", .simplifiedChinese: "已删除 %@ 账户。",
       .japanese: "%@ アカウントを削除しました。",
+    ],
+    .providersCostTitle: [
+      .english: "Authoritative cost providers (Beta)",
+      .simplifiedChinese: "权威成本源（Beta）",
+      .japanese: "正式コストプロバイダー（ベータ）",
+    ],
+    .providersCostSubtitle: [
+      .english: "Opt-in provider balances. Cost refresh remains separate from quota refresh.",
+      .simplifiedChinese: "主动配置的服务商余额；成本刷新与额度刷新相互独立。",
+      .japanese: "オプトインのプロバイダー残高です。コスト更新はクォータ更新とは別に行われます。",
+    ],
+    .providersCostBadge: [
+      .english: "Authoritative balance · Beta", .simplifiedChinese: "权威余额 · Beta",
+      .japanese: "正式残高・ベータ",
+    ],
+    .providersOpenRouterCostNote: [
+      .english:
+        "Use an explicit Management Key for account credits; a regular API key may provide only current-key spend.",
+      .simplifiedChinese:
+        "请显式配置 Management Key 以读取账户余额；普通 API key 可能只能返回当前 key 的支出。",
+      .japanese:
+        "アカウント残高には Management Key を明示的に設定してください。通常の API キーでは現在のキーの支出しか取得できない場合があります。",
+    ],
+    .providersDeepSeekCostNote: [
+      .english: "Use an explicit DeepSeek API key for authoritative multi-currency balances.",
+      .simplifiedChinese: "请显式配置 DeepSeek API key，以读取权威的多币种余额。",
+      .japanese: "正式な複数通貨残高には DeepSeek API キーを明示的に設定してください。",
     ],
     .sourceKeychain: [
       .english: "Keychain", .simplifiedChinese: "钥匙串", .japanese: "キーチェーン",

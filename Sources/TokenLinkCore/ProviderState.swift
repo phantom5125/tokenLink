@@ -8,6 +8,7 @@ public enum ProviderErrorKind: String, Codable, Sendable {
   case process
   case timeout
   case configuration
+  case localRead
 }
 
 public struct ProviderFailure: Error, Equatable, Sendable {
