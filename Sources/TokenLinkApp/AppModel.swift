@@ -109,6 +109,9 @@ public final class AppModel {
   public private(set) var isScanningLocalUsage = false
   public private(set) var isAuthorizingClaudeCredential = false
   public private(set) var isMigratingLegacyCredentials = false
+  public private(set) var bluetoothDiagnostics = BluetoothDiagnosticSnapshot()
+  public private(set) var lastWatchSyncFailure: String?
+  public private(set) var lastWatchSyncFailureAt: Date?
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -378,6 +381,7 @@ public final class AppModel {
     started = true
     record("Starting")
     await ensureBridgeObservation()
+    await refreshBluetoothDiagnostics()
     await requestRefresh(reason: "Started")
     await refreshCredentialStates()
     scheduler.start { [weak self] in
@@ -623,12 +627,25 @@ public final class AppModel {
     do {
       discoveredDeviceIdentifiers = try await bluetoothTransport.discoveredIdentifiers()
       devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
+      lastWatchSyncFailure = nil
+      lastWatchSyncFailureAt = nil
       record("Bluetooth discovery completed")
     } catch {
       devicePhase = .disconnected
-      record("Bluetooth discovery failed")
+      lastWatchSyncFailure = Self.watchSyncFailureName(error)
+      lastWatchSyncFailureAt = now()
+      record("Bluetooth discovery failed: \(Self.watchSyncFailureName(error))")
     }
     isDiscovering = false
+    await refreshBluetoothDiagnostics()
+  }
+
+  public func refreshBluetoothDiagnostics() async {
+    guard let bluetoothTransport else {
+      bluetoothDiagnostics = BluetoothDiagnosticSnapshot()
+      return
+    }
+    bluetoothDiagnostics = await bluetoothTransport.diagnosticSnapshot()
   }
 
   public func bindDevice(_ identifier: UUID) async throws {
@@ -650,6 +667,7 @@ public final class AppModel {
     devicePhase = .disconnected
     try saveConfiguration()
     await ensureBridgeObservation()
+    await refreshBluetoothDiagnostics()
     discoveredDeviceIdentifiers = []
     record("Bound StopWatch")
   }
@@ -670,6 +688,7 @@ public final class AppModel {
     configuration.requiresBluetoothRebinding = false
     devicePhase = .unbound
     try saveConfiguration()
+    await refreshBluetoothDiagnostics()
     record("Unbound StopWatch")
   }
 
@@ -932,6 +951,23 @@ public final class AppModel {
         ] as [String: Any]
       },
       "device_phase": deviceStatusText,
+      "bluetooth": [
+        "authorization": bluetoothDiagnostics.authorization.rawValue,
+        "central_state": bluetoothDiagnostics.centralState.rawValue,
+        "connection_step": bluetoothDiagnostics.connectionStep.rawValue,
+        "connected_to_bound_device":
+          bluetoothDiagnostics.connectedIdentifier != nil
+          && bluetoothDiagnostics.connectedIdentifier == configuration.boundDeviceIdentifier,
+        "quota_characteristic": bluetoothDiagnostics.quotaCharacteristicAvailable,
+        "capabilities_characteristic":
+          bluetoothDiagnostics.capabilitiesCharacteristicAvailable,
+        "command_characteristic": bluetoothDiagnostics.commandCharacteristicAvailable,
+        "command_notifications": bluetoothDiagnostics.commandNotificationsActive,
+        "last_failure": lastWatchSyncFailure ?? "none",
+        "last_failure_at": lastWatchSyncFailureAt.map {
+          ISO8601DateFormatter().string(from: $0)
+        } ?? "none",
+      ],
       "events": events.map { ["date": $0.date.timeIntervalSince1970, "message": $0.message] },
     ]
   }
@@ -1078,6 +1114,9 @@ public final class AppModel {
         try Task.checkCancellation()
         guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
+        lastWatchSyncFailure = nil
+        lastWatchSyncFailureAt = nil
+        await refreshBluetoothDiagnostics()
         let names = decisions.map { Self.displayName(for: $0.provider) }
           .joined(separator: ", ")
         record(
@@ -1090,7 +1129,11 @@ public final class AppModel {
       } catch {
         guard isCurrentBinding(generation, bridge: bridge) else { return }
         devicePhase = await bridge.phase
-        record("StopWatch sync attempt failed: \(Self.watchSyncFailureName(error))")
+        let failure = Self.watchSyncFailureName(error)
+        lastWatchSyncFailure = failure
+        lastWatchSyncFailureAt = now()
+        await refreshBluetoothDiagnostics()
+        record("StopWatch sync attempt failed: \(failure)")
         if attempt + 1 < attempts {
           record("Retrying StopWatch sync")
         }
@@ -1138,6 +1181,7 @@ public final class AppModel {
           wasEstablished = false
         }
         self.devicePhase = phase
+        await self.refreshBluetoothDiagnostics()
         if phase == .disconnected, wasEstablished {
           self.record("StopWatch disconnected")
         }

@@ -114,6 +114,52 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     commandStream
   }
 
+  public func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot {
+    await withCheckedContinuation { continuation in
+      queue.async { [self] in
+        let authorization: BluetoothAuthorizationState =
+          switch CBManager.authorization {
+          case .notDetermined: .notDetermined
+          case .restricted: .restricted
+          case .denied: .denied
+          case .allowedAlways: .allowed
+          @unknown default: .unavailable
+          }
+        let centralState: BluetoothCentralState =
+          switch central?.state {
+          case nil: .notInitialized
+          case .unknown: .unknown
+          case .resetting: .resetting
+          case .unsupported: .unsupported
+          case .unauthorized: .unauthorized
+          case .poweredOff: .poweredOff
+          case .poweredOn: .poweredOn
+          @unknown default: .unknown
+          }
+        let connectionStep: BluetoothConnectionStep =
+          switch connectionStage {
+          case nil: scanContinuation == nil ? .idle : .scanning
+          case .waitingForPower: .waitingForPower
+          case .connecting: .connecting
+          case .discoveringServices: .discoveringServices
+          case .discoveringCharacteristics: .discoveringCharacteristics
+          case .subscribingCommands: .subscribingCommands
+          case .ready: .ready
+          }
+        continuation.resume(
+          returning: BluetoothDiagnosticSnapshot(
+            authorization: authorization,
+            centralState: centralState,
+            connectionStep: connectionStep,
+            connectedIdentifier: connectedPeripheral?.identifier,
+            quotaCharacteristicAvailable: quotaCharacteristic != nil,
+            capabilitiesCharacteristicAvailable: capabilitiesCharacteristic != nil,
+            commandCharacteristicAvailable: commandCharacteristic != nil,
+            commandNotificationsActive: commandCharacteristic?.isNotifying == true))
+      }
+    }
+  }
+
   public func discoveredIdentifiers() async throws -> [UUID] {
     try await withCheckedThrowingContinuation {
       (continuation: CheckedContinuation<[UUID], Error>) in

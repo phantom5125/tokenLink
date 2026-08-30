@@ -16,6 +16,68 @@ public enum BLETransportEvent: Equatable, Sendable {
   case disconnected(UUID?)
 }
 
+public enum BluetoothAuthorizationState: String, Equatable, Sendable {
+  case notDetermined
+  case restricted
+  case denied
+  case allowed
+  case unavailable
+}
+
+public enum BluetoothCentralState: String, Equatable, Sendable {
+  case notInitialized
+  case unknown
+  case resetting
+  case unsupported
+  case unauthorized
+  case poweredOff
+  case poweredOn
+}
+
+public enum BluetoothConnectionStep: String, Equatable, Sendable {
+  case idle
+  case scanning
+  case waitingForPower
+  case connecting
+  case discoveringServices
+  case discoveringCharacteristics
+  case subscribingCommands
+  case ready
+}
+
+/// A credential-free, payload-free view of the CoreBluetooth state machine.
+/// It is safe to include in exported diagnostics.
+public struct BluetoothDiagnosticSnapshot: Equatable, Sendable {
+  public let authorization: BluetoothAuthorizationState
+  public let centralState: BluetoothCentralState
+  public let connectionStep: BluetoothConnectionStep
+  public let connectedIdentifier: UUID?
+  public let quotaCharacteristicAvailable: Bool
+  public let capabilitiesCharacteristicAvailable: Bool
+  public let commandCharacteristicAvailable: Bool
+  public let commandNotificationsActive: Bool
+
+  public init(
+    authorization: BluetoothAuthorizationState = .unavailable,
+    centralState: BluetoothCentralState = .notInitialized,
+    connectionStep: BluetoothConnectionStep = .idle,
+    connectedIdentifier: UUID? = nil,
+    quotaCharacteristicAvailable: Bool = false,
+    capabilitiesCharacteristicAvailable: Bool = false,
+    commandCharacteristicAvailable: Bool = false,
+    commandNotificationsActive: Bool = false
+  ) {
+    self.authorization = authorization
+    self.centralState = centralState
+    self.connectionStep = connectionStep
+    self.connectedIdentifier = connectedIdentifier
+    self.quotaCharacteristicAvailable = quotaCharacteristicAvailable
+    self.capabilitiesCharacteristicAvailable = capabilitiesCharacteristicAvailable
+    self.commandCharacteristicAvailable = commandCharacteristicAvailable
+    self.commandNotificationsActive = commandNotificationsActive
+  }
+}
+
 public protocol BLETransport: Sendable {
   func discoveredIdentifiers() async throws -> [UUID]
   func connect(identifier: UUID) async throws
@@ -26,6 +88,7 @@ public protocol BLETransport: Sendable {
   func commandEvents() -> AsyncStream<Data>
   func disconnect() async
   func connectionEvents() -> AsyncStream<BLETransportEvent>
+  func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot
 }
 
 extension BLETransport {
@@ -39,6 +102,10 @@ extension BLETransport {
   /// Default for v1-only transports: no command channel.
   public func commandEvents() -> AsyncStream<Data> {
     AsyncStream { continuation in continuation.finish() }
+  }
+
+  public func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot {
+    BluetoothDiagnosticSnapshot()
   }
 }
 

@@ -38,6 +38,7 @@ private actor TestBLETransport: BLETransport {
   let disconnectDelay: Duration?
   let noncancellableWriteDelays: [Duration]
   let capabilities: WatchCapabilities?
+  let diagnostics: BluetoothDiagnosticSnapshot
   private(set) var connectCount = 0
   private(set) var writeAttempts = 0
   private(set) var writes: [Data] = []
@@ -48,7 +49,8 @@ private actor TestBLETransport: BLETransport {
     writeDelay: Duration? = nil,
     disconnectDelay: Duration? = nil,
     noncancellableWriteDelays: [Duration] = [],
-    capabilities: WatchCapabilities? = nil
+    capabilities: WatchCapabilities? = nil,
+    diagnostics: BluetoothDiagnosticSnapshot = BluetoothDiagnosticSnapshot()
   ) {
     self.failuresBeforeSuccess = failuresBeforeSuccess
     self.connectDelay = connectDelay
@@ -56,6 +58,7 @@ private actor TestBLETransport: BLETransport {
     self.disconnectDelay = disconnectDelay
     self.noncancellableWriteDelays = noncancellableWriteDelays
     self.capabilities = capabilities
+    self.diagnostics = diagnostics
     (eventStream, eventContinuation) = AsyncStream.makeStream(
       bufferingPolicy: .bufferingNewest(8))
   }
@@ -85,6 +88,10 @@ private actor TestBLETransport: BLETransport {
 
   func readCapabilities() async throws -> WatchCapabilities? {
     capabilities
+  }
+
+  func diagnosticSnapshot() async -> BluetoothDiagnosticSnapshot {
+    diagnostics
   }
 
   func disconnect() async {
@@ -160,6 +167,56 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
 
   #expect(model.configuration.boundDeviceIdentifier == identifier)
   #expect(!model.configuration.requiresBluetoothRebinding)
+  model.stop()
+}
+
+@MainActor @Test func bluetoothDiagnosticsExposePermissionAndCommandReadiness() async {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000045")!
+  let transport = TestBLETransport(
+    diagnostics: BluetoothDiagnosticSnapshot(
+      authorization: .allowed,
+      centralState: .poweredOn,
+      connectionStep: .ready,
+      connectedIdentifier: identifier,
+      quotaCharacteristicAvailable: true,
+      capabilitiesCharacteristicAvailable: true,
+      commandCharacteristicAvailable: true,
+      commandNotificationsActive: true))
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = identifier
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  await model.refreshBluetoothDiagnostics()
+
+  #expect(model.watchDiagnosticItems.first { $0.id == "permission" }?.level == .ready)
+  #expect(model.watchDiagnosticItems.first { $0.id == "connection" }?.level == .ready)
+  #expect(model.watchDiagnosticItems.first { $0.id == "commands" }?.level == .ready)
+  model.stop()
+}
+
+@MainActor @Test func bluetoothDiagnosticsExplainDeniedPermissionWithoutStartingAnOperation()
+  async
+{
+  let transport = TestBLETransport(
+    diagnostics: BluetoothDiagnosticSnapshot(
+      authorization: .denied,
+      centralState: .unauthorized))
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  await model.refreshBluetoothDiagnostics()
+
+  let permission = model.watchDiagnosticItems.first { $0.id == "permission" }
+  #expect(permission?.level == .blocked)
+  #expect(permission?.detail.contains("System Settings") == true)
+  #expect(await transport.connectCount == 0)
   model.stop()
 }
 
