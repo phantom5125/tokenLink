@@ -38,7 +38,7 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 - **2026-08-30 — The 0.2.2 stability candidate is integrated.** Bluetooth
   diagnostics, explicit Codex task-link outcomes, complete thread pagination,
   stable priority slots, and accessible C152 session indicators now share one
-  release branch with 185 Swift tests and eleven firmware test executables.
+  release branch with 188 Swift tests and eleven firmware test executables.
 - **2026-08-30 — C152 firmware moved into TokenLink.** The exact default wireless
   source, simulator tests, partition layout, MIT/OFL notices, and a pinned
   PlatformIO build now live under `firmware/stopwatch-c152`. A fresh checkout can
