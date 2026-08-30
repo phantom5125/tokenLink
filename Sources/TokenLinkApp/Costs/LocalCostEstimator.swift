@@ -144,6 +144,11 @@ private struct CostAggregate {
   var cacheWriteTokens = 0
   var outputTokens = 0
   var amount: Decimal = 0
+  var componentTokens: [CostComponentCategory: Int] = [:]
+  var componentAmounts: [CostComponentCategory: Decimal] = [:]
+  var price: ModelPrice?
+  var requestCount = 0
+  var longContextRequestCount = 0
   var warnings: [CostWarning] = []
 
   mutating func add(_ item: ModelCostLineItem) -> Bool {
@@ -153,11 +158,23 @@ private struct CostAggregate {
     let nextCacheWrite = cacheWriteTokens.addingReportingOverflow(
       item.usage.cacheWriteTokens)
     let nextOutput = outputTokens.addingReportingOverflow(item.usage.outputTokens)
+    let nextRequestCount = requestCount.addingReportingOverflow(item.requestCount)
+    let nextLongContextRequestCount = longContextRequestCount.addingReportingOverflow(
+      item.longContextRequestCount)
+    var nextComponentTokens = componentTokens
+    for component in item.components {
+      let next = nextComponentTokens[component.category, default: 0]
+        .addingReportingOverflow(component.tokens)
+      guard !next.overflow else { return false }
+      nextComponentTokens[component.category] = next.partialValue
+    }
     guard
       !nextUncached.overflow,
       !nextCacheRead.overflow,
       !nextCacheWrite.overflow,
-      !nextOutput.overflow
+      !nextOutput.overflow,
+      !nextRequestCount.overflow,
+      !nextLongContextRequestCount.overflow
     else { return false }
 
     latestTimestamp = max(latestTimestamp, item.usage.timestamp)
@@ -165,7 +182,14 @@ private struct CostAggregate {
     cacheReadTokens = nextCacheRead.partialValue
     cacheWriteTokens = nextCacheWrite.partialValue
     outputTokens = nextOutput.partialValue
+    componentTokens = nextComponentTokens
     amount += item.amount.value
+    for component in item.components {
+      componentAmounts[component.category, default: 0] += component.amount.value
+    }
+    price = price ?? item.price
+    requestCount = nextRequestCount.partialValue
+    longContextRequestCount = nextLongContextRequestCount.partialValue
     for warning in item.warnings where !warnings.contains(warning) {
       warnings.append(warning)
     }
@@ -173,7 +197,16 @@ private struct CostAggregate {
   }
 
   func lineItem(currency: String) -> ModelCostLineItem {
-    ModelCostLineItem(
+    let components: [ModelCostComponent] = CostComponentCategory.allCases.compactMap { category in
+      guard let tokens = componentTokens[category], tokens > 0 else { return nil }
+      return ModelCostComponent(
+        category: category,
+        tokens: tokens,
+        amount: CurrencyAmount(
+          value: componentAmounts[category, default: 0],
+          currency: currency))
+    }
+    return ModelCostLineItem(
       usage: NormalizedModelUsage(
         provider: provider,
         modelID: modelID,
@@ -183,6 +216,10 @@ private struct CostAggregate {
         cacheWriteTokens: cacheWriteTokens,
         outputTokens: outputTokens),
       amount: CurrencyAmount(value: amount, currency: currency),
+      components: components,
+      price: price,
+      requestCount: requestCount,
+      longContextRequestCount: longContextRequestCount,
       warnings: warnings)
   }
 }

@@ -87,6 +87,23 @@ public enum L10n {
     case costsPartialSource = "costs.partialSource"
     case costsUnpricedModel = "costs.unpricedModel"
     case costsInvalidTokenCount = "costs.invalidTokenCount"
+    case costsCalculationDetails = "costs.calculationDetails"
+    case costsCalculationIntro = "costs.calculationIntro"
+    case costsNoPricedModels = "costs.noPricedModels"
+    case costsPricedRecordsFormat = "costs.pricedRecordsFormat"
+    case costsEffectiveRateFormat = "costs.effectiveRateFormat"
+    case costsCatalogRates = "costs.catalogRates"
+    case costsRatePerMillionFormat = "costs.ratePerMillionFormat"
+    case costsUncachedInput = "costs.uncachedInput"
+    case costsCacheRead = "costs.cacheRead"
+    case costsCacheWrite = "costs.cacheWrite"
+    case costsCacheWriteFiveMinute = "costs.cacheWriteFiveMinute"
+    case costsCacheWriteOneHour = "costs.cacheWriteOneHour"
+    case costsOutput = "costs.output"
+    case costsLongContextRuleFormat = "costs.longContextRuleFormat"
+    case costsPricingSource = "costs.pricingSource"
+    case costsExcludedModels = "costs.excludedModels"
+    case costsExcludedModelsHint = "costs.excludedModelsHint"
     // Quota rows and cards
     case quotaLeft = "quota.left"
     case quotaRemaining = "quota.remaining"
@@ -489,6 +506,79 @@ public enum L10n {
       .english: "A record with an invalid token count was excluded from the estimate.",
       .simplifiedChinese: "估算中排除了一条令 Token 计数溢出的记录。",
       .japanese: "トークン数が不正なレコードを推定から除外しました。",
+    ],
+    .costsCalculationDetails: [
+      .english: "How this estimate is calculated",
+      .simplifiedChinese: "此估算的计算方式",
+      .japanese: "この推定の計算方法",
+    ],
+    .costsCalculationIntro: [
+      .english:
+        "Each supported record is priced before aggregation. Category amounts below include any request-level long-context multiplier.",
+      .simplifiedChinese: "每条受支持的记录会先计价再汇总；下方各类别金额已包含适用的单次请求长上下文倍率。",
+      .japanese:
+        "対応する各レコードを集計前に価格換算します。以下のカテゴリ金額には、該当するリクエスト単位の長文コンテキスト倍率が含まれます。",
+    ],
+    .costsNoPricedModels: [
+      .english: "No priced model records are included in this total.",
+      .simplifiedChinese: "此合计中没有已定价的模型记录。",
+      .japanese: "この合計には価格設定済みモデルのレコードがありません。",
+    ],
+    .costsPricedRecordsFormat: [
+      .english: "%lld priced record(s) · %lld used long-context pricing",
+      .simplifiedChinese: "%lld 条已计价记录 · %lld 条使用长上下文价格",
+      .japanese: "%lld 件を価格換算・%lld 件に長文コンテキスト料金を適用",
+    ],
+    .costsEffectiveRateFormat: [
+      .english: "%@ tokens · effective %@ / 1M",
+      .simplifiedChinese: "%@ tokens · 有效价格 %@ / 1M",
+      .japanese: "%@ tokens・実効料金 %@ / 1M",
+    ],
+    .costsCatalogRates: [
+      .english: "Reviewed catalog rates", .simplifiedChinese: "已审核的目录价格",
+      .japanese: "レビュー済みカタログ料金",
+    ],
+    .costsRatePerMillionFormat: [
+      .english: "%@ / 1M tokens", .simplifiedChinese: "%@ / 1M tokens",
+      .japanese: "%@ / 1M tokens",
+    ],
+    .costsUncachedInput: [
+      .english: "Uncached input", .simplifiedChinese: "未缓存输入", .japanese: "未キャッシュ入力",
+    ],
+    .costsCacheRead: [
+      .english: "Cache read", .simplifiedChinese: "缓存读取", .japanese: "キャッシュ読み取り",
+    ],
+    .costsCacheWrite: [
+      .english: "Cache write", .simplifiedChinese: "缓存写入", .japanese: "キャッシュ書き込み",
+    ],
+    .costsCacheWriteFiveMinute: [
+      .english: "Cache write (5 min)", .simplifiedChinese: "缓存写入（5 分钟）",
+      .japanese: "キャッシュ書き込み（5分）",
+    ],
+    .costsCacheWriteOneHour: [
+      .english: "Cache write (1 hour)", .simplifiedChinese: "缓存写入（1 小时）",
+      .japanese: "キャッシュ書き込み（1時間）",
+    ],
+    .costsOutput: [
+      .english: "Output", .simplifiedChinese: "输出", .japanese: "出力",
+    ],
+    .costsLongContextRuleFormat: [
+      .english: "Above %@ input tokens: input × %@ · output × %@",
+      .simplifiedChinese: "输入超过 %@ tokens：输入 × %@ · 输出 × %@",
+      .japanese: "入力が %@ tokens を超える場合：入力 × %@・出力 × %@",
+    ],
+    .costsPricingSource: [
+      .english: "Open reviewed pricing source", .simplifiedChinese: "打开已审核价格来源",
+      .japanese: "レビュー済み料金ソースを開く",
+    ],
+    .costsExcludedModels: [
+      .english: "Excluded unpriced models", .simplifiedChinese: "已排除的未定价模型",
+      .japanese: "除外した価格未設定モデル",
+    ],
+    .costsExcludedModelsHint: [
+      .english: "These locally observed model IDs are not included in the displayed total.",
+      .simplifiedChinese: "这些在本地观察到的模型 ID 未计入显示的合计。",
+      .japanese: "ローカルで検出した以下のモデル ID は、表示中の合計に含まれません。",
     ],
     .quotaLeft: [.english: "left", .simplifiedChinese: "剩余", .japanese: "残り"],
     .quotaRemaining: [

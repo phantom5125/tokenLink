@@ -64,6 +64,9 @@ import TokenLinkProviders
   #expect(snapshot.lineItems[0].usage.modelID == "priced-claude")
   #expect(snapshot.lineItems[0].usage.deduplicationKey.isEmpty)
   #expect(snapshot.lineItems[0].amount == CurrencyAmount(value: 10, currency: "USD"))
+  #expect(snapshot.lineItems[0].components.map(\.amount.value) == [1, 2, 3, 4])
+  #expect(snapshot.lineItems[0].price?.sourceURL.absoluteString == "https://example.com/claude")
+  #expect(snapshot.lineItems[0].requestCount == 1)
   #expect(snapshot.lineItems[0].warnings == [.assumedFiveMinuteCacheWrite])
   #expect(snapshot.totals == [CurrencyAmount(value: 10, currency: "USD")])
   #expect(snapshot.unknownModelIDs == ["unknown-claude"])
@@ -134,6 +137,12 @@ import TokenLinkProviders
   #expect(
     snapshot.lineItems.first { $0.usage.modelID == "short-context" }?.amount.value
       == Decimal(string: "0.0012"))
+  let shortContext = try #require(
+    snapshot.lineItems.first { $0.usage.modelID == "short-context" })
+  #expect(shortContext.requestCount == 2)
+  #expect(shortContext.longContextRequestCount == 0)
+  #expect(shortContext.components.first?.tokens == 1_200)
+  #expect(shortContext.components.first?.effectiveRatePerMillion == 1)
   #expect(
     snapshot.totals == [
       CurrencyAmount(value: 2, currency: "EUR"),

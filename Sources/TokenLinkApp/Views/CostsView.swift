@@ -201,6 +201,7 @@ struct CostsView: View {
           String(
             format: model.text(.costsUpdatedFormat),
             snapshot.scannedAt.formatted(date: .abbreviated, time: .shortened)))
+        CostExplanationView(model: model, snapshot: snapshot)
         if !snapshot.unknownModelIDs.isEmpty {
           warningLine(
             String(

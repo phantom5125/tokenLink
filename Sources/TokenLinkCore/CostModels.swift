@@ -185,18 +185,61 @@ public struct ModelPrice: Equatable, Sendable {
   }
 }
 
+public enum CostComponentCategory: String, CaseIterable, Equatable, Hashable, Sendable {
+  case uncachedInput
+  case cacheRead
+  case cacheWrite
+  case output
+}
+
+public struct ModelCostComponent: Equatable, Sendable {
+  public let category: CostComponentCategory
+  public let tokens: Int
+  public let amount: CurrencyAmount
+
+  public init(
+    category: CostComponentCategory,
+    tokens: Int,
+    amount: CurrencyAmount
+  ) {
+    self.category = category
+    self.tokens = max(0, tokens)
+    self.amount = amount
+  }
+
+  /// Blended rate after any request-level long-context multiplier. This is
+  /// derived from the exact accumulated category cost and is therefore honest
+  /// even when a model mixes regular and long-context requests.
+  public var effectiveRatePerMillion: Decimal? {
+    guard tokens > 0 else { return nil }
+    return amount.value * Decimal(1_000_000) / Decimal(tokens)
+  }
+}
+
 public struct ModelCostLineItem: Equatable, Sendable {
   public let usage: NormalizedModelUsage
   public let amount: CurrencyAmount
+  public let components: [ModelCostComponent]
+  public let price: ModelPrice?
+  public let requestCount: Int
+  public let longContextRequestCount: Int
   public let warnings: [CostWarning]
 
   public init(
     usage: NormalizedModelUsage,
     amount: CurrencyAmount,
+    components: [ModelCostComponent] = [],
+    price: ModelPrice? = nil,
+    requestCount: Int = 0,
+    longContextRequestCount: Int = 0,
     warnings: [CostWarning] = []
   ) {
     self.usage = usage
     self.amount = amount
+    self.components = components
+    self.price = price
+    self.requestCount = max(0, requestCount)
+    self.longContextRequestCount = max(0, longContextRequestCount)
     self.warnings = warnings
   }
 }
@@ -271,10 +314,40 @@ public enum CostCalculator {
     let inputMultiplier = isLongContext ? price.longContext?.inputMultiplier ?? 1 : 1
     let outputMultiplier = isLongContext ? price.longContext?.outputMultiplier ?? 1 : 1
     let total = (input + cacheRead + cacheWrite) * inputMultiplier + output * outputMultiplier
+    let components: [ModelCostComponent] = [
+      component(
+        category: .uncachedInput,
+        tokens: usage.uncachedInputTokens,
+        baseAmount: input,
+        multiplier: inputMultiplier,
+        currency: price.currency),
+      component(
+        category: .cacheRead,
+        tokens: usage.cacheReadTokens,
+        baseAmount: cacheRead,
+        multiplier: inputMultiplier,
+        currency: price.currency),
+      component(
+        category: .cacheWrite,
+        tokens: usage.cacheWriteTokens,
+        baseAmount: cacheWrite,
+        multiplier: inputMultiplier,
+        currency: price.currency),
+      component(
+        category: .output,
+        tokens: usage.outputTokens,
+        baseAmount: output,
+        multiplier: outputMultiplier,
+        currency: price.currency),
+    ].compactMap { $0 }
 
     return ModelCostLineItem(
       usage: usage,
       amount: CurrencyAmount(value: total, currency: price.currency),
+      components: components,
+      price: price,
+      requestCount: 1,
+      longContextRequestCount: isLongContext ? 1 : 0,
       warnings: warnings)
   }
 
@@ -292,5 +365,19 @@ public enum CostCalculator {
     if tokens == 0 { return 0 }
     guard let rate else { return nil }
     return Decimal(tokens) * rate / tokensPerMillion
+  }
+
+  private static func component(
+    category: CostComponentCategory,
+    tokens: Int,
+    baseAmount: Decimal,
+    multiplier: Decimal,
+    currency: String
+  ) -> ModelCostComponent? {
+    guard tokens > 0 else { return nil }
+    return ModelCostComponent(
+      category: category,
+      tokens: tokens,
+      amount: CurrencyAmount(value: baseAmount * multiplier, currency: currency))
   }
 }

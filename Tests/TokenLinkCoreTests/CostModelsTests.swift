@@ -31,6 +31,12 @@ private let sourceURL = URL(string: "https://example.com/pricing")!
   let item = try #require(CostCalculator.lineItem(usage: usage, price: price))
 
   #expect(item.amount == CurrencyAmount(value: Decimal(string: "22.05")!, currency: "USD"))
+  #expect(item.components.map(\.category) == CostComponentCategory.allCases)
+  #expect(item.components.map(\.amount.value) == [3, Decimal(string: "0.3")!, 3.75, 15])
+  #expect(item.components.map(\.effectiveRatePerMillion) == [3, Decimal(string: "0.3"), 3.75, 15])
+  #expect(item.price == price)
+  #expect(item.requestCount == 1)
+  #expect(item.longContextRequestCount == 0)
   #expect(item.warnings == [.assumedFiveMinuteCacheWrite])
 }
 
@@ -65,9 +71,12 @@ private let sourceURL = URL(string: "https://example.com/pricing")!
   #expect(
     try #require(CostCalculator.lineItem(usage: atBoundary, price: price)).amount.value
       == Decimal(string: "31.36"))
+  let longItem = try #require(CostCalculator.lineItem(usage: overBoundary, price: price))
+  #expect(longItem.amount.value == Decimal(string: "47.72001"))
+  #expect(longItem.longContextRequestCount == 1)
   #expect(
-    try #require(CostCalculator.lineItem(usage: overBoundary, price: price)).amount.value
-      == Decimal(string: "47.72001"))
+    longItem.components.first { $0.category == .uncachedInput }?.effectiveRatePerMillion == 10)
+  #expect(longItem.components.first { $0.category == .output }?.effectiveRatePerMillion == 45)
 }
 
 @Test func normalizedUsageSaturatesTotalInputInsteadOfOverflowing() {
