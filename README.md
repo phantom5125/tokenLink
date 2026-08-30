@@ -1,3 +1,12 @@
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-mark-dark.png">
+    <img src="assets/branding/logo-mark-light.png" alt="TokenLink logo" width="152">
+  </picture>
+</p>
+<!-- markdownlint-enable MD033 -->
+
 # TokenLink
 
 **English** | [简体中文](README.zh-Hans.md)
@@ -120,9 +129,10 @@ Open **Control Center → Providers**, enable Codex, and refresh. TokenLink reus
 the local Codex CLI login; no Codex API key is stored. Other providers can be
 enabled independently.
 
-The package script includes SwiftPM resources, creates a release-mode app,
-applies an ad-hoc signature by default, and verifies the resulting bundle. A CI
-development artifact is also produced for each revision. The current Mac
+The package script includes SwiftPM resources and the production TokenLink app
+icon, creates a release-mode app, applies an ad-hoc signature by default, and
+verifies the resulting bundle. A CI development artifact is also produced for
+each revision. The current Mac
 download is Apple-Silicon-only and ad-hoc signed, so building from source remains
 the supported first-run path until a Developer ID-signed, notarized release
 exists.

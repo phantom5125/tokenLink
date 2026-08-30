@@ -1,3 +1,12 @@
+<!-- markdownlint-disable MD033 -->
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/branding/logo-mark-dark.png">
+    <img src="assets/branding/logo-mark-light.png" alt="TokenLink 标志" width="152">
+  </picture>
+</p>
+<!-- markdownlint-enable MD033 -->
+
 # TokenLink
 
 [English](README.md) | **简体中文**
@@ -99,8 +108,9 @@ open TokenLink.app
 打开 **控制中心 → 额度源**，启用 Codex 后刷新。TokenLink 会复用本机 Codex CLI
 登录态，不保存 Codex API key；其他 provider 可以单独启用。
 
-打包脚本会把 SwiftPM 图片资源装入 release-mode app，默认进行 ad-hoc 签名，并校验
-最终 bundle；每个 CI revision 也会生成开发用 artifact。当前 Mac 下载仅支持
+打包脚本会把 SwiftPM 图片资源和正式 TokenLink App 图标装入 release-mode app，默认
+进行 ad-hoc 签名，并校验最终 bundle；每个 CI revision 也会生成开发用 artifact。
+当前 Mac 下载仅支持
 Apple Silicon 且使用 ad-hoc 签名，因此在 Developer ID 签名与 Apple 公证版发布前，
 从源码构建仍是受支持的首次体验路径。
 

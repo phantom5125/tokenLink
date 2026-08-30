@@ -4,6 +4,7 @@ set -euo pipefail
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="$repo_dir/TokenLink.app"
 resource_bundle_name="TokenLink_TokenLinkApp.bundle"
+app_icon="$repo_dir/packaging/TokenLink.icns"
 
 cd "$repo_dir"
 swift build -c release --product tokenlink
@@ -21,6 +22,11 @@ if [[ ! -d "$resource_bundle" ]]; then
   exit 1
 fi
 
+if [[ ! -f "$app_icon" ]]; then
+  echo "App icon was not found at $app_icon" >&2
+  exit 1
+fi
+
 if [[ "$bundle" != "$repo_dir/TokenLink.app" ]]; then
   echo "Refusing to replace an unexpected bundle path." >&2
   exit 1
@@ -30,6 +36,7 @@ rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
 cp "$repo_dir/packaging/Info.plist" "$bundle/Contents/Info.plist"
 cp "$executable" "$bundle/Contents/MacOS/TokenLink"
+cp "$app_icon" "$bundle/Contents/Resources/TokenLink.icns"
 ditto "$resource_bundle" "$bundle/Contents/Resources/$resource_bundle_name"
 cp "$repo_dir/LICENSE" "$bundle/Contents/Resources/LICENSE"
 cp "$repo_dir/NOTICE" "$bundle/Contents/Resources/NOTICE"

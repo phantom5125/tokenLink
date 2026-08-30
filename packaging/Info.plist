@@ -10,6 +10,8 @@
     <string>TokenLink</string>
     <key>CFBundleIdentifier</key>
     <string>app.tokenlink</string>
+    <key>CFBundleIconFile</key>
+    <string>TokenLink.icns</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

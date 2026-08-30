@@ -1,4 +1,4 @@
-# TokenLink 品牌视觉体系 v0.1
+# TokenLink 品牌视觉体系 v0.2
 
 TokenLink 的视觉核心概念是 **“仪表盘 × 链接”**：圆弧进度表代表 AI 编程额度，开口的链环代表 Mac 与 M5Stack StopWatch 之间的 BLE 连接。
 
@@ -16,8 +16,9 @@ TokenLink 的视觉核心概念是 **“仪表盘 × 链接”**：圆弧进度�
 
 | 文件 | 用途 |
 | --- | --- |
-| `logo-mark-dark.png` (1024×1024) | 主 logo，用于深色背景、片尾卡、App 图标底稿 |
-| `logo-mark-light.png` (1024×1024) | 浅色背景 / 文档用扁平版 |
+| `logo-mark-dark.png` (1024×1024) | 主标志，用于深色背景，并作为 App 图标源文件 |
+| `logo-mark-light.png` (1024×1024) | 浅色背景、README 和文档用标志 |
+| `../../packaging/TokenLink.icns` | macOS Finder、通知与应用元数据使用的正式图标 |
 | `banner-hero.png` (1280×720) | README 顶部横幅 |
 | `social-preview.png` (1280×640) | GitHub 仓库 Social Preview（Settings → General 上传） |
 | `../video/tokenlink-promo.mp4` (25s, 720p) | 宣传短片成片 |
@@ -34,7 +35,8 @@ TokenLink 的视觉核心概念是 **“仪表盘 × 链接”**：圆弧进度�
 
 ## 使用约定
 
-- logo 周围保留 ≥ 25% 宽度的留白；不要旋转、拉伸或改色。
+- 不要旋转、拉伸或改色；缩放时始终保持正方形比例。
 - 深色物料优先使用 `logo-mark-dark.png`；浅底文档使用 `logo-mark-light.png`。
+- 菜单栏小图标继续使用单色 template 图形，不直接缩放彩色 App 图标。
 - 视频中不出现真实供应商商标，仅用四色光球抽象指代。
-- 本体系素材由 MiniMax（Hailuo / image-01）生成，提示词存档于 `.local/assets/brand_gen.py`（不入库）。
+- `packaging/TokenLink.icns` 可通过 `bash scripts/generate_app_icon.sh` 从深色主标志重新生成。
