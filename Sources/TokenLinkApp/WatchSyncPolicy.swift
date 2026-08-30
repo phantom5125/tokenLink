@@ -34,19 +34,22 @@ public enum WatchSyncPolicy {
       return [Decision(data: data, provider: .codex, nextCursor: 0)]
 
     case .v2:
+      let state = WatchFaceState(
+        snapshots: candidates.map(\.snapshot),
+        workItems: workItems,
+        activeSessionCount: activeSessionCount,
+        capturedAt: now)
       let settingsPayload = WatchSettingsPayload(
         theme: settings.faceID.rawValue,
         wake: settings.wakeMode.rawValue,
         hourFormat: settings.hourFormat == .system
           ? "system" : settings.hourFormat.rawValue)
-      return candidates.compactMap { candidate in
+      return zip(candidates, state.providers).compactMap { candidate, provider in
         guard
           let data = try? WatchProjectionV2.encode(
-            snapshot: candidate.snapshot,
-            workItems: workItems,
-            activeSessionCount: activeSessionCount,
-            settings: settingsPayload,
-            now: now)
+            state: state,
+            provider: provider,
+            settings: settingsPayload)
         else { return nil }
         return Decision(data: data, provider: candidate.provider, nextCursor: 0)
       }
@@ -80,6 +83,11 @@ public enum WatchSyncPolicy {
       guard !candidates.isEmpty else { return nil }
       let index = rotationCursor % candidates.count
       let chosen = candidates[index]
+      let state = WatchFaceState(
+        snapshots: candidates.map(\.snapshot),
+        workItems: workItems,
+        activeSessionCount: activeSessionCount,
+        capturedAt: now)
       let settingsPayload = WatchSettingsPayload(
         theme: settings.faceID.rawValue,
         wake: settings.wakeMode.rawValue,
@@ -87,11 +95,9 @@ public enum WatchSyncPolicy {
           ? "system" : settings.hourFormat.rawValue)
       guard
         let data = try? WatchProjectionV2.encode(
-          snapshot: chosen.snapshot,
-          workItems: workItems,
-          activeSessionCount: activeSessionCount,
-          settings: settingsPayload,
-          now: now)
+          state: state,
+          provider: state.providers[index],
+          settings: settingsPayload)
       else { return nil }
       return Decision(
         data: data, provider: chosen.provider, nextCursor: rotationCursor + 1)

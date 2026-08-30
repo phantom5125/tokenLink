@@ -92,8 +92,26 @@ public enum WatchProjectionV2 {
     settings: WatchSettingsPayload? = nil,
     now: Date
   ) throws -> Data {
+    let state = WatchFaceState(
+      snapshots: [snapshot],
+      workItems: workItems,
+      activeSessionCount: activeSessionCount,
+      capturedAt: now)
+    return try encode(
+      state: state,
+      provider: state.providers[0],
+      settings: settings)
+  }
+
+  /// Projects one provider from the complete renderer-facing state into the
+  /// existing v2 wire format. A batch sync calls this once per provider.
+  public static func encode(
+    state: WatchFaceState,
+    provider: WatchFaceProviderState,
+    settings: WatchSettingsPayload? = nil
+  ) throws -> Data {
     let windows =
-      snapshot.windows
+      provider.windows
       .enumerated()
       .sorted { lhs, rhs in
         (rank(of: lhs.element.id), lhs.offset) < (rank(of: rhs.element.id), rhs.offset)
@@ -103,10 +121,11 @@ public enum WatchProjectionV2 {
         WatchWindowPayload(
           id: window.id,
           remainingPercent: window.remainingPercent,
-          resetInSeconds: max(0, Int((window.resetsAt ?? now).timeIntervalSince(now))))
+          resetInSeconds: max(
+            0, Int((window.resetsAt ?? state.capturedAt).timeIntervalSince(state.capturedAt))))
       }
     let items =
-      workItems
+      state.workItems
       .filter { WorkItemPayload.slotRange.contains($0.slot) }
       .map { item in
         WorkItemPayload(
@@ -119,12 +138,12 @@ public enum WatchProjectionV2 {
       }
       .prefix(3)
     let payload = WatchPayloadV2(
-      providerID: snapshot.provider.rawValue,
+      providerID: provider.id,
       windows: Array(windows),
       workItems: Array(items),
-      activeSessionCount: activeSessionCount.map { min(Int(UInt16.max), max(0, $0)) },
+      activeSessionCount: state.activeSessionCount.map { min(Int(UInt16.max), $0) },
       settings: settings,
-      syncedAt: Int(now.timeIntervalSince1970))
+      syncedAt: Int(state.capturedAt.timeIntervalSince1970))
     let data = try JSONEncoder().encode(payload)
     guard data.count <= 512 else {
       throw WatchProjectionError.payloadTooLarge
