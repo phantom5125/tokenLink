@@ -142,11 +142,11 @@ watchface::State previewFaceState(const char* scenario) {
     state.page = watchface::Page::System;
   } else if (std::strcmp(scenario, "v2-pet") == 0) {
     state.page = watchface::Page::Home;
-    state.petTheme = true;
+    state.face = watch_face_runtime::FaceID::Pet;
     state.nowMs = 60500;  // mid bounce
   } else if (std::strcmp(scenario, "v2-pet-sleep") == 0) {
     state.page = watchface::Page::Home;
-    state.petTheme = true;
+    state.face = watch_face_runtime::FaceID::Pet;
     state.sync = watchface::SyncDot::Offline;
     state.bleConnected = false;
     state.hostLive = false;

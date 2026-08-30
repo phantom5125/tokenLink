@@ -16,6 +16,7 @@
 #include "DashboardUi.h"  // shared palette, fonts, helpers
 #include "PetTheme.h"
 #include "SessionPresentation.h"
+#include "WatchFaceRuntime.h"
 #include "WatchModel.h"
 
 namespace watchface {
@@ -61,7 +62,7 @@ struct State {
   // In-page selection: provider row on P1, work item row on P2. -1 = none.
   std::int8_t selectedIndex = 0;
   bool quotaExpanded = false;  // P1: show the selected provider's windows
-  bool petTheme = false;       // P0: render Pip instead of the data home
+  watch_face_runtime::FaceID face = watch_face_runtime::FaceID::Data;
 
   std::int8_t batteryPercent = -1;
   bool charging = false;
@@ -969,10 +970,13 @@ void render(Surface& surface, const State& state,
   surface.fillScreen(dashboard::kBackground);
   switch (state.page) {
     case Page::Home:
-      if (state.petTheme) {
-        renderPetHome(surface, state, store);
-      } else {
-        renderHome(surface, state, store);
+      switch (watch_face_runtime::descriptor(state.face).homeRenderer) {
+        case watch_face_runtime::HomeRenderer::DataCards:
+          renderHome(surface, state, store);
+          break;
+        case watch_face_runtime::HomeRenderer::Character:
+          renderPetHome(surface, state, store);
+          break;
       }
       break;
     case Page::Quota:

@@ -47,6 +47,34 @@ private struct LegacyFakeTransport: BLETransport {
 
 private let bound = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
 
+@Test func legacyCapabilitiesDecodeWithEmptyOptionalFeatures() throws {
+  let data = Data(
+    #"{"protocol_versions":[1,2],"firmware":"0.2.1-tokenlink"}"#.utf8)
+
+  let capabilities = try JSONDecoder().decode(WatchCapabilities.self, from: data)
+
+  #expect(capabilities.protocolVersions == [1, 2])
+  #expect(capabilities.features.isEmpty)
+  #expect(capabilities.faceRuntimeVersions.isEmpty)
+  #expect(!capabilities.supports(.faceRuntime))
+  #expect(!capabilities.supportsFaceRuntime(version: 1))
+}
+
+@Test func capabilitiesPreserveKnownAndFutureFaceFeatures() throws {
+  let data = Data(
+    #"{"protocol_versions":[1,2],"firmware":"0.3.0-tokenlink","features":["face_runtime","future_feature"],"face_runtime_versions":[1],"face_asset_formats":["rgb565"],"max_face_package_bytes":262144}"#
+      .utf8)
+
+  let capabilities = try JSONDecoder().decode(WatchCapabilities.self, from: data)
+
+  #expect(capabilities.supports(.faceRuntime))
+  #expect(capabilities.supportsFaceRuntime(version: 1))
+  #expect(!capabilities.supports(.facePackages))
+  #expect(capabilities.features.contains("future_feature"))
+  #expect(capabilities.faceAssetFormats == ["rgb565"])
+  #expect(capabilities.maximumFacePackageBytes == 262_144)
+}
+
 @Test func bridgeNegotiatesV2WhenFirmwareSupportsIt() async throws {
   let capabilities = WatchCapabilities(protocolVersions: [1, 2], firmware: "0.2.0")
   let transport = FakeBLETransport(capabilities: capabilities)

@@ -58,5 +58,19 @@ require(
     is not None,
     "C152 capabilities no longer advertise protocol v1 and v2",
 )
+capability_source = (
+    REPO_ROOT / "firmware" / "stopwatch-c152" / "src" / "CodexMicroBle.cpp"
+).read_text()
+require(
+    r'\"features\":[\"face_runtime\"]' in capability_source,
+    "C152 capabilities no longer advertise the built-in face runtime",
+)
+require(
+    r'\"face_runtime_versions\":[%u]' in capability_source,
+    "C152 capabilities no longer advertise a face runtime version",
+)
 
-print("Mac and C152 firmware BLE contracts agree (C01-C04, protocol v1/v2).")
+print(
+    "Mac and C152 firmware BLE contracts agree "
+    "(C01-C04, protocol v1/v2, face runtime v1)."
+)

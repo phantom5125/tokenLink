@@ -51,7 +51,7 @@ int main() {
     assert(payload.workItems[2].state == watch_v2::WorkState::Unknown);
     assert(payload.hasActiveCount && payload.activeCount == 5);
     assert(payload.hasSyncedAt && payload.syncedAt == 1787616000);
-    assert(!payload.settings.hasTheme);
+    assert(!payload.settings.hasFace);
   }
 
   // Unknown fields are ignored.
@@ -109,8 +109,8 @@ int main() {
     assert(parseJson(
         R"({"v":2,"provider_id":"codex","settings":{"theme":"pet","wake":"tap","hour_format":"h24"}})",
         payload));
-    assert(payload.settings.hasTheme &&
-           payload.settings.theme == watch_v2::Theme::Pet);
+    assert(payload.settings.hasFace &&
+           payload.settings.face == watch_face_runtime::FaceID::Pet);
     assert(payload.settings.hasWake &&
            payload.settings.wake == watch_v2::WakeMode::Tap);
     assert(payload.settings.hasHourFormat &&
@@ -121,7 +121,7 @@ int main() {
     assert(parseJson(
         R"({"v":2,"provider_id":"codex","settings":{"theme":"plasma","wake":"shake","hour_format":"binary"}})",
         payload));
-    assert(!payload.settings.hasTheme);
+    assert(!payload.settings.hasFace);
     assert(!payload.settings.hasWake);
     assert(!payload.settings.hasHourFormat);
   }
