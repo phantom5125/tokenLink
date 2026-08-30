@@ -289,26 +289,6 @@ void drawProviderChip(Surface& surface, int x, int y, const char* providerId,
 }
 
 template <typename Surface>
-void drawProviderMark(Surface& surface, int cx, int cy, const char* providerId,
-                      std::uint16_t color) {
-  if (std::strcmp(providerId, "codex") == 0) {
-    // Six interlocking loops form a compact OpenAI/Codex identity mark. It is
-    // drawn as geometry so the AMOLED stays crisp at native resolution.
-    for (int i = 0; i < 6; ++i) {
-      const float angle = static_cast<float>(i) * 1.0471976f;
-      const int px = cx + static_cast<int>(10.0f * std::cos(angle));
-      const int py = cy + static_cast<int>(10.0f * std::sin(angle));
-      surface.drawCircle(px, py, 8, color);
-      surface.drawCircle(px, py, 7, color);
-    }
-    return;
-  }
-
-  // Other providers keep their existing vector glyph, without the chip.
-  drawProviderChip(surface, cx - 20, cy - 20, providerId, color);
-}
-
-template <typename Surface>
 std::uint16_t providerColor(Surface& surface, const char* providerId) {
   if (std::strcmp(providerId, "codex") == 0) return surface.color565(99, 230, 190);
   if (std::strcmp(providerId, "claude") == 0) return surface.color565(224, 133, 88);
@@ -551,11 +531,9 @@ void renderHome(Surface& surface, const State& state,
     for (char* c = providerLabel; *c != '\0'; ++c) {
       if (*c >= 'a' && *c <= 'z') *c -= 'a' - 'A';
     }
-    dashboard::centered(surface, providerLabel, kCenterX, 91,
+    dashboard::centered(surface, providerLabel, kCenterX, 108,
                         stale ? dashboard::kMuted : dashboard::kText);
     surface.unloadFont();
-    drawProviderMark(surface, kCenterX, 125, provider->id,
-                     stale ? dashboard::kMuted : dashboard::kText);
 
     char value[5];
     std::snprintf(value, sizeof(value), "%.0f", remaining);
@@ -563,11 +541,11 @@ void renderHome(Surface& surface, const State& state,
     const int numericWidth = digitCount * 55;
     const int numberStart = kCenterX - (numericWidth + 31) / 2;
     surface.loadFont(dashboard::font_data::kNunitoDigits92Vlw);
-    dashboard::centered(surface, value, numberStart + numericWidth / 2, 214,
+    dashboard::centered(surface, value, numberStart + numericWidth / 2, 209,
                         stale ? dashboard::kMuted : dashboard::kText);
     surface.unloadFont();
     surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
-    dashboard::centered(surface, "%", numberStart + numericWidth + 18, 218,
+    dashboard::centered(surface, "%", numberStart + numericWidth + 18, 213,
                         stale ? dashboard::kMuted : dashboard::kText);
     surface.unloadFont();
 
@@ -628,7 +606,7 @@ void renderHome(Surface& surface, const State& state,
   surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
   dashboard::centered(surface, clock, kCenterX, 54, dashboard::kText);
   surface.unloadFont();
-  surface.fillCircle(181, 91, 4, syncColor(surface, state.sync));
+  surface.fillCircle(181, 108, 4, syncColor(surface, state.sync));
   drawHomeSessionPill(surface, store);
 }
 

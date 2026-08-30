@@ -14,7 +14,8 @@ struct TokenLinkMark: View {
   var body: some View {
     GeometryReader { proxy in
       let side = min(proxy.size.width, proxy.size.height)
-      let strokeWidth = max(1.5, side * 0.115)
+      let strokeWidth = max(2, side * 0.15)
+      let ringInset = side * 0.08
 
       ZStack {
         Circle()
@@ -27,9 +28,10 @@ struct TokenLinkMark: View {
               lineJoin: .round)
           )
           .rotationEffect(.degrees(90))
+          .padding(ringInset)
 
         Text("∞")
-          .font(.system(size: side * 0.57, weight: .bold, design: .rounded))
+          .font(.system(size: side * 0.49, weight: .bold, design: .rounded))
           .foregroundStyle(linkStyle)
           .offset(y: -side * 0.015)
       }

@@ -67,7 +67,7 @@ BLE pairing uses a "Just Works" flow without passkey authentication. Use the
 device only in a trusted environment and remove stale pairings from both the
 host and device when appropriate.
 
-This firmware does not connect directly to OpenAI. TokenLink 0.2.2 builds only
+This firmware does not connect directly to OpenAI. TokenLink builds only
 the default wireless image, which does not capture or stream the StopWatch
 microphone; the earlier optional USB-microphone experiment is not included as a
 build target. The firmware sends button events, directional actions, and device

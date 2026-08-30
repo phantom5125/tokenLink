@@ -7,8 +7,10 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 ## Unreleased
 
 - Reworked the Data watch face around a TokenLink-style open quota arc, with
-  rounded Nunito numerals, a vector Codex mark, time-proportional plan tick,
-  percentage-point variance, reset countdown, and a compact session-action pill.
+  rounded Nunito numerals, a time-proportional plan tick, percentage-point
+  variance, reset countdown, and a compact session-action pill.
+- Rebuilt the macOS app icon as high-contrast vector geometry so the surrounding
+  open arc remains visible at 16 px Finder and sidebar sizes.
 - Added an optional protocol-v2 window-duration hint for fair-pace rendering,
   preserving compatibility in both directions and omitting pace for unknown
   windows instead of inventing plan limits.

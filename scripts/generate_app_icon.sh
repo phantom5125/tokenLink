@@ -2,21 +2,15 @@
 set -euo pipefail
 
 repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
-source_png="$repo_dir/assets/branding/logo-mark-dark.png"
 output_icns="$repo_dir/packaging/TokenLink.icns"
 working_dir="$(mktemp -d "${TMPDIR:-/tmp}/tokenlink-app-icon.XXXXXX")"
 trap 'rm -rf "$working_dir"' EXIT
-
-if [[ ! -f "$source_png" ]]; then
-  echo "App icon source was not found at $source_png" >&2
-  exit 1
-fi
 
 base_png="$working_dir/TokenLink-1024.png"
 iconset="$working_dir/TokenLink.iconset"
 mkdir -p "$iconset"
 
-xcrun swift "$repo_dir/scripts/render_app_icon.swift" "$source_png" "$base_png"
+xcrun swift "$repo_dir/scripts/render_app_icon.swift" "$base_png"
 
 render_size() {
   local pixels="$1"
