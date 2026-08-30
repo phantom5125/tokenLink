@@ -4,7 +4,7 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
-## Unreleased — v0.2.2 Bluetooth diagnostics
+## 0.2.2 — Unreleased
 
 - Added a credential-free StopWatch checklist for Bluetooth authorization,
   adapter readiness, device binding, connection progress, protocol-v2 C04
@@ -14,8 +14,6 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 - Included the same redacted Bluetooth state-machine fields in diagnostics
   exports without device UUIDs, credentials, token values, or payload bodies.
 
-## Unreleased — v0.2.2 Session focus feedback
-
 - Target Codex Desktop's installed application bundle when opening a
   `codex://threads/<id>` task link instead of treating generic LaunchServices
   scheme acceptance as proof that Codex received it.
@@ -23,8 +21,6 @@ versioning while it is pre-1.0; hardware verification is reported separately in
   command delivery can be distinguished from app-link delivery.
 - Preserve the app-activation fallback while reporting it as a partial result,
   rather than implying that the matching task was focused.
-
-## Unreleased — v0.2.2 Sessions status clarity
 
 - Page through the complete Codex `thread/list` result in updated-activity
   order, deduplicate moving threads across pages, and fail closed instead of

@@ -22,9 +22,11 @@ the existing protocol-v1 firmware path byte-compatible.
 
 > Status: early development. Provider APIs can change without notice. The v0.2
 > interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
-> active count, three-provider sync, and physical UI feedback. Version 0.2.1 moves
-> that firmware into this repository; the rebuilt migration image has passed its
-> C152 flash, serial boot, and live three-provider v2 regression. Long-duration
+> active count, three-provider sync, and physical UI feedback. Version 0.2.1
+> moved that firmware into this repository and passed its physical release
+> checks. The 0.2.2 candidate adds connection diagnostics, explicit task-link
+> outcomes, complete session pagination, and clearer C152 session states; its new
+> hardware-facing behavior still requires the checklist below. Long-duration
 > power behavior remains follow-up validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
@@ -33,6 +35,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-30 — The 0.2.2 stability candidate is integrated.** Bluetooth
+  diagnostics, explicit Codex task-link outcomes, complete thread pagination,
+  stable priority slots, and accessible C152 session indicators now share one
+  release branch with 185 Swift tests and eleven firmware test executables.
 - **2026-08-30 — C152 firmware moved into TokenLink.** The exact default wireless
   source, simulator tests, partition layout, MIT/OFL notices, and a pinned
   PlatformIO build now live under `firmware/stopwatch-c152`. A fresh checkout can
@@ -79,11 +85,14 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
   service automatically; the Providers screen offers a separately explained,
   user-initiated migration.
 - Binds a single StopWatch by CoreBluetooth identifier and writes with response.
+- Shows a credential-free connection checklist for Bluetooth permission,
+  adapter, binding, progress, C04 notifications, sync, and redacted failures.
 - Negotiates watch protocol v2 and sends every selected provider in one sync; v1
   firmware continues to receive only the unchanged Codex primary-window payload.
-- Tracks up to three named Codex work items and accepts v2 refresh/focus commands.
-  Focus opens the matching `codex://threads/<id>` task link, with app activation
-  as a compatibility fallback.
+- Reads the complete paginated Codex thread list, reports the full active count,
+  and keeps three stable, prioritized watch rows for focus. Focus delivers the
+  matching `codex://threads/<id>` link to Codex and reports the exact delivery or
+  fallback outcome without exposing the task identifier.
 - Configures v2 theme, wake behavior, hour format, provider selection, and shows
   the last payload sent from the StopWatch page.
 - Exports diagnostics only after redacting secrets, user paths, account labels,
@@ -128,7 +137,7 @@ exists.
 
    The last command produces a C152-only merged image at offset `0x0`, a
    split-image archive, manifest, and checksums in `dist/firmware/`. A tagged
-   [v0.2.1 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.1)
+   [v0.2.2 release](https://github.com/phantom5125/tokenLink/releases/tag/v0.2.2)
    publishes the same asset classes for users who do not want to compile.
 3. Read M5Stack's
    [factory-recovery path](https://docs.m5stack.com/en/guide/restore_factory/stopwatch),
@@ -261,6 +270,8 @@ identifier. Once bound, fresh selected-provider snapshots sync automatically;
 notification-subscription, and write operations have finite deadlines. Quota
 writes require an ATT response, and a protocol-v2 connection is not reported as
 ready until macOS confirms the C04 watch-command notification subscription.
+The StopWatch connection checklist exposes each of those credential-free states
+and provides recovery guidance without including a peripheral UUID or payload.
 
 The v1 firmware understands only this payload:
 
@@ -276,10 +287,11 @@ characteristic. A compatible device can receive up to three quota windows, up
 to three short named work items, selected-provider rotation, and watch settings.
 If capability discovery, reading, or decoding fails, TokenLink silently falls
 back to v1. The Mac implementation and fake-transport tests are complete, and
-the exact release candidate has carried its full active-count field and live
-multi-provider payloads to a C152. Physical layout/touch review and long-duration
-power behavior remain explicitly separate validation layers. See the latest report in
-[`docs/validation`](docs/validation/).
+the v0.2.1 release carried its full active-count field and live multi-provider
+payloads to a C152. The 0.2.2 candidate adds complete pagination, stable priority
+slots, focus delivery feedback, and animated/non-color session indicators;
+physical layout, task focus, reconnect, and sleep/wake review remain the final
+candidate validation layer. See the latest report in [`docs/validation`](docs/validation/).
 
 ## Privacy and security
 
@@ -352,9 +364,10 @@ and host-native tests now live in `firmware/stopwatch-c152`. The firmware subtre
 is independently licensed under MIT and speaks the same v1/v2 contract used by
 `TokenLinkDevice`. The previous release candidate has a verified C152 flash,
 boot, protocol-v2 exchange, multi-provider sync, and user-observed UI iteration;
-the v0.2.1 rebuild now has its own flash, boot, live-sync, reconnect, C04 command,
-physical UI, and session-focus acceptance record. The 24-hour power soak remains
-separate follow-up evidence.
+the v0.2.1 rebuild has its own flash, boot, live-sync, reconnect, C04 command,
+physical UI, and session-focus acceptance record. The 0.2.2 integration adds
+diagnostics, complete pagination, focus feedback, and clearer session status;
+its physical checklist and the 24-hour power soak remain separate evidence.
 
 ## Contributing
 
