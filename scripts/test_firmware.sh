@@ -27,6 +27,7 @@ plain_tests=(
 json_tests=(
   host_rpc_request_test
   quota_payload_test
+  session_presentation_test
   watch_model_test
   watch_protocol_v2_test
 )

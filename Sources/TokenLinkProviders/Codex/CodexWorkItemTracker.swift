@@ -183,17 +183,20 @@ private struct TurnSummary: Decodable {
 public struct CodexWorkItemTracker: Sendable {
   private let client: CodexAppServerClient
   private let threadLimit: Int
+  private let maxThreadPages: Int
   private let startupTimeout: Duration
   private let requestTimeout: Duration
 
   public init(
     client: CodexAppServerClient,
-    threadLimit: Int = 10,
+    threadLimit: Int = 50,
+    maxThreadPages: Int = 20,
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(5)
   ) {
     self.client = client
     self.threadLimit = threadLimit
+    self.maxThreadPages = maxThreadPages
     self.startupTimeout = startupTimeout
     self.requestTimeout = requestTimeout
   }
@@ -201,28 +204,43 @@ public struct CodexWorkItemTracker: Sendable {
   public init(
     executable: URL,
     transport: any AppServerTransport = ProcessAppServerTransport(),
-    threadLimit: Int = 10,
+    threadLimit: Int = 50,
+    maxThreadPages: Int = 20,
     startupTimeout: Duration = .seconds(30),
     requestTimeout: Duration = .seconds(5)
   ) {
     self.init(
       client: CodexAppServerClient(executable: executable, transport: transport),
       threadLimit: threadLimit,
+      maxThreadPages: maxThreadPages,
       startupTimeout: startupTimeout,
       requestTimeout: requestTimeout)
   }
 
   public func fetchThreads() async -> Result<[CodexThreadSnapshot], ProviderFailure> {
     do {
-      let data = try await client.listThreads(
+      let pages = try await client.listThreadPages(
         limit: threadLimit,
+        maxPages: maxThreadPages,
         startupTimeout: startupTimeout,
         requestTimeout: requestTimeout)
-      return .success(try CodexThreadListParser.parse(data: data))
+      var byID: [String: CodexThreadSnapshot] = [:]
+      for page in pages {
+        for thread in try CodexThreadListParser.parse(data: page) {
+          if let existing = byID[thread.id], existing.updatedAt >= thread.updatedAt {
+            continue
+          }
+          byID[thread.id] = thread
+        }
+      }
+      return .success(Array(byID.values))
     } catch AppServerTransportError.timeout {
       return .failure(
         ProviderFailure(kind: .timeout, message: "Codex app-server did not respond in time."))
-    } catch is CodexThreadListParseError, is DecodingError {
+    } catch AppServerTransportError.malformedResponse,
+      is CodexThreadListParseError,
+      is DecodingError
+    {
       return .failure(
         ProviderFailure(kind: .decoding, message: "Codex thread list could not be read."))
     } catch {
@@ -238,6 +256,7 @@ public struct CodexWorkItemTracker: Sendable {
   public func poll(into store: WorkItemStore) async -> ProviderFailure? {
     switch await fetchThreads() {
     case .success(let threads):
+      await store.removeMissing(source: .codex, keepingIDs: Set(threads.map(\.id)))
       await store.reportActiveSessionCount(
         threads.lazy.filter { $0.state.isActive }.count)
       for thread in threads.sorted(by: { $0.updatedAt > $1.updatedAt }) {

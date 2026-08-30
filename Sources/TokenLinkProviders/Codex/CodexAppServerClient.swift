@@ -59,7 +59,7 @@ public enum AppServerMessage: Equatable, Sendable {
   case initialize
   case initialized
   case rateLimits(id: Int)
-  case threadList(id: Int, limit: Int)
+  case threadList(id: Int, limit: Int, cursor: String?)
 
   func jsonLine() throws -> Data {
     let object: [String: Any]
@@ -87,11 +87,18 @@ public enum AppServerMessage: Equatable, Sendable {
         "id": id,
         "params": [:] as [String: String],
       ]
-    case .threadList(let id, let limit):
+    case .threadList(let id, let limit, let cursor):
+      var params: [String: Any] = [
+        "limit": limit,
+        "sortKey": "updated_at",
+      ]
+      if let cursor {
+        params["cursor"] = cursor
+      }
       object = [
         "method": "thread/list",
         "id": id,
-        "params": ["limit": limit],
+        "params": params,
       ]
     }
     var data = try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
@@ -237,10 +244,53 @@ public struct CodexAppServerClient: Sendable {
     requestTimeout: Duration = .seconds(5)
   ) async throws -> Data {
     try await roundTrip(
-      message: .threadList(id: 2, limit: limit),
+      message: .threadList(id: 2, limit: limit, cursor: nil),
       id: 2,
       startupTimeout: startupTimeout,
       requestTimeout: requestTimeout)
+  }
+
+  /// Reads every non-archived interactive thread page in one initialized app-
+  /// server session. The page cap prevents a malformed/repeating cursor from
+  /// turning a refresh into an unbounded operation; hitting it is a failure so
+  /// callers never publish a partial count as the full active-session total.
+  public func listThreadPages(
+    limit: Int,
+    maxPages: Int = 20,
+    startupTimeout: Duration = .seconds(30),
+    requestTimeout: Duration = .seconds(5)
+  ) async throws -> [Data] {
+    guard limit > 0, maxPages > 0 else {
+      throw AppServerTransportError.malformedResponse
+    }
+    do {
+      try await transport.start(executable: executable)
+      try await transport.send(.initialize)
+      _ = try await transport.response(id: 0, timeout: startupTimeout)
+      try await transport.send(.initialized)
+
+      var pages: [Data] = []
+      var cursor: String?
+      var seenCursors: Set<String> = []
+      for pageIndex in 0..<maxPages {
+        let id = 2 + pageIndex
+        try await transport.send(.threadList(id: id, limit: limit, cursor: cursor))
+        let page = try await transport.response(id: id, timeout: requestTimeout)
+        pages.append(page)
+        guard let nextCursor = try Self.nextThreadCursor(in: page) else {
+          await transport.stop()
+          return pages
+        }
+        guard seenCursors.insert(nextCursor).inserted else {
+          throw AppServerTransportError.malformedResponse
+        }
+        cursor = nextCursor
+      }
+      throw AppServerTransportError.malformedResponse
+    } catch {
+      await transport.stop()
+      throw error
+    }
   }
 
   private func roundTrip(
@@ -262,6 +312,24 @@ public struct CodexAppServerClient: Sendable {
       await transport.stop()
       throw error
     }
+  }
+
+  private static func nextThreadCursor(in data: Data) throws -> String? {
+    guard
+      let object = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+      let result = object["result"] as? [String: Any]
+    else {
+      throw AppServerTransportError.malformedResponse
+    }
+    guard let value = result["nextCursor"] else {
+      // Older app-server builds omitted the cursor on their only page.
+      return nil
+    }
+    if value is NSNull { return nil }
+    guard let cursor = value as? String, !cursor.isEmpty else {
+      throw AppServerTransportError.malformedResponse
+    }
+    return cursor
   }
 }
 

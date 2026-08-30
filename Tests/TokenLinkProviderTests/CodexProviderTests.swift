@@ -118,4 +118,15 @@ private actor FakeAppServerTransport: AppServerTransport {
       as? [String: Any])
   #expect(limits["method"] as? String == "account/rateLimits/read")
   #expect(limits["id"] as? Int == 7)
+
+  let threads = try #require(
+    JSONSerialization.jsonObject(
+      with: AppServerMessage.threadList(id: 8, limit: 50, cursor: "next-page").jsonLine())
+      as? [String: Any])
+  let params = try #require(threads["params"] as? [String: Any])
+  #expect(threads["method"] as? String == "thread/list")
+  #expect(threads["id"] as? Int == 8)
+  #expect(params["limit"] as? Int == 50)
+  #expect(params["cursor"] as? String == "next-page")
+  #expect(params["sortKey"] as? String == "updated_at")
 }

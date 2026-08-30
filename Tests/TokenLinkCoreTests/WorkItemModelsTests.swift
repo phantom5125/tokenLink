@@ -17,6 +17,14 @@ private func at(_ seconds: TimeInterval) -> Date {
   #expect(WorkItemState.needsInput.isActive)
   #expect(!WorkItemState.completed.isActive)
   #expect(!WorkItemState.failed.isActive)
+  #expect(
+    [
+      WorkItemState.needsInput,
+      .failed,
+      .running,
+      .completed,
+      .unknown,
+    ].map(\.watchDisplayPriority) == [0, 1, 2, 3, 4])
   let data = try JSONEncoder().encode(WorkItemState.needsInput)
   #expect(String(decoding: data, as: UTF8.self) == "\"needs_input\"")
 }
@@ -69,6 +77,23 @@ private func at(_ seconds: TimeInterval) -> Date {
   #expect(c?.slot == 0)
 }
 
+@Test func completeProviderPollRemovesOnlyMissingItemsFromThatProvider() async {
+  let store = WorkItemStore()
+  _ = await store.upsert(
+    id: "keep", name: "keep", source: .codex, state: .running,
+    updatedAt: at(100))
+  _ = await store.upsert(
+    id: "remove", name: "remove", source: .codex, state: .completed,
+    updatedAt: at(200))
+  _ = await store.upsert(
+    id: "other", name: "other", source: .kimi, state: .running,
+    updatedAt: at(300))
+
+  await store.removeMissing(source: .codex, keepingIDs: ["keep"])
+
+  #expect(Set(await store.items.map(\.id)) == Set(["keep", "other"]))
+}
+
 @Test func storeEvictsLeastRecentlyActiveAtCapacity() async {
   let store = WorkItemStore()
   _ = await store.upsert(id: "a", name: "a", source: .codex, state: .running, updatedAt: at(100))
@@ -95,6 +120,48 @@ private func at(_ seconds: TimeInterval) -> Date {
 
   #expect(stale == nil)
   #expect(await store.items.count == 3)
+}
+
+@Test func actionableItemReplacesLessUsefulRecentItemAndKeepsOtherSlotsStable() async {
+  let store = WorkItemStore()
+  _ = await store.upsert(
+    id: "running", name: "running", source: .codex, state: .running,
+    updatedAt: at(300))
+  _ = await store.upsert(
+    id: "done", name: "done", source: .codex, state: .completed,
+    updatedAt: at(500))
+  _ = await store.upsert(
+    id: "failed", name: "failed", source: .codex, state: .failed,
+    updatedAt: at(200))
+
+  let needsInput = await store.upsert(
+    id: "approval", name: "approval", source: .codex, state: .needsInput,
+    updatedAt: at(100))
+
+  #expect(needsInput?.slot == 1)
+  #expect(await store.item(forSlot: 0)?.id == "running")
+  #expect(await store.item(forSlot: 1)?.id == "approval")
+  #expect(await store.item(forSlot: 2)?.id == "failed")
+}
+
+@Test func recentCompletionCannotDisplaceActiveOrActionableItems() async {
+  let store = WorkItemStore()
+  _ = await store.upsert(
+    id: "input", name: "input", source: .codex, state: .needsInput,
+    updatedAt: at(100))
+  _ = await store.upsert(
+    id: "failed", name: "failed", source: .codex, state: .failed,
+    updatedAt: at(200))
+  _ = await store.upsert(
+    id: "running", name: "running", source: .codex, state: .running,
+    updatedAt: at(300))
+
+  let completed = await store.upsert(
+    id: "done", name: "done", source: .codex, state: .completed,
+    updatedAt: at(1_000))
+
+  #expect(completed == nil)
+  #expect(Set(await store.items.map(\.id)) == Set(["input", "failed", "running"]))
 }
 
 @Test func upsertRefreshesExistingItemInPlace() async {
