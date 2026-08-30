@@ -19,6 +19,11 @@ is distributed under the SIL Open Font License 1.1. The source font, full
 license text, and generated embedded font data are under `assets/fonts/` and
 `include/SpaceMonoVlw.h`.
 
+Nunito font software is copyright 2014 The Nunito Project Authors and is
+distributed under the SIL Open Font License 1.1. The unmodified variable source
+font and license are under `assets/fonts/`; the numeric subset generated for the
+quota dial is under `include/NunitoDigitsVlw.h`.
+
 ## Independent project and trademarks
 
 This is an independent, unofficial compatibility project. It is not affiliated

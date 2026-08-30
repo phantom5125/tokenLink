@@ -300,7 +300,9 @@ public enum L10n {
     .routeProviders: [
       .english: "Providers", .simplifiedChinese: "额度源", .japanese: "プロバイダー",
     ],
-    .routeCosts: [.english: "Costs β", .simplifiedChinese: "成本 β", .japanese: "コスト β"],
+    .routeCosts: [
+      .english: "Cost Center β", .simplifiedChinese: "成本中心 β", .japanese: "コストセンター β",
+    ],
     .routeStopwatch: [
       .english: "StopWatch", .simplifiedChinese: "StopWatch", .japanese: "StopWatch",
     ],
@@ -368,7 +370,7 @@ public enum L10n {
       .english: "%@ %@ left", .simplifiedChinese: "%@ 剩余 %@", .japanese: "%@ 残り %@",
     ],
     .costsTitle: [
-      .english: "Costs", .simplifiedChinese: "成本", .japanese: "コスト",
+      .english: "Cost Center", .simplifiedChinese: "成本中心", .japanese: "コストセンター",
     ],
     .costsBetaBadge: [
       .english: "Beta", .simplifiedChinese: "Beta", .japanese: "ベータ",

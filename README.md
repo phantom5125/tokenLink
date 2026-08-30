@@ -365,6 +365,9 @@ GLM are never mislabeled as Codex on an existing v1 watch face.
 Protocol v2 is negotiated through an optional read-only capabilities
 characteristic. A compatible device can receive up to three quota windows, up
 to three short named work items, selected-provider rotation, and watch settings.
+Each window may include a backward-compatible `window_duration_seconds` hint so
+the watch can show a time-proportional planned-remainder tick without inferring
+unknown provider limits.
 If capability discovery, reading, or decoding fails, TokenLink silently falls
 back to v1. The Mac implementation and fake-transport tests are complete, and
 the v0.2.1 release carried its full active-count field and live multi-provider

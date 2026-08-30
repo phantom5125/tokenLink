@@ -6,12 +6,23 @@ import Foundation
 /// ahead of or behind an even pace.
 public enum FairPace {
   /// Known window durations. Unknown ids get no marker rather than a guess.
-  static let windowDurations: [String: TimeInterval] = [
+  private static let windowDurations: [String: TimeInterval] = [
     "5h": 5 * 3_600,
     "primary": 5 * 3_600,
+    "week": 7 * 86_400,
     "weekly": 7 * 86_400,
+    "seven_day_opus": 7 * 86_400,
+    "seven_day_sonnet": 7 * 86_400,
+    "month": 30 * 86_400,
     "monthly": 30 * 86_400,
+    "mcp-monthly": 30 * 86_400,
   ]
+
+  /// Stable duration metadata shared with the watch projection. Keeping this
+  /// table on the Mac prevents firmware from guessing provider-specific IDs.
+  public static func duration(for windowID: String) -> TimeInterval? {
+    windowDurations[windowID.lowercased()]
+  }
 
   /// Expected remaining percent if the window were consumed evenly.
   /// Returns nil for unknown window kinds, missing reset times, or reset
@@ -21,7 +32,7 @@ public enum FairPace {
     resetsAt: Date?,
     now: Date
   ) -> Double? {
-    guard let resetsAt, let duration = windowDurations[windowID] else { return nil }
+    guard let resetsAt, let duration = duration(for: windowID) else { return nil }
     let left = resetsAt.timeIntervalSince(now)
     guard left > 0, left <= duration else { return nil }
     return left / duration * 100

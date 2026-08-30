@@ -49,7 +49,8 @@ private func faceStateWindow(
     ],
     workItems: [
       WorkItemPayload(
-        slot: 0, name: "review", source: "codex", state: .needsInput, latest: true)
+        slot: 0, name: "review", source: "codex", state: .needsInput, latest: true,
+        seen: true)
     ],
     activeSessionCount: 70_000,
     capturedAt: capturedAt)
@@ -57,8 +58,12 @@ private func faceStateWindow(
   #expect(state.providers.map(\.id) == ["codex", "kimi"])
   #expect(state.providers[0].windows.count == 4)
   #expect(state.providers[0].windows[0].label == "Five hours")
+  #expect(state.providers[0].windows[0].durationSeconds == 5 * 3_600)
+  #expect(state.providers[0].windows[1].durationSeconds == 7 * 86_400)
+  #expect(state.providers[0].windows[3].durationSeconds == nil)
   #expect(state.workItems[0].state == .needsInput)
   #expect(state.workItems[0].latest)
+  #expect(state.workItems[0].seen)
   #expect(state.activeSessionCount == 70_000)
   #expect(state.capturedAt == capturedAt)
 }
@@ -101,6 +106,7 @@ private func faceStateWindow(
   #expect(payload.providerID == "codex")
   #expect(payload.windows.map(\.id) == ["5h", "weekly", "monthly"])
   #expect(payload.windows.map(\.resetInSeconds) == [50, 200, 300])
+  #expect(payload.windows.map(\.windowDurationSeconds) == [18_000, 604_800, 2_592_000])
   #expect(payload.workItems[0].name == "averylongwor")
   #expect(payload.activeSessionCount == Int(UInt16.max))
   #expect(payload.settings == settings)

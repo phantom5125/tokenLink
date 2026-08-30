@@ -18,12 +18,20 @@ import Testing
   #expect(expected == 50)
 }
 
+@Test func fairPaceExposesKnownWatchDurationsAndAliases() {
+  #expect(FairPace.duration(for: "5H")! == 18_000.0)
+  #expect(FairPace.duration(for: "week")! == 604_800.0)
+  #expect(FairPace.duration(for: "seven_day_opus")! == 604_800.0)
+  #expect(FairPace.duration(for: "mcp-monthly")! == 2_592_000.0)
+  #expect(FairPace.duration(for: "custom") == nil)
+}
+
 @Test func fairPaceUnknownOrInvalidInputsStaySilent() {
   let now = Date(timeIntervalSince1970: 1_000_000)
   // Unknown window id.
   #expect(
     FairPace.expectedRemaining(
-      windowID: "seven_day_opus", resetsAt: now.addingTimeInterval(86_400), now: now) == nil)
+      windowID: "custom", resetsAt: now.addingTimeInterval(86_400), now: now) == nil)
   // Missing reset time.
   #expect(FairPace.expectedRemaining(windowID: "weekly", resetsAt: nil, now: now) == nil)
   // Reset already passed.

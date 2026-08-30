@@ -6,6 +6,15 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+- Reworked the Data watch face around a TokenLink-style open quota arc, with
+  rounded Nunito numerals, a vector Codex mark, time-proportional plan tick,
+  percentage-point variance, reset countdown, and a compact session-action pill.
+- Added an optional protocol-v2 window-duration hint for fair-pace rendering,
+  preserving compatibility in both directions and omitting pace for unknown
+  windows instead of inventing plan limits.
+- Promoted the Mac Costs beta to a dedicated localized Cost Center route with
+  Today / Week / Month views and drill-down cost provenance.
+
 - Added a persisted Today / Week / Month selector shared by the Costs screen
   and local-estimate menu-bar supplement.
 - Built all three local estimate windows from one bounded transcript pass and

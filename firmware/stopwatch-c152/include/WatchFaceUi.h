@@ -14,8 +14,10 @@
 #include <cstring>
 
 #include "DashboardUi.h"  // shared palette, fonts, helpers
+#include "NunitoDigitsVlw.h"
 #include "PetTheme.h"
 #include "SessionPresentation.h"
+#include "WatchFaceQuota.h"
 #include "WatchFaceRuntime.h"
 #include "WatchModel.h"
 
@@ -86,22 +88,12 @@ constexpr int kCenterY = 233;
 constexpr int kSessionRowY = 122;
 constexpr int kSessionRowHeight = 94;
 
-constexpr int kHomeCardLeft = 52;
-constexpr int kHomeCardTop = 108;
-constexpr int kHomeCardWidth = 362;
-constexpr int kHomeCardHeight = 112;
-constexpr int kHomeQuotaTop = 236;
-constexpr int kHomeQuotaHeight = kHomeCardHeight;
-
-// The physical display is circular. At the top rail's y coordinate the usable
-// width is substantially narrower than the 466 px backing canvas, so keep the
-// complete rail inside this explicit round-display safe zone.
-constexpr int kHomeRailTop = 48;
-constexpr int kHomeSyncX = 96;
-constexpr int kHomeSyncY = 60;
-constexpr int kHomeClockLeft = 112;
-constexpr int kHomeBatteryRight = 370;
-constexpr int kHomeTitleY = 86;
+constexpr int kHomeArcOuterRadius = 215;
+constexpr int kHomeArcInnerRadius = 189;
+constexpr int kHomeSessionPillLeft = 158;
+constexpr int kHomeSessionPillTop = 382;
+constexpr int kHomeSessionPillWidth = 150;
+constexpr int kHomeSessionPillHeight = 38;
 
 constexpr int kQuotaListTop = 88;
 constexpr int kQuotaRowHeight = 82;
@@ -297,6 +289,26 @@ void drawProviderChip(Surface& surface, int x, int y, const char* providerId,
 }
 
 template <typename Surface>
+void drawProviderMark(Surface& surface, int cx, int cy, const char* providerId,
+                      std::uint16_t color) {
+  if (std::strcmp(providerId, "codex") == 0) {
+    // Six interlocking loops form a compact OpenAI/Codex identity mark. It is
+    // drawn as geometry so the AMOLED stays crisp at native resolution.
+    for (int i = 0; i < 6; ++i) {
+      const float angle = static_cast<float>(i) * 1.0471976f;
+      const int px = cx + static_cast<int>(10.0f * std::cos(angle));
+      const int py = cy + static_cast<int>(10.0f * std::sin(angle));
+      surface.drawCircle(px, py, 8, color);
+      surface.drawCircle(px, py, 7, color);
+    }
+    return;
+  }
+
+  // Other providers keep their existing vector glyph, without the chip.
+  drawProviderChip(surface, cx - 20, cy - 20, providerId, color);
+}
+
+template <typename Surface>
 std::uint16_t providerColor(Surface& surface, const char* providerId) {
   if (std::strcmp(providerId, "codex") == 0) return surface.color565(99, 230, 190);
   if (std::strcmp(providerId, "claude") == 0) return surface.color565(224, 133, 88);
@@ -320,13 +332,6 @@ void drawQuotaBar(Surface& surface, int x, int y, int width, float remaining,
   surface.fillSmoothRoundRect(x, y, width, 7, 4, dashboard::kTrack);
   const int fill = static_cast<int>(width * bounded / 100.0f);
   if (fill > 0) surface.fillSmoothRoundRect(x, y, fill, 7, 4, color);
-}
-
-inline int latestWorkItemIndex(const watch_model::Store& store) {
-  for (std::uint8_t i = 0; i < store.workItemCount(); ++i) {
-    if (store.workItems()[i].latest) return i;
-  }
-  return store.workItemCount() > 0 ? 0 : -1;
 }
 
 inline int activeWorkItemCount(const watch_model::Store& store) {
@@ -408,14 +413,115 @@ void drawAlertStrip(Surface& surface, const State& state,
 
 // --- P0 home ---------------------------------------------------------------
 
+struct ArcPoint {
+  int x;
+  int y;
+};
+
+inline ArcPoint homeArcPoint(int angleDegrees, int radius) {
+  constexpr float kDegreesToRadians = 0.01745329252f;
+  const float radians = angleDegrees * kDegreesToRadians;
+  return {kCenterX + static_cast<int>(std::lround(std::cos(radians) * radius)),
+          kCenterY + static_cast<int>(std::lround(std::sin(radians) * radius))};
+}
+
+template <typename Surface>
+void fillWrappedArc(Surface& surface, int startDegrees, int endDegrees,
+                    int outerRadius, int innerRadius, std::uint16_t color) {
+  const int requestedSpan = std::max(0, endDegrees - startDegrees);
+  while (startDegrees >= 360) startDegrees -= 360;
+  while (startDegrees < 0) startDegrees += 360;
+  const int normalizedEnd =
+      startDegrees +
+      std::min(watch_face_quota::kArcSweepDegrees, requestedSpan);
+  if (normalizedEnd <= 360) {
+    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, startDegrees,
+                    normalizedEnd, color);
+  } else {
+    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, startDegrees,
+                    360, color);
+    surface.fillArc(kCenterX, kCenterY, outerRadius, innerRadius, 0,
+                    normalizedEnd - 360, color);
+  }
+}
+
+template <typename Surface>
+void drawRoundedHomeArc(Surface& surface, int endDegrees,
+                        std::uint16_t color, bool drawStartCap = true) {
+  fillWrappedArc(surface, watch_face_quota::kArcStartDegrees, endDegrees,
+                 kHomeArcOuterRadius, kHomeArcInnerRadius, color);
+  constexpr int kMidRadius =
+      (kHomeArcOuterRadius + kHomeArcInnerRadius) / 2;
+  constexpr int kCapRadius =
+      (kHomeArcOuterRadius - kHomeArcInnerRadius) / 2;
+  if (drawStartCap) {
+    const ArcPoint start = homeArcPoint(watch_face_quota::kArcStartDegrees,
+                                        kMidRadius);
+    surface.fillCircle(start.x, start.y, kCapRadius, color);
+  }
+  const ArcPoint end = homeArcPoint(endDegrees, kMidRadius);
+  surface.fillCircle(end.x, end.y, kCapRadius, color);
+}
+
+inline const char* homeWindowLabel(const char* id) {
+  if (std::strcmp(id, "week") == 0 || std::strcmp(id, "weekly") == 0 ||
+      std::strcmp(id, "seven_day") == 0 ||
+      std::strcmp(id, "seven_day_opus") == 0 ||
+      std::strcmp(id, "seven_day_sonnet") == 0) {
+    return "WEEK LEFT";
+  }
+  if (std::strcmp(id, "month") == 0 || std::strcmp(id, "monthly") == 0 ||
+      std::strcmp(id, "mcp-monthly") == 0) {
+    return "MONTH LEFT";
+  }
+  if (std::strcmp(id, "5h") == 0 || std::strcmp(id, "primary") == 0) {
+    return "5H LEFT";
+  }
+  return "QUOTA LEFT";
+}
+
+template <typename Surface>
+void drawHomeSessionPill(Surface& surface,
+                         const watch_model::Store& store) {
+  const int activeCount = activeWorkItemCount(store);
+  const watch_v2::WorkItem* alert = alertItem(store);
+  const bool pendingAction =
+      alert != nullptr && alert->state == watch_v2::WorkState::NeedsInput &&
+      !alert->seen;
+  const std::uint16_t color = pendingAction
+                                  ? dashboard::kWarning
+                                  : (activeCount > 0 ? dashboard::kAccent
+                                                     : dashboard::kMuted);
+  surface.fillSmoothRoundRect(kHomeSessionPillLeft, kHomeSessionPillTop,
+                              kHomeSessionPillWidth, kHomeSessionPillHeight, 19,
+                              dashboard::kPanel);
+  surface.fillCircle(kHomeSessionPillLeft + 22,
+                     kHomeSessionPillTop + kHomeSessionPillHeight / 2, 4,
+                     color);
+  char label[20];
+  if (pendingAction) {
+    std::snprintf(label, sizeof(label), "ACTION");
+  } else {
+    std::snprintf(label, sizeof(label), "%d ACTIVE", activeCount);
+  }
+  surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
+  surface.setTextDatum(middle_center);
+  surface.setTextColor(color);
+  surface.drawString(label, kHomeSessionPillLeft + 87,
+                     kHomeSessionPillTop + kHomeSessionPillHeight / 2);
+  surface.unloadFont();
+}
+
 template <typename Surface>
 void renderHome(Surface& surface, const State& state,
                 const watch_model::Store& store) {
-  // Quiet status rail: the home page leads with the thing that needs action,
-  // while time, sync health and battery remain visible at a glance.
-  surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-  surface.setTextDatum(textdatum_t::top_left);
-  surface.setTextColor(dashboard::kText);
+  // A single logo-like horseshoe answers the primary glance question: how
+  // much of the tightest quota remains, and whether it is ahead of time pace.
+  drawRoundedHomeArc(surface,
+                     watch_face_quota::kArcStartDegrees +
+                         watch_face_quota::kArcSweepDegrees,
+                     dashboard::kTrack);
+
   char clock[12];
   if (!state.timeValid) {
     std::snprintf(clock, sizeof(clock), "--:--");
@@ -426,88 +532,6 @@ void renderHome(Surface& surface, const State& state,
   } else {
     std::snprintf(clock, sizeof(clock), "%02d:%02d", state.hour, state.minute);
   }
-  surface.drawString(clock, kHomeClockLeft, kHomeRailTop);
-  surface.fillCircle(kHomeSyncX, kHomeSyncY, 5,
-                     syncColor(surface, state.sync));
-  char battery[12];
-  if (state.batteryPercent < 0) {
-    std::snprintf(battery, sizeof(battery), "--%%");
-  } else {
-    std::snprintf(battery, sizeof(battery), "%d%%%s", state.batteryPercent,
-                  state.charging ? "+" : "");
-  }
-  surface.setTextDatum(textdatum_t::top_right);
-  surface.setTextColor(state.batteryPercent >= 0 && state.batteryPercent <= 20
-                           ? dashboard::kWarning
-                           : dashboard::kMuted);
-  surface.drawString(battery, kHomeBatteryRight, kHomeRailTop);
-  surface.unloadFont();
-
-  drawTitle(surface, "NOW", kHomeTitleY);
-  surface.fillSmoothRoundRect(kHomeCardLeft, kHomeCardTop, kHomeCardWidth,
-                              kHomeCardHeight, 22, dashboard::kPanel);
-  const int latest = latestWorkItemIndex(store);
-  const int activeCount = activeWorkItemCount(store);
-  if (latest >= 0) {
-    const watch_v2::WorkItem& item = store.workItems()[latest];
-    const std::uint16_t stateColor = workStateColor(item.state);
-    if (item.state == watch_v2::WorkState::NeedsInput && !item.seen) {
-      const float phase = (state.nowMs % 1600) / 1600.0f;
-      const float pulse = phase < 0.5f ? phase * 2.0f : 2.0f - phase * 2.0f;
-      const std::uint16_t outline = dashboard::rgb888To565(
-          surface, 0xF7AC42, 0.35f + 0.65f * pulse);
-      surface.drawRoundRect(kHomeCardLeft, kHomeCardTop, kHomeCardWidth,
-                            kHomeCardHeight, 22, outline);
-      surface.drawRoundRect(kHomeCardLeft + 1, kHomeCardTop + 1,
-                            kHomeCardWidth - 2, kHomeCardHeight - 2, 21,
-                            outline);
-    }
-    surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.setTextColor(dashboard::kMuted);
-    surface.drawString("LATEST SESSION", 78, 127);
-    char active[16];
-    std::snprintf(active, sizeof(active), "%d ACTIVE", activeCount);
-    surface.setTextDatum(textdatum_t::top_right);
-    surface.setTextColor(activeCount > 0 ? dashboard::kAccent
-                                         : dashboard::kMuted);
-    surface.drawString(active, 388, 127);
-    surface.drawFastHLine(78, 157, 310, dashboard::kTrack);
-
-    // Keep the newest session and its state on one compact scan line. The
-    // entire card remains the tap target for opening the Sessions page.
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.setTextColor(dashboard::kText);
-    surface.drawString(item.name, 78, 176);
-    char stateLabel[20];
-    std::snprintf(stateLabel, sizeof(stateLabel), "%s  >",
-                  friendlyWorkState(item.state, item.seen));
-    surface.setTextDatum(textdatum_t::top_right);
-    surface.setTextColor(stateColor);
-    surface.drawString(stateLabel, 388, 176);
-    surface.unloadFont();
-  } else {
-    surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.setTextColor(dashboard::kMuted);
-    surface.drawString("LATEST SESSION", 78, 127);
-    surface.setTextDatum(textdatum_t::top_right);
-    surface.drawString("0 ACTIVE", 388, 127);
-    surface.drawFastHLine(78, 157, 310, dashboard::kTrack);
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.drawString("NO RECENT SESSION", 78, 176);
-    surface.setTextDatum(textdatum_t::top_right);
-    surface.setTextColor(state.hostLive ? dashboard::kAccent
-                                        : dashboard::kMuted);
-    surface.drawString(state.hostLive ? "SESSIONS  >" : "MAC OFFLINE", 388,
-                       176);
-    surface.unloadFont();
-  }
-
-  // The tightest quota becomes a compact secondary card instead of competing
-  // with the current session for visual priority.
-  surface.fillSmoothRoundRect(kHomeCardLeft, kHomeQuotaTop, kHomeCardWidth,
-                              kHomeQuotaHeight, 20, dashboard::kPanel);
   const watch_model::TightestWindow tightest = store.tightest();
   if (tightest.providerIndex >= 0) {
     const watch_model::ProviderEntry* provider =
@@ -517,41 +541,95 @@ void renderHome(Surface& surface, const State& state,
         std::max(0.0f, std::min(100.0f, window.remainingPercent));
     const bool stale = state.nowMs - provider->receivedAtMs > 180000;
     const std::uint16_t color = quotaColor(remaining, stale);
-    drawProviderChip(surface, 66, kHomeQuotaTop + 14, provider->id,
-                     providerColor(surface, provider->id));
+    if (remaining > 0.0f) {
+      drawRoundedHomeArc(surface, watch_face_quota::arcAngle(remaining), color);
+    }
+
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.setTextColor(dashboard::kText);
-    char label[28];
-    std::snprintf(label, sizeof(label), "%s / %s", provider->id, window.id);
-    for (char* c = label; *c != '\0'; ++c) {
+    char providerLabel[20];
+    std::snprintf(providerLabel, sizeof(providerLabel), "%s", provider->id);
+    for (char* c = providerLabel; *c != '\0'; ++c) {
       if (*c >= 'a' && *c <= 'z') *c -= 'a' - 'A';
     }
-    surface.drawString(label, 118, kHomeQuotaTop + 11);
-    char value[8];
-    std::snprintf(value, sizeof(value), "%.0f%%", remaining);
-    surface.setTextDatum(textdatum_t::top_right);
-    surface.setTextColor(color);
-    surface.drawString(value, 396, kHomeQuotaTop + 11);
-    drawQuotaBar(surface, 118, kHomeQuotaTop + 45, 278, remaining, color);
-    const std::uint32_t elapsed = (state.nowMs - provider->receivedAtMs) / 1000;
+    dashboard::centered(surface, providerLabel, kCenterX, 91,
+                        stale ? dashboard::kMuted : dashboard::kText);
+    surface.unloadFont();
+    drawProviderMark(surface, kCenterX, 125, provider->id,
+                     stale ? dashboard::kMuted : dashboard::kText);
+
+    char value[5];
+    std::snprintf(value, sizeof(value), "%.0f", remaining);
+    const int digitCount = static_cast<int>(std::strlen(value));
+    const int numericWidth = digitCount * 55;
+    const int numberStart = kCenterX - (numericWidth + 31) / 2;
+    surface.loadFont(dashboard::font_data::kNunitoDigits92Vlw);
+    dashboard::centered(surface, value, numberStart + numericWidth / 2, 214,
+                        stale ? dashboard::kMuted : dashboard::kText);
+    surface.unloadFont();
+    surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
+    dashboard::centered(surface, "%", numberStart + numericWidth + 18, 218,
+                        stale ? dashboard::kMuted : dashboard::kText);
+    surface.unloadFont();
+
+    surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
+    dashboard::centered(surface, homeWindowLabel(window.id), kCenterX, 274,
+                        dashboard::kMuted);
     const std::uint32_t remainingReset =
-        elapsed >= window.resetInSeconds ? 0 : window.resetInSeconds - elapsed;
+        watch_face_quota::remainingResetSeconds(
+            window.resetInSeconds, provider->receivedAtMs, state.nowMs);
+    float planned = 0.0f;
+    if (watch_face_quota::plannedRemainingPercent(
+            window.durationSeconds, window.hasDuration, remainingReset,
+            planned)) {
+      const int planAngle = watch_face_quota::arcAngle(planned);
+      const ArcPoint tickInner = homeArcPoint(planAngle, 183);
+      const ArcPoint tickOuter = homeArcPoint(planAngle, 220);
+      surface.drawLine(tickInner.x, tickInner.y, tickOuter.x, tickOuter.y,
+                       dashboard::kText);
+      surface.drawLine(tickInner.x + 1, tickInner.y, tickOuter.x + 1,
+                       tickOuter.y, dashboard::kText);
+
+      char planLabel[16];
+      char deltaLabel[12];
+      const int delta = watch_face_quota::paceDeltaPoints(remaining, planned);
+      std::snprintf(planLabel, sizeof(planLabel), "PLAN %.0f%%", planned);
+      std::snprintf(deltaLabel, sizeof(deltaLabel), "  %s%dPP",
+                    delta >= 0 ? "+" : "", delta);
+      const int planWidth = surface.textWidth(planLabel);
+      const int deltaWidth = surface.textWidth(deltaLabel);
+      surface.setTextDatum(middle_left);
+      surface.setTextColor(dashboard::kText);
+      surface.drawString(planLabel, kCenterX - (planWidth + deltaWidth) / 2,
+                         307);
+      surface.setTextColor(delta < 0 ? dashboard::kWarning
+                                     : dashboard::kAccent);
+      surface.drawString(deltaLabel,
+                         kCenterX - (planWidth + deltaWidth) / 2 + planWidth,
+                         307);
+    }
     char countdown[16];
     formatCountdown(remainingReset, countdown, sizeof(countdown));
-    char reset[26];
-    std::snprintf(reset, sizeof(reset), "RESET %s  >", countdown);
-    surface.setTextDatum(textdatum_t::top_left);
-    surface.setTextColor(dashboard::kMuted);
-    surface.drawString(reset, 118, kHomeQuotaTop + 60);
+    char reset[24];
+    std::snprintf(reset, sizeof(reset), "RESET %s", countdown);
+    dashboard::centered(surface, reset, kCenterX, 338, dashboard::kMuted);
     surface.unloadFont();
   } else {
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
+    dashboard::centered(surface, "TOKENLINK", kCenterX, 112,
+                        dashboard::kText);
     dashboard::centered(surface,
-                        state.bleConnected ? "WAITING FOR QUOTA" : "WATCH OFFLINE",
-                        kCenterX, kHomeQuotaTop + 50, dashboard::kMuted);
+                        state.bleConnected ? "WAITING FOR QUOTA"
+                                           : "WATCH OFFLINE",
+                        kCenterX, 226, dashboard::kMuted);
     surface.unloadFont();
   }
+  // Draw the clock after both arc layers so the numerals remain crisp when the
+  // actual quota crosses the 12 o'clock region.
+  surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
+  dashboard::centered(surface, clock, kCenterX, 54, dashboard::kText);
+  surface.unloadFont();
+  surface.fillCircle(181, 91, 4, syncColor(surface, state.sync));
+  drawHomeSessionPill(surface, store);
 }
 
 // Pet-theme P0: same glance answers (time, sync, tightest quota, alerts) with
@@ -827,13 +905,16 @@ inline int workItemAtPoint(int x, int y, std::uint8_t itemCount) {
 }
 
 inline bool homeSessionsAtPoint(int x, int y) {
-  return x >= kHomeCardLeft && x <= kHomeCardLeft + kHomeCardWidth &&
-         y >= kHomeCardTop && y <= kHomeCardTop + kHomeCardHeight;
+  return x >= kHomeSessionPillLeft &&
+         x <= kHomeSessionPillLeft + kHomeSessionPillWidth &&
+         y >= kHomeSessionPillTop &&
+         y <= kHomeSessionPillTop + kHomeSessionPillHeight;
 }
 
 inline bool homeQuotaAtPoint(int x, int y) {
-  return x >= kHomeCardLeft && x <= kHomeCardLeft + kHomeCardWidth &&
-         y >= kHomeQuotaTop && y <= kHomeQuotaTop + kHomeQuotaHeight;
+  const int dx = x - kCenterX;
+  const int dy = y - kCenterY;
+  return dx * dx + dy * dy <= 216 * 216 && !homeSessionsAtPoint(x, y);
 }
 
 inline int quotaProviderAtPoint(int x, int y, std::size_t providerCount,

@@ -33,13 +33,15 @@ int main() {
   {
     watch_v2::Payload payload;
     assert(parseJson(
-        R"({"v":2,"provider_id":"codex","windows":[{"id":"5h","remaining_percent":72,"reset_in_seconds":900}],"work_items":[{"slot":0,"name":"review","source":"codex","state":"running"},{"slot":1,"name":"fix-ci","source":"codex","state":"needs_input","latest":true,"seen":true},{"slot":2,"name":"maybe","source":"codex","state":"unknown"}],"active_count":5,"synced_at":1787616000})",
+        R"({"v":2,"provider_id":"codex","windows":[{"id":"5h","remaining_percent":72,"reset_in_seconds":900,"window_duration_seconds":18000}],"work_items":[{"slot":0,"name":"review","source":"codex","state":"running"},{"slot":1,"name":"fix-ci","source":"codex","state":"needs_input","latest":true,"seen":true},{"slot":2,"name":"maybe","source":"codex","state":"unknown"}],"active_count":5,"synced_at":1787616000})",
         payload));
     assert(std::strcmp(payload.providerId, "codex") == 0);
     assert(payload.windowCount == 1);
     assert(std::strcmp(payload.windows[0].id, "5h") == 0);
     assert(payload.windows[0].remainingPercent == 72.0f);
     assert(payload.windows[0].resetInSeconds == 900);
+    assert(payload.windows[0].hasDuration);
+    assert(payload.windows[0].durationSeconds == 18000);
     assert(payload.hasWorkItems);
     assert(payload.workItemCount == 3);
     assert(payload.workItems[0].slot == 0);
@@ -62,6 +64,7 @@ int main() {
         payload));
     assert(std::strcmp(payload.providerId, "kimi") == 0);
     assert(payload.windowCount == 1);
+    assert(!payload.windows[0].hasDuration);
     assert(!payload.hasWorkItems);
     assert(payload.workItemCount == 0);
     assert(!payload.hasActiveCount);

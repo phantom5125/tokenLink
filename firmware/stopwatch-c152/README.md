@@ -7,7 +7,8 @@ service.
 
 The subtree was imported from the firmware revision used by the TokenLink 0.2.0
 release-candidate line. It preserves the upstream MIT attribution in `LICENSE`
-and `NOTICE.md`; Space Mono remains under the OFL in `assets/fonts/OFL.txt`.
+and `NOTICE.md`; Space Mono and the Nunito numeric dial subset remain under the
+OFL in `assets/fonts/`.
 TokenLink does not use an external checkout, submodule, or binary blob to build
 this target.
 
@@ -15,6 +16,12 @@ Run build, test, package, and flash commands from the TokenLink repository root;
 see [`../README.md`](../README.md). The only release target in v0.2.2 is
 `m5stack-stopwatch`. Source hooks for an earlier USB-microphone experiment remain
 compile-time disabled and are not a supported build variant.
+
+The Data face home screen uses a TokenLink-style open quota arc. Its filled arc
+is the actual remaining percentage; the white tick is the time-proportional
+planned remainder when the Mac supplies a known window duration. Main quota and
+clock numerals use an embedded ExtraBold Nunito subset, while compact labels use
+Space Mono for legibility.
 
 ## Watch-face runtime capability
 

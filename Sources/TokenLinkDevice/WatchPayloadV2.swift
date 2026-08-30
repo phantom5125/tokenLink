@@ -5,17 +5,27 @@ public struct WatchWindowPayload: Codable, Equatable, Sendable {
   public let id: String  // "5h" | "weekly" | "monthly" | "primary" | ...
   public let remainingPercent: Double
   public let resetInSeconds: Int
+  /// Optional known cycle length. New firmware uses it to animate the
+  /// time-proportional fair-pace marker; older firmware ignores the field.
+  public let windowDurationSeconds: Int?
 
-  public init(id: String, remainingPercent: Double, resetInSeconds: Int) {
+  public init(
+    id: String,
+    remainingPercent: Double,
+    resetInSeconds: Int,
+    windowDurationSeconds: Int? = nil
+  ) {
     self.id = id
     self.remainingPercent = remainingPercent
     self.resetInSeconds = resetInSeconds
+    self.windowDurationSeconds = windowDurationSeconds.flatMap { $0 > 0 ? $0 : nil }
   }
 
   enum CodingKeys: String, CodingKey {
     case id
     case remainingPercent = "remaining_percent"
     case resetInSeconds = "reset_in_seconds"
+    case windowDurationSeconds = "window_duration_seconds"
   }
 }
 
@@ -122,7 +132,8 @@ public enum WatchProjectionV2 {
           id: window.id,
           remainingPercent: window.remainingPercent,
           resetInSeconds: max(
-            0, Int((window.resetsAt ?? state.capturedAt).timeIntervalSince(state.capturedAt))))
+            0, Int((window.resetsAt ?? state.capturedAt).timeIntervalSince(state.capturedAt))),
+          windowDurationSeconds: window.durationSeconds)
       }
     let items =
       state.workItems

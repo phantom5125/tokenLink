@@ -23,6 +23,7 @@ plain_tests=(
   power_button_input_test
   power_button_gesture_test
   raise_wake_test
+  watch_face_quota_test
   watch_protocol_presentation_test
 )
 

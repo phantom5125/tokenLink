@@ -45,6 +45,8 @@ struct Window {
   char id[kWindowIdCapacity] = {};
   float remainingPercent = 0.0f;
   std::uint32_t resetInSeconds = 0;
+  std::uint32_t durationSeconds = 0;
+  bool hasDuration = false;
 };
 
 struct WorkItem {
@@ -160,6 +162,11 @@ inline bool parse(JsonObjectConst value, Payload& output) {
       if (window.id[0] == '\0') continue;
       window.remainingPercent = percent;
       window.resetInSeconds = reset.as<std::uint32_t>();
+      const JsonVariantConst duration = entry["window_duration_seconds"];
+      window.hasDuration = duration.is<std::uint32_t>() &&
+                           duration.as<std::uint32_t>() > 0;
+      window.durationSeconds =
+          window.hasDuration ? duration.as<std::uint32_t>() : 0;
       ++output.windowCount;
     }
   }

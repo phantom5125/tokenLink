@@ -27,7 +27,9 @@ private func snapshot(
   let payload = WatchPayloadV2(
     providerID: "codex",
     windows: [
-      WatchWindowPayload(id: "5h", remainingPercent: 72, resetInSeconds: 900)
+      WatchWindowPayload(
+        id: "5h", remainingPercent: 72, resetInSeconds: 900,
+        windowDurationSeconds: 18_000)
     ],
     workItems: [
       WorkItemPayload(slot: 0, name: "review", source: "codex", state: .running),
@@ -44,6 +46,8 @@ private func snapshot(
     JSONSerialization.jsonObject(with: data) as? [String: Any])
   #expect(object["v"] as? Int == 2)
   #expect(object["active_count"] as? Int == 4)
+  let windows = try #require(object["windows"] as? [[String: Any]])
+  #expect(windows[0]["window_duration_seconds"] as? Int == 18_000)
   let workItems = try #require(object["work_items"] as? [[String: Any]])
   #expect(workItems[0]["seen"] == nil)
   #expect(workItems[1]["seen"] as? Bool == true)
@@ -115,6 +119,7 @@ private func snapshot(
   let decoded = try JSONDecoder().decode(WatchPayloadV2.self, from: data)
   #expect(decoded.windows.map(\.id) == ["5h", "weekly", "monthly"])
   #expect(decoded.windows.map(\.resetInSeconds) == [50, 200, 300])
+  #expect(decoded.windows.map(\.windowDurationSeconds) == [18_000, 604_800, 2_592_000])
 }
 
 @Test func projectionClampsResetSecondsToNonNegative() throws {

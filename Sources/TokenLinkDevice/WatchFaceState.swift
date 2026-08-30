@@ -7,17 +7,20 @@ public struct WatchFaceWindowState: Equatable, Sendable {
   public let label: String
   public let remainingPercent: Double
   public let resetsAt: Date?
+  public let durationSeconds: Int?
 
   public init(
     id: String,
     label: String,
     remainingPercent: Double,
-    resetsAt: Date?
+    resetsAt: Date?,
+    durationSeconds: Int? = nil
   ) {
     self.id = id
     self.label = label
     self.remainingPercent = min(100, max(0, remainingPercent))
     self.resetsAt = resetsAt
+    self.durationSeconds = durationSeconds.flatMap { $0 > 0 ? $0 : nil }
   }
 }
 
@@ -39,7 +42,8 @@ public struct WatchFaceProviderState: Equatable, Sendable {
           id: window.id,
           label: window.label,
           remainingPercent: window.remainingPercent,
-          resetsAt: window.resetsAt)
+          resetsAt: window.resetsAt,
+          durationSeconds: FairPace.duration(for: window.id).map(Int.init))
       })
   }
 }
@@ -52,19 +56,22 @@ public struct WatchFaceWorkItemState: Equatable, Sendable {
   public let source: String
   public let state: WorkItemState
   public let latest: Bool
+  public let seen: Bool
 
   public init(
     slot: Int,
     name: String,
     source: String,
     state: WorkItemState,
-    latest: Bool = false
+    latest: Bool = false,
+    seen: Bool = false
   ) {
     self.slot = slot
     self.name = name
     self.source = source
     self.state = state
     self.latest = latest
+    self.seen = seen
   }
 
   public init(payload: WorkItemPayload) {
@@ -73,7 +80,8 @@ public struct WatchFaceWorkItemState: Equatable, Sendable {
       name: payload.name,
       source: payload.source,
       state: payload.state,
-      latest: payload.latest == true)
+      latest: payload.latest == true,
+      seen: payload.seen == true)
   }
 }
 

@@ -15,6 +15,8 @@ watch_v2::Payload makePayload(const char* provider, float percent) {
                       "week");
   payload.windows[0].remainingPercent = percent;
   payload.windows[0].resetInSeconds = 3600;
+  payload.windows[0].durationSeconds = 7 * 86400;
+  payload.windows[0].hasDuration = true;
   return payload;
 }
 
@@ -35,6 +37,8 @@ int main() {
   const watch_model::ProviderEntry* tight =
       store.providerAt(static_cast<std::size_t>(tightest.providerIndex));
   assert(tight != nullptr && std::strcmp(tight->id, "kimi") == 0);
+  assert(tight->windows[0].hasDuration);
+  assert(tight->windows[0].durationSeconds == 7 * 86400);
 
   // Re-applying the same provider updates in place.
   store.apply(makePayload("kimi", 90.0f), 3000);
