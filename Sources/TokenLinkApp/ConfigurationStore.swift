@@ -1,5 +1,6 @@
 import Foundation
 import TokenLinkCore
+import TokenLinkDevice
 import TokenLinkProviders
 
 public struct ProviderAccount: Codable, Equatable, Sendable, Identifiable {
@@ -21,11 +22,6 @@ public struct ProviderAccount: Codable, Equatable, Sendable, Identifiable {
   }
 }
 
-public enum WatchFaceTheme: String, Codable, Sendable {
-  case data
-  case pet
-}
-
 public enum WatchWakeMode: String, Codable, Sendable {
   case raise
   case tap
@@ -41,20 +37,50 @@ public enum WatchHourFormat: String, Codable, Sendable {
 /// keeps v1 behavior identical for existing users.
 public struct WatchSettings: Codable, Equatable, Sendable {
   public var syncedProviders: Set<ProviderID>
-  public var faceTheme: WatchFaceTheme
+  public var faceID: WatchFaceID
   public var wakeMode: WatchWakeMode
   public var hourFormat: WatchHourFormat
 
   public init(
     syncedProviders: Set<ProviderID> = [.codex],
-    faceTheme: WatchFaceTheme = .data,
+    faceID: WatchFaceID = .data,
     wakeMode: WatchWakeMode = .raise,
     hourFormat: WatchHourFormat = .system
   ) {
     self.syncedProviders = syncedProviders
-    self.faceTheme = faceTheme
+    self.faceID = faceID
     self.wakeMode = wakeMode
     self.hourFormat = hourFormat
+  }
+
+  private enum CodingKeys: String, CodingKey {
+    case syncedProviders
+    case faceID
+    case legacyFaceTheme = "faceTheme"
+    case wakeMode
+    case hourFormat
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    let rawFaceID =
+      try container.decodeIfPresent(String.self, forKey: .faceID)
+      ?? container.decodeIfPresent(String.self, forKey: .legacyFaceTheme)
+    self.init(
+      syncedProviders: try container.decodeIfPresent(
+        Set<ProviderID>.self, forKey: .syncedProviders) ?? [.codex],
+      faceID: rawFaceID.flatMap(WatchFaceID.init(rawValue:)) ?? .data,
+      wakeMode: try container.decodeIfPresent(WatchWakeMode.self, forKey: .wakeMode) ?? .raise,
+      hourFormat: try container.decodeIfPresent(WatchHourFormat.self, forKey: .hourFormat)
+        ?? .system)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(syncedProviders, forKey: .syncedProviders)
+    try container.encode(faceID, forKey: .faceID)
+    try container.encode(wakeMode, forKey: .wakeMode)
+    try container.encode(hourFormat, forKey: .hourFormat)
   }
 }
 
@@ -94,7 +120,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   public var betaCostsEnabled: Bool
   /// Fixed optional supplement displayed after the primary quota label.
   public var menuBarCostMetric: MenuBarCostMetric
-  /// StopWatch v2 preferences (theme, wake, hour format, synced providers).
+  /// StopWatch v2 preferences (face, wake, hour format, synced providers).
   public var watchSettings: WatchSettings
 
   /// Derived from enabled accounts; kept for readable call sites.

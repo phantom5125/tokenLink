@@ -449,7 +449,7 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   model.stop()
 }
 
-@MainActor @Test func watchThemeChangeImmediatelyResyncsV2Payload() async throws {
+@MainActor @Test func watchFaceChangeImmediatelyResyncsV2Payload() async throws {
   let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
   let transport = TestBLETransport(
     capabilities: WatchCapabilities(protocolVersions: [1, 2], firmware: "0.2.0"))
@@ -466,7 +466,7 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   await model.requestRefresh(reason: "Initial refresh")
   #expect(await transport.writes.count == 1)
 
-  try model.setWatchFaceTheme(.pet)
+  try model.setWatchFace(.pet)
   for _ in 0..<50 {
     if await transport.writes.count == 2 { break }
     try? await Task.sleep(for: .milliseconds(5))

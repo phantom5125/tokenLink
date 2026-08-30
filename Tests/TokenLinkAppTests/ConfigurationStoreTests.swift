@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import TokenLinkCore
+import TokenLinkDevice
 import TokenLinkProviders
 
 @testable import TokenLinkApp
@@ -21,7 +22,7 @@ import TokenLinkProviders
   expected.betaLocalUsageEnabled = true
   expected.watchSettings = WatchSettings(
     syncedProviders: [.codex, .kimi],
-    faceTheme: .pet,
+    faceID: .pet,
     wakeMode: .tap,
     hourFormat: .h24)
 
@@ -32,6 +33,35 @@ import TokenLinkProviders
   #expect(
     !String(decoding: bytes, as: UTF8.self)
       .localizedCaseInsensitiveContains("apiKey"))
+}
+
+@Test func legacyWatchFaceThemeMigratesToOpenFaceID() throws {
+  let legacy = """
+    {
+      "syncedProviders" : ["codex"],
+      "faceTheme" : "pet",
+      "wakeMode" : "tap",
+      "hourFormat" : "h24"
+    }
+    """
+
+  let settings = try JSONDecoder().decode(WatchSettings.self, from: Data(legacy.utf8))
+
+  #expect(settings.faceID == .pet)
+  let encoded = try JSONEncoder().encode(settings)
+  let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+  #expect(object["faceID"] as? String == "pet")
+  #expect(object["faceTheme"] == nil)
+}
+
+@Test func packagedWatchFaceIDRoundTripsInSettings() throws {
+  let custom = try #require(WatchFaceID(rawValue: "community.pixel-pet"))
+  let expected = WatchSettings(faceID: custom)
+
+  let data = try JSONEncoder().encode(expected)
+  let decoded = try JSONDecoder().decode(WatchSettings.self, from: data)
+
+  #expect(decoded == expected)
 }
 
 @Test func corruptConfigurationIsQuarantinedAndDefaultsAreReturned() throws {

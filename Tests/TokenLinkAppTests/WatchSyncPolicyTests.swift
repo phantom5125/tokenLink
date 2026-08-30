@@ -51,7 +51,7 @@ private func policySnapshot(_ provider: ProviderID, remaining: Double) -> QuotaS
   ]
   let settings = WatchSettings(
     syncedProviders: [.kimi, .minimax],
-    faceTheme: .pet,
+    faceID: .pet,
     wakeMode: .tap,
     hourFormat: .h24)
 

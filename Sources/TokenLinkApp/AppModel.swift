@@ -1145,8 +1145,8 @@ public final class AppModel {
     scheduleWatchSettingsSync()
   }
 
-  public func setWatchFaceTheme(_ theme: WatchFaceTheme) throws {
-    configuration.watchSettings.faceTheme = theme
+  public func setWatchFace(_ faceID: WatchFaceID) throws {
+    configuration.watchSettings.faceID = faceID
     try saveConfiguration()
     scheduleWatchSettingsSync()
   }

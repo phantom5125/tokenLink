@@ -35,7 +35,7 @@ public enum WatchSyncPolicy {
 
     case .v2:
       let settingsPayload = WatchSettingsPayload(
-        theme: settings.faceTheme.rawValue,
+        theme: settings.faceID.rawValue,
         wake: settings.wakeMode.rawValue,
         hourFormat: settings.hourFormat == .system
           ? "system" : settings.hourFormat.rawValue)
@@ -81,7 +81,7 @@ public enum WatchSyncPolicy {
       let index = rotationCursor % candidates.count
       let chosen = candidates[index]
       let settingsPayload = WatchSettingsPayload(
-        theme: settings.faceTheme.rawValue,
+        theme: settings.faceID.rawValue,
         wake: settings.wakeMode.rawValue,
         hourFormat: settings.hourFormat == .system
           ? "system" : settings.hourFormat.rawValue)
