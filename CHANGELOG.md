@@ -8,7 +8,7 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 - Moved the exact default wireless M5Stack StopWatch C152 firmware source into
   `firmware/stopwatch-c152`, retaining its MIT and Space Mono OFL notices.
-- Added a repository-local, pinned PlatformIO build; nine native firmware tests;
+- Added a repository-local, pinned PlatformIO build; ten native firmware tests;
   an explicit 16 MB partition table; and CI coverage independent of any external
   firmware checkout.
 - Added deterministic C152 release packaging: a merged image, a split-image
@@ -16,6 +16,14 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 - Added one-tag release automation for both the macOS development artifact and
   C152 assets. The Mac archive remains ad-hoc signed until Developer ID signing
   and notarization are configured.
+- Made the protocol-v2 four-page watch face the boot default; the legacy
+  dashboard now appears only after a successfully parsed v1 payload.
+- Made Claude Code credential access explicitly opt-in, explained the macOS
+  Keychain authorization scope before prompting, and replaced automatic legacy
+  TokenLink key reads with a separately confirmed one-time migration.
+- Added an explicit one-time StopWatch rebind for the `app.tokenlink` Bluetooth
+  identity and made protocol v2 wait for confirmed C04 notification subscription
+  before reporting the connection ready, preventing silent session-focus failures.
 - Documented a single-repository Quick Start for Mac-only users, C152 builders,
   and future protocol-compatible firmware targets.
 

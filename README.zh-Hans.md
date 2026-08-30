@@ -60,7 +60,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
   仅在本机汇总近期 token 计数。
 - macOS 系统通知：窗口额度告急、窗口重置、凭据被拒时提醒（可在设置中关闭）。
 - 刷新失败时保留最近一次成功快照并标记为 stale，绝不显示虚构的实时值。
-- API key 只存 macOS 钥匙串（service `io.github.phantom5125.tokenlink.provider`）。
+- API key 只存 macOS 钥匙串（显示名称 `TokenLink`，service
+  `app.tokenlink.provider`）。升级后不会自动读取 0.2.1 以前的旧 service；用户可在
+  「额度源」页面先查看授权范围，再主动迁移。
 - 按 CoreBluetooth 标识绑定一台 StopWatch，写入使用 with-response 确认。
 - 协商手表协议 v2，并在一次同步中发送全部所选额度源；v1 固件仍只接收完全不变的 Codex
   primary-window payload。
@@ -173,8 +175,10 @@ API key。如果 app 的 `PATH` 里找不到 `codex`，可以配置可执行文�
 
 ### Claude
 
-TokenLink 读取 Claude Code 自带 `/usage` 所用的 OAuth 用量接口，只读复用 Claude
-Code CLI 的钥匙串凭据项；过期的 token 会被忽略，refresh token 绝不读取。Anthropic
+TokenLink 读取 Claude Code 自带 `/usage` 所用的 OAuth 用量接口，但启动时不会访问
+Claude Code 的 `Claude Code-credentials` 钥匙串条目。用户必须先启用 Claude，再点击
+明确的授权按钮；授权前说明会解释 macOS 开放的是整个该条目（不是整个钥匙串）、
+TokenLink 只使用 access token 和有效期，以及何时适合选择“始终允许”。Anthropic
 按量付费的 API key 查不到订阅额度，所以 Claude 刻意不提供 key 输入框。
 
 ### Kimi
@@ -205,8 +209,15 @@ Token Plan」页面获取，与按量付费 API Key 不互通），并选择 Glo
 3. 选择一个发现的设备标识并绑定。
 4. 点 **立即同步手表**。
 
+从旧的 `io.github.phantom5125.tokenlink` 身份升级时，TokenLink 0.2.1 会清除旧身份
+保存的蓝牙设备标识，并在初始化蓝牙前说明一次性重绑要求。只有用户点“扫描”后才可能
+出现 macOS 蓝牙弹窗；允许后，`app.tokenlink` 可以发现附近设备、连接 C152、同步额度
+并接收手表命令，不会因此获得钥匙串访问权限。
+
 只有显式触发才会扫描。绑定后，所选额度源出现新鲜快照时会自动同步；连接、能力读取
-和写入都有有限超时，额度写入使用 write-with-response。v1 固件只认识这个 payload：
+、命令通知订阅和写入都有有限超时。额度写入使用 write-with-response；对于协议 v2，
+只有 macOS 确认 C04 手表命令通知订阅成功后，连接才会显示为 ready。v1 固件只认识
+这个 payload：
 
 ```json
 {"remaining_percent":72,"reset_in_seconds":900}
@@ -253,7 +264,9 @@ rm -rf "$HOME/Library/Application Support/TokenLink"
 ```
 
 钥匙串条目可在「钥匙串访问」中删除，或用 `security` 命令按 service
-`io.github.phantom5125.tokenlink.provider`、account `kimi`/`minimax`/`glm` 删除。
+`app.tokenlink.provider`、account `kimi`/`minimax`/`glm` 删除。升级迁移会刻意保留
+`io.github.phantom5125.tokenlink.provider` 下的恢复副本；确认新凭据正常后，可在
+「钥匙串访问」中手动删除这些旧条目。
 
 ## 架构
 

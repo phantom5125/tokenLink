@@ -59,11 +59,17 @@ public struct WatchSettings: Codable, Equatable, Sendable {
 }
 
 public struct AppConfiguration: Codable, Equatable, Sendable {
+  private static let currentBluetoothIdentityVersion = 1
+
   /// Accounts are the source of truth for provider enablement; ordered, and
   /// the first account of each provider is its default account.
   public var accounts: [ProviderAccount]
   public var refreshMinutes: Int
   public var boundDeviceIdentifier: UUID?
+  /// The 0.2.1 bundle-identifier change gives TokenLink a new CoreBluetooth
+  /// identity. Peripheral UUIDs saved by the old app cannot be trusted until
+  /// the user scans and binds again under `app.tokenlink`.
+  public var requiresBluetoothRebinding: Bool
   public var codexPath: String?
   public var miniMaxRegion: MiniMaxRegion
   public var glmRegion: GLMRegion
@@ -77,6 +83,13 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   /// Beta: aggregate local CLI transcript token usage for cross-checking
   /// provider-reported quota.
   public var betaLocalUsageEnabled: Bool
+  /// The user explicitly allowed TokenLink to read Claude Code's Keychain
+  /// credential. Provider enablement alone must never trigger that access.
+  public var claudeCredentialAccessAuthorized: Bool
+  /// Existing installations must explicitly opt into copying provider keys
+  /// from TokenLink's pre-0.2.1 Keychain service. Fresh installs have nothing
+  /// to migrate and start with this flow completed.
+  public var legacyKeychainMigrationCompleted: Bool
   /// StopWatch v2 preferences (theme, wake, hour format, synced providers).
   public var watchSettings: WatchSettings
 
@@ -89,6 +102,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     accounts: [ProviderAccount],
     refreshMinutes: Int,
     boundDeviceIdentifier: UUID?,
+    requiresBluetoothRebinding: Bool = false,
     codexPath: String?,
     miniMaxRegion: MiniMaxRegion,
     glmRegion: GLMRegion,
@@ -96,11 +110,14 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     notificationsEnabled: Bool = true,
     fairPaceEnabled: Bool = false,
     betaLocalUsageEnabled: Bool = false,
+    claudeCredentialAccessAuthorized: Bool = false,
+    legacyKeychainMigrationCompleted: Bool = true,
     watchSettings: WatchSettings = WatchSettings()
   ) {
     self.accounts = accounts
     self.refreshMinutes = min(60, max(1, refreshMinutes))
     self.boundDeviceIdentifier = boundDeviceIdentifier
+    self.requiresBluetoothRebinding = requiresBluetoothRebinding
     self.codexPath = codexPath
     self.miniMaxRegion = miniMaxRegion
     self.glmRegion = glmRegion
@@ -108,6 +125,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     self.notificationsEnabled = notificationsEnabled
     self.fairPaceEnabled = fairPaceEnabled
     self.betaLocalUsageEnabled = betaLocalUsageEnabled
+    self.claudeCredentialAccessAuthorized = claudeCredentialAccessAuthorized
+    self.legacyKeychainMigrationCompleted = legacyKeychainMigrationCompleted
     self.watchSettings = watchSettings
   }
 
@@ -131,7 +150,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   }
 
   public static let `default` = AppConfiguration(
-    enabledProviders: Set(ProviderID.allCases),
+    // Claude is opt-in because enabling it can request access to a credential
+    // owned by another app. The other providers use TokenLink-owned keys,
+    // documented files, or local processes.
+    enabledProviders: Set(ProviderID.allCases).subtracting([.claude]),
     refreshMinutes: 5,
     boundDeviceIdentifier: nil,
     codexPath: nil,
@@ -158,6 +180,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     case accounts
     case refreshMinutes
     case boundDeviceIdentifier
+    case bluetoothIdentityVersion
+    case requiresBluetoothRebinding
     case codexPath
     case miniMaxRegion
     case glmRegion
@@ -166,6 +190,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     case notificationsEnabled
     case fairPaceEnabled
     case betaLocalUsageEnabled
+    case claudeCredentialAccessAuthorized
+    case legacyKeychainMigrationCompleted
     case watchSettings
   }
 
@@ -182,13 +208,25 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       // Migrate pre-account configs: one default account per enabled provider.
       accounts = Self.defaultAccounts(for: Set(legacy))
     } else {
-      accounts = Self.defaultAccounts(for: Set(ProviderID.allCases))
+      accounts = Self.defaultAccounts(
+        for: Set(ProviderID.allCases).subtracting([.claude]))
     }
+    let decodedBoundDeviceIdentifier = try container.decodeIfPresent(
+      UUID.self, forKey: .boundDeviceIdentifier)
+    let bluetoothIdentityVersion =
+      try container.decodeIfPresent(
+        Int.self, forKey: .bluetoothIdentityVersion) ?? 0
+    let requiresBluetoothRebinding =
+      bluetoothIdentityVersion < Self.currentBluetoothIdentityVersion
+      && decodedBoundDeviceIdentifier != nil
+    let persistedBluetoothRebinding =
+      try container.decodeIfPresent(
+        Bool.self, forKey: .requiresBluetoothRebinding) ?? false
     self.init(
       accounts: accounts,
       refreshMinutes: try container.decodeIfPresent(Int.self, forKey: .refreshMinutes) ?? 5,
-      boundDeviceIdentifier: try container.decodeIfPresent(
-        UUID.self, forKey: .boundDeviceIdentifier),
+      boundDeviceIdentifier: requiresBluetoothRebinding ? nil : decodedBoundDeviceIdentifier,
+      requiresBluetoothRebinding: requiresBluetoothRebinding || persistedBluetoothRebinding,
       codexPath: try container.decodeIfPresent(String.self, forKey: .codexPath),
       miniMaxRegion: try container.decodeIfPresent(MiniMaxRegion.self, forKey: .miniMaxRegion)
         ?? .global,
@@ -200,6 +238,12 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         Bool.self, forKey: .fairPaceEnabled) ?? false,
       betaLocalUsageEnabled: try container.decodeIfPresent(
         Bool.self, forKey: .betaLocalUsageEnabled) ?? false,
+      claudeCredentialAccessAuthorized: try container.decodeIfPresent(
+        Bool.self, forKey: .claudeCredentialAccessAuthorized) ?? false,
+      // A saved config without this field predates the explicit migration UI.
+      // Do not touch the old Keychain service until the user chooses to migrate.
+      legacyKeychainMigrationCompleted: try container.decodeIfPresent(
+        Bool.self, forKey: .legacyKeychainMigrationCompleted) ?? false,
       watchSettings: try container.decodeIfPresent(
         WatchSettings.self, forKey: .watchSettings) ?? WatchSettings())
   }
@@ -209,6 +253,9 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     try container.encode(accounts, forKey: .accounts)
     try container.encode(refreshMinutes, forKey: .refreshMinutes)
     try container.encodeIfPresent(boundDeviceIdentifier, forKey: .boundDeviceIdentifier)
+    try container.encode(
+      Self.currentBluetoothIdentityVersion, forKey: .bluetoothIdentityVersion)
+    try container.encode(requiresBluetoothRebinding, forKey: .requiresBluetoothRebinding)
     try container.encodeIfPresent(codexPath, forKey: .codexPath)
     try container.encode(miniMaxRegion, forKey: .miniMaxRegion)
     try container.encode(glmRegion, forKey: .glmRegion)
@@ -216,6 +263,10 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     try container.encode(notificationsEnabled, forKey: .notificationsEnabled)
     try container.encode(fairPaceEnabled, forKey: .fairPaceEnabled)
     try container.encode(betaLocalUsageEnabled, forKey: .betaLocalUsageEnabled)
+    try container.encode(
+      claudeCredentialAccessAuthorized, forKey: .claudeCredentialAccessAuthorized)
+    try container.encode(
+      legacyKeychainMigrationCompleted, forKey: .legacyKeychainMigrationCompleted)
     try container.encode(watchSettings, forKey: .watchSettings)
   }
 }

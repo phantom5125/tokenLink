@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 // Protocol v2 watch face: four fixed pages in a ring (P0 home, P1 quota,
-// P2 sessions, P3 system). Rendered only after the Mac negotiates v2; the
-// legacy dashboard in DashboardUi.h remains the v1 fallback.
+// P2 sessions, P3 system). It is the boot/default UI; the legacy dashboard in
+// DashboardUi.h appears only after an actual v1 payload.
 
 #pragma once
 
@@ -66,7 +66,7 @@ struct State {
   bool charging = false;
 
   const char* firmwareVersion = "";
-  std::uint8_t protocolVersion = 1;
+  std::uint8_t protocolVersion = 2;
 
   // Transient pill (SEND / LISTENING / VOICE CHAT / swipe), same role as the
   // v1 dashboard transient.

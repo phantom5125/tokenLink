@@ -16,6 +16,9 @@ struct StopWatchView: View {
         }
 
         compatibilityNotice
+        if model.configuration.requiresBluetoothRebinding {
+          bluetoothIdentityNotice
+        }
         bindingCard
         WatchFaceSettingsView(model: model)
         discoveryCard
@@ -31,6 +34,23 @@ struct StopWatchView: View {
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     .navigationTitle("StopWatch")
+  }
+
+  private var bluetoothIdentityNotice: some View {
+    HStack(alignment: .top, spacing: 13) {
+      Image(systemName: "bolt.horizontal.circle.fill")
+        .font(.title2)
+        .foregroundStyle(.orange)
+      VStack(alignment: .leading, spacing: 4) {
+        Text(model.text(.watchRebindTitle))
+          .font(.headline)
+        Text(model.text(.watchRebindBody))
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+    }
+    .padding(18)
+    .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 14))
   }
 
   private var compatibilityNotice: some View {

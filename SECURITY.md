@@ -9,8 +9,14 @@ distributed builds do not receive guaranteed security updates.
 ## Secret handling
 
 TokenLink stores explicit provider API keys exclusively in the macOS Keychain
-under service `io.github.phantom5125.tokenlink.provider` and stable per-account
+under service `app.tokenlink.provider` and stable per-account
 identifiers. Keys are never written to `config.json`, logs, diagnostics, or Git.
+
+The pre-0.2.1 service `io.github.phantom5125.tokenlink.provider` is never read
+during launch, scheduled refresh, or credential-status checks. Existing users
+may start a one-time migration from the Providers screen after reviewing its
+scope; TokenLink copies only configured Kimi, MiniMax, and GLM items and keeps
+the old items as a recovery fallback.
 
 - Configuration files contain no secrets; `scripts/privacy_scan.sh` runs in CI
   to keep it that way.
@@ -18,8 +24,11 @@ identifiers. Keys are never written to `config.json`, logs, diagnostics, or Git.
   paths, Bluetooth identifiers, account labels, and any key matching
   `token|secret|authorization|api[_-]?key`).
 - The Kimi adapter may read the documented local Kimi Code CLI credential file
-  read-only. The Claude adapter may read the Claude Code Keychain credential
-  read-only. Neither adapter reads or writes a refresh token.
+  read-only. TokenLink never requests the Claude Code Keychain credential until
+  the user enables Claude, reviews the access explanation, and clicks the
+  authorization button. macOS grants access to the whole item; the adapter
+  decodes only its access token and expiry and deliberately omits the refresh
+  token field. Neither adapter writes a CLI credential or refresh token.
 - The initial destination of each credential-bearing request is validated
   against its provider's HTTPS host allowlist before the request is sent.
 - Codex quota and task state reuse the local Codex CLI sign-in. The optional

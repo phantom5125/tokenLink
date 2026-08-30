@@ -146,6 +146,23 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   #expect(scheduler.interval == .seconds(300))
 }
 
+@MainActor @Test func explicitBindingCompletesBluetoothIdentityMigration() async throws {
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000044")!
+  let transport = TestBLETransport()
+  var configuration = AppConfiguration.default
+  configuration.requiresBluetoothRebinding = true
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    bluetoothTransport: transport)
+
+  try await model.bindDevice(identifier)
+
+  #expect(model.configuration.boundDeviceIdentifier == identifier)
+  #expect(!model.configuration.requiresBluetoothRebinding)
+  model.stop()
+}
+
 @MainActor @Test func freshCodexRefreshAutomaticallySyncsBoundWatchWithBoundedRetry() async {
   let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
   let transport = TestBLETransport(failuresBeforeSuccess: 1)
@@ -474,29 +491,48 @@ private final class RefresherBuilderLog: @unchecked Sendable {
 }
 
 private actor AppModelFakeKeychain: KeychainClient {
-  private var values: [String: Data] = [:]
+  private struct Address: Hashable {
+    let service: String
+    let account: String
+  }
+
+  private var values: [Address: Data] = [:]
 
   func read(service: String, account: String) async throws -> Data? {
-    values[account]
+    values[Address(service: service, account: account)]
   }
 
   func readByService(service: String) async throws -> Data? { nil }
 
   func write(_ data: Data, service: String, account: String) async throws {
-    values[account] = data
+    values[Address(service: service, account: account)] = data
   }
 
   func delete(service: String, account: String) async throws {
-    values[account] = nil
+    values[Address(service: service, account: account)] = nil
+  }
+
+  func set(_ value: String, service: String, account: String) {
+    values[Address(service: service, account: account)] = Data(value.utf8)
   }
 
   func value(for account: String) -> String? {
-    values[account].map { String(decoding: $0, as: UTF8.self) }
+    values[Address(service: KeychainVault.service, account: account)]
+      .map { String(decoding: $0, as: UTF8.self) }
   }
 }
 
 private struct NoCLITokenReader: KimiTokenReading {
   func accessToken() async throws -> String? { nil }
+}
+
+private actor CountingClaudeTokenReader: ClaudeTokenReading {
+  private(set) var readCount = 0
+
+  func accessToken() async throws -> String? {
+    readCount += 1
+    return "claude-access-token"
+  }
 }
 
 @MainActor @Test func addingCodexAccountIsRejected() {
@@ -554,7 +590,7 @@ private struct NoCLITokenReader: KimiTokenReading {
   #expect(kimiGroup.accounts.last?.id == second.id)
   #expect(kimiGroup.accounts.last?.label == "Work")
   // Provider-level projection stays one row per provider for the current UI.
-  #expect(model.orderedProviderRows.map(\.id) == ProviderID.allCases)
+  #expect(model.orderedProviderRows.map(\.id) == [.codex, .kimi, .minimax, .glm])
 }
 
 @MainActor @Test func keyHintMasksStoredKeyForAccount() async throws {
@@ -582,4 +618,63 @@ private struct NoCLITokenReader: KimiTokenReading {
   #expect(model.credentialConfigured[.glm] == false)
   let minimax = model.configuration.defaultAccount(for: .minimax)
   #expect(minimax.flatMap { model.credentialSourceByAccount[$0.id] } == .environmentVariable)
+}
+
+@MainActor @Test func legacyCredentialsRequireExplicitMigration() async throws {
+  let client = AppModelFakeKeychain()
+  await client.set(
+    "legacy-glm-key",
+    service: KeychainVault.legacyService,
+    account: "glm")
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLITokenReader())
+  var configuration = AppConfiguration.default
+  configuration.legacyKeychainMigrationCompleted = false
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault)
+  let glm = try #require(configuration.defaultAccount(for: .glm))
+
+  await model.refreshCredentialStates()
+  #expect(model.credentialConfiguredByAccount[glm.id] == false)
+  #expect(await client.value(for: "glm") == nil)
+
+  let migrated = try await model.migrateLegacyCredentials()
+  #expect(migrated == 1)
+  #expect(model.configuration.legacyKeychainMigrationCompleted == true)
+  #expect(model.credentialConfiguredByAccount[glm.id] == true)
+  #expect(await client.value(for: "glm") == "legacy-glm-key")
+}
+
+@MainActor @Test func claudeKeychainIsReadOnlyAfterExplicitAuthorization() async throws {
+  let claudeReader = CountingClaudeTokenReader()
+  let vault = KeychainVault(
+    client: AppModelFakeKeychain(),
+    kimiTokenReader: NoCLITokenReader(),
+    claudeTokenReader: claudeReader)
+  var configuration = AppConfiguration.default
+  configuration.accounts.append(
+    ProviderAccount(provider: .claude, label: "Claude", enabled: true))
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault)
+
+  await model.refreshCredentialStates()
+  #expect(await claudeReader.readCount == 0)
+  #expect(model.configuration.claudeCredentialAccessAuthorized == false)
+
+  try await model.authorizeClaudeCredentialAccess()
+  #expect(await claudeReader.readCount == 1)
+  #expect(model.configuration.claudeCredentialAccessAuthorized == true)
+
+  // The authorization read is cached briefly, so its immediate status/quota
+  // refresh cannot trigger a second macOS prompt.
+  await model.refreshCredentialStates()
+  #expect(await claudeReader.readCount == 1)
+
+  try await model.stopUsingClaudeCredential()
+  await model.refreshCredentialStates()
+  #expect(await claudeReader.readCount == 1)
+  #expect(model.configuration.claudeCredentialAccessAuthorized == false)
 }

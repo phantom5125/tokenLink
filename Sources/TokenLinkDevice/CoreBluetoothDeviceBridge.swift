@@ -8,6 +8,7 @@ public enum BluetoothTransportError: Error, Equatable, Sendable {
   case peripheralNotFound
   case serviceNotFound
   case characteristicNotFound
+  case commandNotificationsUnavailable
   case disconnected
   case system(String)
 }
@@ -27,6 +28,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     case connecting(UInt64)
     case discoveringServices(UInt64)
     case discoveringCharacteristics(UInt64)
+    case subscribingCommands(UInt64)
     case ready(UInt64)
   }
 
@@ -52,7 +54,7 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     CBUUID(string: "1812")
   }
 
-  private let queue = DispatchQueue(label: "io.github.phantom5125.tokenlink.bluetooth")
+  private let queue = DispatchQueue(label: "app.tokenlink.bluetooth")
   private let connectTimeoutSeconds: TimeInterval
   private let writeTimeoutSeconds: TimeInterval
   private let eventStream: AsyncStream<BLETransportEvent>
@@ -349,6 +351,12 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     }
   }
 
+  private func finishConnect(peripheral: CBPeripheral, generation: UInt64) {
+    connectionStage = .ready(generation)
+    resumeConnect()
+    eventContinuation.yield(.connected(peripheral.identifier))
+  }
+
   private func resumeConnect(throwing error: Error? = nil) {
     guard let continuation = connectContinuation else { return }
     connectContinuation = nil
@@ -637,11 +645,35 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
       $0.uuid == Self.commandUUID
     }) {
       commandCharacteristic = command
+      // A successful physical connection is not enough for protocol v2:
+      // session focus and refresh travel over C04 notifications. Do not expose
+      // the bridge as connected until CoreBluetooth confirms the CCCD write.
+      connectionStage = .subscribingCommands(generation)
       peripheral.setNotifyValue(true, for: command)
+      return
     }
-    connectionStage = .ready(generation)
-    resumeConnect()
-    eventContinuation.yield(.connected(peripheral.identifier))
+    finishConnect(peripheral: peripheral, generation: generation)
+  }
+
+  public func peripheral(
+    _ peripheral: CBPeripheral,
+    didUpdateNotificationStateFor characteristic: CBCharacteristic,
+    error: Error?
+  ) {
+    guard peripheral === connectedPeripheral,
+      characteristic === commandCharacteristic,
+      characteristic.uuid == Self.commandUUID,
+      case .subscribingCommands(let generation) = connectionStage
+    else { return }
+    if error != nil {
+      resumeConnect(throwing: BluetoothTransportError.commandNotificationsUnavailable)
+      return
+    }
+    guard characteristic.isNotifying else {
+      resumeConnect(throwing: BluetoothTransportError.commandNotificationsUnavailable)
+      return
+    }
+    finishConnect(peripheral: peripheral, generation: generation)
   }
 
   public func peripheral(

@@ -560,8 +560,9 @@ void CodexMicroBle::applyConnectionEvent(const PendingConnectionEvent& event) {
     ++state_.connectionEpoch;
     state_.lastHostRpcAtMs = 0;
     state_.hostRpcObserved = false;
-    // A new host re-negotiates from v1 until its first v2 payload arrives.
-    state_.watchProtocol = 1;
+    // Connection setup must not flash the legacy dashboard while TokenLink is
+    // negotiating. A real legacy payload can still opt into v1 below.
+    state_.watchProtocol = watch_protocol_presentation::kDefaultProtocol;
     clearHostRpcIdentity();
   } else if (transition.becameDisconnected || hostDisconnected) {
     state_.lastHostRpcAtMs = 0;
@@ -616,7 +617,10 @@ void CodexMicroBle::reconcileConnectionSet() {
   xSemaphoreTake(stateMutex_, portMAX_DELAY);
   if (count > 0) {
     ++state_.connectionEpoch;
-    state_.watchProtocol = 1;
+    // Reconciliation represents the same new-session boundary as the ordered
+    // connection path above. Stay on the v2 face while the host negotiates;
+    // only a successfully parsed legacy payload may select the v1 dashboard.
+    state_.watchProtocol = watch_protocol_presentation::kDefaultProtocol;
   }
   state_.connected = count > 0;
   state_.lastHostRpcAtMs = 0;
@@ -829,7 +833,7 @@ void CodexMicroBle::processQuotaWrite(const uint8_t* data, size_t length,
     }
     xSemaphoreTake(stateMutex_, portMAX_DELAY);
     state_.watchStore.apply(payload, millis());
-    state_.watchProtocol = 2;
+    state_.watchProtocol = watch_protocol_presentation::protocolForPayload(true);
     state_.dirty = true;
     xSemaphoreGive(stateMutex_);
     Serial.printf(
@@ -849,6 +853,7 @@ void CodexMicroBle::processQuotaWrite(const uint8_t* data, size_t length,
   state_.quota.resetInSeconds = snapshot.resetInSeconds;
   state_.quota.receivedAtMs = millis();
   state_.quota.available = true;
+  state_.watchProtocol = watch_protocol_presentation::protocolForPayload(false);
   state_.dirty = true;
   xSemaphoreGive(stateMutex_);
 

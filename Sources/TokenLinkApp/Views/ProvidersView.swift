@@ -11,6 +11,8 @@ struct ProvidersView: View {
   @State private var addAccountExpanded: Set<ProviderID> = []
   @State private var codexPath = ""
   @State private var message: String?
+  @State private var showingClaudeAuthorization = false
+  @State private var showingLegacyMigration = false
 
   var body: some View {
     ScrollView {
@@ -34,6 +36,10 @@ struct ProvidersView: View {
           .background(.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
         }
 
+        if !model.configuration.legacyKeychainMigrationCompleted {
+          legacyCredentialMigrationBanner
+        }
+
         ForEach(ProviderID.allCases, id: \.self) { provider in
           providerSection(provider)
         }
@@ -54,6 +60,55 @@ struct ProvidersView: View {
       await model.refreshCredentialStates()
       await loadKeyHints()
     }
+    .alert(
+      model.text(.providersClaudeAuthorizationTitle),
+      isPresented: $showingClaudeAuthorization
+    ) {
+      Button(model.text(.actionCancel), role: .cancel) {}
+      Button(model.text(.actionContinue)) { authorizeClaudeCredential() }
+    } message: {
+      Text(model.text(.providersClaudeAuthorizationExplanation))
+    }
+    .alert(
+      model.text(.providersLegacyMigrationAuthorizationTitle),
+      isPresented: $showingLegacyMigration
+    ) {
+      Button(model.text(.actionCancel), role: .cancel) {}
+      Button(model.text(.actionContinue)) { migrateLegacyCredentials() }
+    } message: {
+      Text(model.text(.providersLegacyMigrationAuthorizationExplanation))
+    }
+  }
+
+  private var legacyCredentialMigrationBanner: some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Label(
+        model.text(.providersLegacyMigrationTitle),
+        systemImage: "key.horizontal.fill"
+      )
+      .font(.headline)
+      Text(model.text(.providersLegacyMigrationNote))
+        .font(.subheadline)
+        .foregroundStyle(.secondary)
+      HStack {
+        Button(model.text(.providersLegacyMigrationAction)) {
+          showingLegacyMigration = true
+        }
+        .disabled(model.isMigratingLegacyCredentials)
+        Button(model.text(.providersLegacyMigrationDismiss)) {
+          do {
+            try model.dismissLegacyCredentialMigration()
+          } catch {
+            message = error.localizedDescription
+          }
+        }
+        .buttonStyle(.link)
+        .disabled(model.isMigratingLegacyCredentials)
+      }
+    }
+    .padding(14)
+    .frame(maxWidth: .infinity, alignment: .leading)
+    .background(.blue.opacity(0.08), in: RoundedRectangle(cornerRadius: 12))
   }
 
   @ViewBuilder
@@ -147,6 +202,32 @@ struct ProvidersView: View {
         LabeledContent(model.text(.providersCredential)) {
           credentialStatus(account)
         }
+      }
+      if !model.configuration.enabledProviders.contains(.claude) {
+        Label(model.text(.providersClaudeEnableFirst), systemImage: "power")
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      } else if model.configuration.claudeCredentialAccessAuthorized {
+        HStack(spacing: 10) {
+          Label(
+            model.text(.providersClaudeAuthorized),
+            systemImage: "checkmark.shield.fill"
+          )
+          .foregroundStyle(.green)
+          Spacer()
+          Button(model.text(.providersClaudeStopUsing), role: .destructive) {
+            stopUsingClaudeCredential()
+          }
+          .disabled(model.isAuthorizingClaudeCredential)
+        }
+        .font(.subheadline)
+      } else {
+        Button {
+          showingClaudeAuthorization = true
+        } label: {
+          Label(model.text(.providersClaudeAuthorize), systemImage: "key.fill")
+        }
+        .disabled(model.isAuthorizingClaudeCredential)
       }
       Text(model.text(.providersClaudeNote))
         .font(.caption)
@@ -363,6 +444,43 @@ struct ProvidersView: View {
         message = String(format: model.text(.providersAccountRemoved), account.label)
         await loadKeyHints()
       } catch { message = error.localizedDescription }
+    }
+  }
+
+  private func authorizeClaudeCredential() {
+    Task {
+      do {
+        try await model.authorizeClaudeCredentialAccess()
+        message = model.text(.providersClaudeAuthorizationSucceeded)
+      } catch {
+        message = error.localizedDescription
+      }
+    }
+  }
+
+  private func stopUsingClaudeCredential() {
+    Task {
+      do {
+        try await model.stopUsingClaudeCredential()
+        message = model.text(.providersClaudeStopped)
+      } catch {
+        message = error.localizedDescription
+      }
+    }
+  }
+
+  private func migrateLegacyCredentials() {
+    Task {
+      do {
+        let count = try await model.migrateLegacyCredentials()
+        message =
+          count == 0
+          ? model.text(.providersLegacyMigrationNone)
+          : String(format: model.text(.providersLegacyMigrationSucceeded), count)
+        await loadKeyHints()
+      } catch {
+        message = error.localizedDescription
+      }
     }
   }
 

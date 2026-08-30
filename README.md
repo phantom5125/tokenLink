@@ -74,8 +74,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 - Sends macOS notifications when a window runs low, a window resets, or a
   stored credential is rejected (toggle in Settings).
 - Keeps last-known-good snapshots and marks them stale when refresh fails.
-- Stores explicit API keys in macOS Keychain under service
-  `io.github.phantom5125.tokenlink.provider` and stable provider accounts.
+- Stores explicit API keys in macOS Keychain under the user-facing `TokenLink`
+  label and service `app.tokenlink.provider`. Upgrades never read the pre-0.2.1
+  service automatically; the Providers screen offers a separately explained,
+  user-initiated migration.
 - Binds a single StopWatch by CoreBluetooth identifier and writes with response.
 - Negotiates watch protocol v2 and sends every selected provider in one sync; v1
   firmware continues to receive only the unchanged Codex primary-window payload.
@@ -213,10 +215,12 @@ cookies, or refresh token, and it never refreshes or writes the CLI credential.
 ### Claude
 
 TokenLink reads the OAuth usage endpoint used by Claude Code's own `/usage`
-display, reusing the Claude Code CLI's local sign-in (its Keychain credential
-item, read-only; expired tokens are ignored and the refresh token is never
-read). Anthropic pay-as-you-go API keys do not report subscription quota, so
-there is intentionally no key field for Claude.
+display. It never requests the CLI's `Claude Code-credentials` Keychain item at
+launch: enable Claude and use the explicit authorization button first. The
+preflight explains that macOS grants the whole item (not the whole Keychain),
+that TokenLink uses only the access token and expiry, and when “Always Allow” is
+appropriate. Anthropic pay-as-you-go API keys do not report subscription quota,
+so there is intentionally no key field for Claude.
 
 ### MiniMax
 
@@ -242,13 +246,21 @@ effect immediately.
 3. Select one discovered identifier and bind it.
 4. Press **Sync watch now**.
 
+When upgrading from the previous `io.github.phantom5125.tokenlink` identity,
+TokenLink 0.2.1 clears the old saved peripheral identifier and explains a
+one-time rebind before Bluetooth is initialized. Pressing **Scan** is the
+explicit action that can trigger the macOS Bluetooth prompt. Allowing it grants
+`app.tokenlink` nearby-device discovery, connection, quota sync, and watch
+command access; it does not grant Keychain access.
+
 Discovery occurs only on explicit request. TokenLink first checks connected quota
 and HID peripherals, then performs a short broad scan filtered by the StopWatch
 name or private service UUID. It does not connect until you explicitly bind an
 identifier. Once bound, fresh selected-provider snapshots sync automatically;
 **Sync watch now** remains available as a manual action. Connect, capability-read,
-and write operations have finite deadlines, and quota writes require an ATT
-response.
+notification-subscription, and write operations have finite deadlines. Quota
+writes require an ATT response, and a protocol-v2 connection is not reported as
+ready until macOS confirms the C04 watch-command notification subscription.
 
 The v1 firmware understands only this payload:
 
@@ -308,8 +320,10 @@ rm -rf "$HOME/Library/Application Support/TokenLink"
 ```
 
 Keychain items can be removed from Keychain Access, or individually with the
-`security` command using service `io.github.phantom5125.tokenlink.provider` and
-accounts `kimi`, `minimax`, or `glm`.
+`security` command using service `app.tokenlink.provider` and
+accounts `kimi`, `minimax`, or `glm`. A completed upgrade migration deliberately
+keeps recovery copies under `io.github.phantom5125.tokenlink.provider`; remove
+those manually in Keychain Access after confirming the new credentials work.
 
 ## Architecture
 

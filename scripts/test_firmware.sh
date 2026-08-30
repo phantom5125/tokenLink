@@ -21,6 +21,7 @@ plain_tests=(
   gesture_test
   power_button_gesture_test
   raise_wake_test
+  watch_protocol_presentation_test
 )
 
 json_tests=(

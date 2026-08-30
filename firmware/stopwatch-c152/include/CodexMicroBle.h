@@ -16,6 +16,7 @@
 
 #include "ConnectionHealth.h"
 #include "WatchModel.h"
+#include "WatchProtocolPresentation.h"
 
 struct ThreadLight {
   uint32_t color = 0;
@@ -39,10 +40,9 @@ struct CodexMicroState {
   uint32_t lastHostRpcAtMs = 0;
   uint32_t connectionEpoch = 0;
   bool dirty = true;
-  // Protocol level of the quota payloads seen on this connection. Starts at 1
-  // on every new connection; the first v2 payload on C02 promotes it to 2.
-  // At 1 the firmware renders the legacy six-circle dashboard unchanged.
-  uint8_t watchProtocol = 1;
+  // Presentation starts in v2 so the current four-page face is visible from
+  // boot. An actual v1 payload opts this connection into the legacy dashboard.
+  uint8_t watchProtocol = watch_protocol_presentation::kDefaultProtocol;
   watch_model::Store watchStore;
 };
 
