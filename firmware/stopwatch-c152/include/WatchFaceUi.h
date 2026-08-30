@@ -88,12 +88,12 @@ constexpr int kCenterY = 233;
 constexpr int kSessionRowY = 122;
 constexpr int kSessionRowHeight = 94;
 
-// Keep the quota horseshoe clear of the clock at the top of the round screen.
-// The dedicated center also lets the rest of the watch face keep using the
-// physical display center for overlays and page layouts.
-constexpr int kHomeArcCenterY = 258;
-constexpr int kHomeArcOuterRadius = 188;
-constexpr int kHomeArcInnerRadius = 162;
+// The quota horseshoe is the outer frame of the watch face. Its dedicated
+// center keeps it close to the display edge while leaving the physical center
+// available to the rest of the UI.
+constexpr int kHomeArcCenterY = 239;
+constexpr int kHomeArcOuterRadius = 215;
+constexpr int kHomeArcInnerRadius = 189;
 constexpr int kHomeSessionPillLeft = 158;
 constexpr int kHomeSessionPillTop = 382;
 constexpr int kHomeSessionPillWidth = 150;
@@ -611,7 +611,7 @@ void renderHome(Surface& surface, const State& state,
   // Draw the clock after both arc layers so the numerals remain crisp when the
   // actual quota crosses the 12 o'clock region.
   surface.loadFont(dashboard::font_data::kNunitoDigits28Vlw);
-  dashboard::centered(surface, clock, kCenterX, 54, dashboard::kText);
+  dashboard::centered(surface, clock, kCenterX, 68, dashboard::kText);
   surface.unloadFont();
   surface.fillCircle(181, 122, 4, syncColor(surface, state.sync));
   drawHomeSessionPill(surface, store);

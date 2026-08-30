@@ -19,7 +19,8 @@ private func faceStateWindow(
   _ id: String,
   label: String,
   remaining: Double,
-  resetsAt: Date? = nil
+  resetsAt: Date? = nil,
+  durationSeconds: Int? = nil
 ) -> QuotaWindow {
   QuotaWindow(
     id: id,
@@ -28,7 +29,8 @@ private func faceStateWindow(
     remainingPercent: remaining,
     remainingCount: nil,
     limitCount: nil,
-    resetsAt: resetsAt)
+    resetsAt: resetsAt,
+    durationSeconds: durationSeconds)
 }
 
 @Test func canonicalFaceStatePreservesSemanticDataBeforeWireCaps() {
@@ -41,7 +43,9 @@ private func faceStateWindow(
           faceStateWindow("5h", label: "Five hours", remaining: 72),
           faceStateWindow("weekly", label: "Weekly", remaining: 61),
           faceStateWindow("monthly", label: "Monthly", remaining: 55),
-          faceStateWindow("custom", label: "Custom", remaining: 40),
+          faceStateWindow(
+            "custom", label: "Custom", remaining: 40,
+            durationSeconds: 12 * 3_600),
         ]),
       faceStateSnapshot(
         .kimi,
@@ -60,7 +64,7 @@ private func faceStateWindow(
   #expect(state.providers[0].windows[0].label == "Five hours")
   #expect(state.providers[0].windows[0].durationSeconds == 5 * 3_600)
   #expect(state.providers[0].windows[1].durationSeconds == 7 * 86_400)
-  #expect(state.providers[0].windows[3].durationSeconds == nil)
+  #expect(state.providers[0].windows[3].durationSeconds == 12 * 3_600)
   #expect(state.workItems[0].state == .needsInput)
   #expect(state.workItems[0].latest)
   #expect(state.workItems[0].seen)

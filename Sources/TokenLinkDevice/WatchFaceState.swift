@@ -43,7 +43,8 @@ public struct WatchFaceProviderState: Equatable, Sendable {
           label: window.label,
           remainingPercent: window.remainingPercent,
           resetsAt: window.resetsAt,
-          durationSeconds: FairPace.duration(for: window.id).map(Int.init))
+          durationSeconds: window.durationSeconds
+            ?? FairPace.duration(for: window.id).map(Int.init))
       })
   }
 }

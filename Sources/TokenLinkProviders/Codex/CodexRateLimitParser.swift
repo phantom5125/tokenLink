@@ -27,7 +27,10 @@ public enum CodexRateLimitParser {
           remainingPercent: 100 - window.usedPercent,
           remainingCount: nil,
           limitCount: nil,
-          resetsAt: Date(timeIntervalSince1970: window.resetsAt))
+          resetsAt: Date(timeIntervalSince1970: window.resetsAt),
+          durationSeconds: window.windowDurationMins.flatMap {
+            $0 > 0 ? Int($0 * 60) : nil
+          })
       ],
       source: .localAppServer,
       fetchedAt: fetchedAt)
@@ -61,4 +64,5 @@ private struct CodexLimit: Decodable {
 private struct CodexWindow: Decodable {
   let usedPercent: Double
   let resetsAt: Double
+  let windowDurationMins: Double?
 }
