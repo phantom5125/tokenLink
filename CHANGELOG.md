@@ -4,6 +4,16 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## Unreleased — v0.2.2 Bluetooth diagnostics
+
+- Added a credential-free StopWatch checklist for Bluetooth authorization,
+  adapter readiness, device binding, connection progress, protocol-v2 C04
+  command notifications, and last successful sync.
+- Added actionable recovery guidance for denied permission, stale app-identity
+  bindings, connection timeouts, and missing command notifications.
+- Included the same redacted Bluetooth state-machine fields in diagnostics
+  exports without device UUIDs, credentials, token values, or payload bodies.
+
 ## 0.2.1 — 2026-08-30
 
 - Moved the exact default wireless M5Stack StopWatch C152 firmware source into

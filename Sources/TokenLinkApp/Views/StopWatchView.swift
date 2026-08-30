@@ -20,6 +20,7 @@ struct StopWatchView: View {
           bluetoothIdentityNotice
         }
         bindingCard
+        diagnosticsCard
         WatchFaceSettingsView(model: model)
         discoveryCard
 
@@ -34,6 +35,89 @@ struct StopWatchView: View {
     }
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     .navigationTitle("StopWatch")
+    .task {
+      await model.refreshBluetoothDiagnostics()
+    }
+  }
+
+  private var diagnosticsCard: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack {
+        VStack(alignment: .leading, spacing: 3) {
+          Text(localized("Connection diagnostics", "连接诊断", "接続診断"))
+            .font(.headline)
+          Text(
+            localized(
+              "This checklist contains no credentials, token values, or watch payload contents.",
+              "该检查表不包含凭据、token 数值或手表 payload 内容。",
+              "このチェックリストには認証情報、トークン値、ウォッチのペイロード内容は含まれません。")
+          )
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        }
+        Spacer()
+        Button {
+          Task { await model.refreshBluetoothDiagnostics() }
+        } label: {
+          Label(
+            localized("Refresh status", "刷新状态", "状態を更新"),
+            systemImage: "arrow.clockwise")
+        }
+      }
+
+      VStack(spacing: 0) {
+        ForEach(Array(model.watchDiagnosticItems.enumerated()), id: \.element.id) {
+          index, item in
+          HStack(alignment: .top, spacing: 12) {
+            Image(systemName: diagnosticSymbol(item.level))
+              .foregroundStyle(diagnosticColor(item.level))
+              .frame(width: 18)
+            VStack(alignment: .leading, spacing: 3) {
+              Text(item.title)
+                .font(.subheadline.weight(.medium))
+              Text(item.detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+          }
+          .padding(.vertical, 10)
+          if index < model.watchDiagnosticItems.count - 1 {
+            Divider().padding(.leading, 30)
+          }
+        }
+      }
+    }
+    .padding(20)
+    .background(.background, in: RoundedRectangle(cornerRadius: 16))
+    .overlay { RoundedRectangle(cornerRadius: 16).strokeBorder(.quaternary) }
+  }
+
+  private func diagnosticSymbol(_ level: WatchDiagnosticLevel) -> String {
+    switch level {
+    case .ready: "checkmark.circle.fill"
+    case .attention: "exclamationmark.triangle.fill"
+    case .blocked: "xmark.octagon.fill"
+    case .inactive: "circle.dotted"
+    }
+  }
+
+  private func diagnosticColor(_ level: WatchDiagnosticLevel) -> Color {
+    switch level {
+    case .ready: .green
+    case .attention: .orange
+    case .blocked: .red
+    case .inactive: .secondary
+    }
+  }
+
+  private func localized(_ english: String, _ chinese: String, _ japanese: String) -> String {
+    switch model.currentLanguage {
+    case .english: english
+    case .simplifiedChinese: chinese
+    case .japanese: japanese
+    }
   }
 
   private var bluetoothIdentityNotice: some View {
