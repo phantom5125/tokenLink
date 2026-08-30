@@ -52,10 +52,10 @@ surface.
 > interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
 > active count, three-provider sync, and physical UI feedback. Version 0.2.1
 > moved that firmware into this repository and passed its physical release
-> checks. The 0.2.2 candidate adds connection diagnostics, explicit task-link
-> outcomes, complete session pagination, and clearer C152 session states; its new
-> hardware-facing behavior still requires the checklist below. Long-duration
-> power behavior remains follow-up validation.
+> checks. The 0.2.3 release candidate adds a quota-pace watch face, a dedicated
+> Mac Cost Center, community-aligned Codex API-equivalent estimates, and clearer
+> small-size TokenLink icon artwork. Long-duration power behavior remains
+> follow-up validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
 endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
@@ -63,6 +63,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-31 — TokenLink 0.2.3 RC 1 is ready for public testing.** The new
+  TokenLink-arc quota face and Mac Cost Center ship together with request-level
+  Codex token accounting, current reviewed prices, and explicit separation
+  between subscription quota and API-equivalent estimates.
 - **2026-08-31 — Direct Mac installation is ready for release signing.** The Mac
   builder now produces a checked Universal 2 `TokenLink-0.2.2.dmg` with an
   Applications shortcut. Public tags fail closed unless Developer ID signing

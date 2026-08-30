@@ -6,6 +6,8 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+## 0.2.3-rc.1 — 2026-08-31
+
 - Reworked the Data watch face around a TokenLink-style open quota arc, with
   rounded Nunito numerals, a time-proportional plan tick, percentage-point
   variance, reset countdown, and a compact session-action pill.

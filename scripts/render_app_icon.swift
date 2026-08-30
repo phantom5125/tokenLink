@@ -2,15 +2,18 @@ import AppKit
 import Foundation
 
 private let arguments = CommandLine.arguments
-guard arguments.count == 2 else {
+guard
+  arguments.count == 3,
+  let outputSide = Int(arguments[2]),
+  outputSide > 0
+else {
   FileHandle.standardError.write(
-    Data("usage: render_app_icon.swift OUTPUT.png\n".utf8))
+    Data("usage: render_app_icon.swift OUTPUT.png PIXELS\n".utf8))
   exit(64)
 }
 
 let outputURL = URL(fileURLWithPath: arguments[1])
 
-let outputSide = 1024
 guard
   let colorSpace = CGColorSpace(name: CGColorSpace.sRGB),
   let context = CGContext(
@@ -30,23 +33,24 @@ func radians(_ degrees: CGFloat) -> CGFloat {
   degrees * .pi / 180
 }
 
-let outputRect = CGRect(x: 0, y: 0, width: outputSide, height: outputSide)
-let iconRect = outputRect.insetBy(dx: 54, dy: 54)
+let side = CGFloat(outputSide)
+let outputRect = CGRect(x: 0, y: 0, width: side, height: side)
+let iconRect = outputRect.insetBy(dx: side * 54 / 1024, dy: side * 54 / 1024)
 context.clear(outputRect)
 
-// Draw the icon from geometry so 16 px and 32 px variants retain the same
-// silhouette as the large artwork. The older photographic source lost most of
-// the open ring when macOS downsampled it for sidebars.
+// Draw every icon master from geometry so small variants retain the intended
+// open-ring silhouette. The older photographic source lost most of the gap
+// when macOS downsampled it for sidebars.
 context.saveGState()
 context.setShadow(
-  offset: CGSize(width: 0, height: -18), blur: 30,
+  offset: CGSize(width: 0, height: -side * 18 / 1024), blur: side * 30 / 1024,
   color: CGColor(red: 0, green: 0, blue: 0, alpha: 0.42))
 context.setFillColor(CGColor(red: 0.045, green: 0.059, blue: 0.078, alpha: 1))
 context.addPath(
   CGPath(
     roundedRect: iconRect,
-    cornerWidth: 202,
-    cornerHeight: 202,
+    cornerWidth: side * 202 / 1024,
+    cornerHeight: side * 202 / 1024,
     transform: nil))
 context.fillPath()
 context.restoreGState()
@@ -55,21 +59,30 @@ context.saveGState()
 context.addPath(
   CGPath(
     roundedRect: iconRect,
-    cornerWidth: 202,
-    cornerHeight: 202,
+    cornerWidth: side * 202 / 1024,
+    cornerHeight: side * 202 / 1024,
     transform: nil))
 context.clip()
 
-let arcCenter = CGPoint(x: 512, y: 516)
+// Small masters need a slimmer, slightly inset arc as well as an optical gap.
+// Otherwise the rounded stroke reads as a clipped U instead of an open ring.
+let (arcRadiusUnits, arcLineWidthUnits, gapDegrees): (CGFloat, CGFloat, CGFloat) =
+  switch outputSide {
+  case ...16: (312, 104, 104)
+  case ...32: (320, 116, 96)
+  case ...64: (326, 132, 88)
+  default: (330, 146, 80)
+  }
+let arcCenter = CGPoint(x: side / 2, y: side * 516 / 1024)
 let arcPath = CGMutablePath()
 arcPath.addArc(
   center: arcCenter,
-  radius: 330,
-  startAngle: radians(-50),
-  endAngle: radians(230),
+  radius: side * arcRadiusUnits / 1024,
+  startAngle: radians(-90 + gapDegrees / 2),
+  endAngle: radians(270 - gapDegrees / 2),
   clockwise: false)
 context.addPath(arcPath)
-context.setLineWidth(146)
+context.setLineWidth(side * arcLineWidthUnits / 1024)
 context.setLineCap(.round)
 context.replacePathWithStrokedPath()
 context.clip()
@@ -91,42 +104,42 @@ else {
 }
 context.drawLinearGradient(
   gradient,
-  start: CGPoint(x: 160, y: 512),
-  end: CGPoint(x: 864, y: 512),
+  start: CGPoint(x: side * 160 / 1024, y: side / 2),
+  end: CGPoint(x: side * 864 / 1024, y: side / 2),
   options: [])
 context.restoreGState()
 
 // A custom stroked infinity remains recognizable without overpowering the
 // surrounding TokenLink arc at Finder/sidebar sizes.
 let infinity = CGMutablePath()
-infinity.move(to: CGPoint(x: 512, y: 512))
+infinity.move(to: CGPoint(x: side * 512 / 1024, y: side * 512 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 370, y: 425),
-  control1: CGPoint(x: 450, y: 445),
-  control2: CGPoint(x: 412, y: 425))
+  to: CGPoint(x: side * 370 / 1024, y: side * 425 / 1024),
+  control1: CGPoint(x: side * 450 / 1024, y: side * 445 / 1024),
+  control2: CGPoint(x: side * 412 / 1024, y: side * 425 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 370, y: 599),
-  control1: CGPoint(x: 300, y: 425),
-  control2: CGPoint(x: 300, y: 599))
+  to: CGPoint(x: side * 370 / 1024, y: side * 599 / 1024),
+  control1: CGPoint(x: side * 300 / 1024, y: side * 425 / 1024),
+  control2: CGPoint(x: side * 300 / 1024, y: side * 599 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 512, y: 512),
-  control1: CGPoint(x: 412, y: 599),
-  control2: CGPoint(x: 450, y: 579))
+  to: CGPoint(x: side * 512 / 1024, y: side * 512 / 1024),
+  control1: CGPoint(x: side * 412 / 1024, y: side * 599 / 1024),
+  control2: CGPoint(x: side * 450 / 1024, y: side * 579 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 654, y: 425),
-  control1: CGPoint(x: 574, y: 445),
-  control2: CGPoint(x: 612, y: 425))
+  to: CGPoint(x: side * 654 / 1024, y: side * 425 / 1024),
+  control1: CGPoint(x: side * 574 / 1024, y: side * 445 / 1024),
+  control2: CGPoint(x: side * 612 / 1024, y: side * 425 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 654, y: 599),
-  control1: CGPoint(x: 724, y: 425),
-  control2: CGPoint(x: 724, y: 599))
+  to: CGPoint(x: side * 654 / 1024, y: side * 599 / 1024),
+  control1: CGPoint(x: side * 724 / 1024, y: side * 425 / 1024),
+  control2: CGPoint(x: side * 724 / 1024, y: side * 599 / 1024))
 infinity.addCurve(
-  to: CGPoint(x: 512, y: 512),
-  control1: CGPoint(x: 612, y: 599),
-  control2: CGPoint(x: 574, y: 579))
+  to: CGPoint(x: side * 512 / 1024, y: side * 512 / 1024),
+  control1: CGPoint(x: side * 612 / 1024, y: side * 599 / 1024),
+  control2: CGPoint(x: side * 574 / 1024, y: side * 579 / 1024))
 context.addPath(infinity)
 context.setStrokeColor(CGColor(red: 0.95, green: 0.97, blue: 0.98, alpha: 1))
-context.setLineWidth(80)
+context.setLineWidth(side * 80 / 1024)
 context.setLineCap(.round)
 context.setLineJoin(.round)
 context.strokePath()

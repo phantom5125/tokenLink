@@ -49,9 +49,9 @@ Codex、Claude、Kimi、MiniMax 和 GLM 的额度，新增协商式手表协议 
 
 > 状态：早期开发。各厂商接口可能随时变动。v0.2 界面已在 C152 上完成协议 v2
 > 协商、完整 Active 计数、三家 provider 同步及实体 UI 反馈迭代。0.2.1 已将固件移入
-> 本仓库并通过实体发布验收。0.2.2 候选新增连接诊断、明确的任务链接结果、完整 session
-> 分页和更清晰的 C152 session 状态；新增硬件行为仍需完成下方清单。长时功耗仍是
-> 后续验证项。
+> 本仓库并通过实体发布验收。0.2.3 发布候选新增额度节奏表盘、Mac 成本中心、与社区
+> 主流口径对齐的 Codex API 等价成本估算，以及小尺寸下更清晰的 TokenLink 图标。
+> 长时功耗仍是后续验证项。
 
 TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、MiniMax、
 智谱 AI、M5Stack 均无隶属或背书关系，也不是它们的官方产品。各厂商名称与
@@ -59,6 +59,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-31 — TokenLink 0.2.3 RC 1 已可公开测试。** TokenLink 圆弧额度表盘与 Mac
+  成本中心一起发布，并加入按请求计算的 Codex Token 口径、经过审阅的当前价格，以及
+  订阅额度和 API 等价成本之间的明确区分。
 - **2026-08-31 — Mac 直接安装已进入正式签名准备状态。** Mac 构建现在会生成经过
   校验的 Universal 2 `TokenLink-0.2.2.dmg`，并包含 Applications 快捷方式；公开 tag
   缺少 Developer ID 签名或 Apple 公证凭据时会直接失败，不会发布 ad-hoc 制品。

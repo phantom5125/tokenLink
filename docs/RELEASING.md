@@ -4,7 +4,7 @@ TokenLink has three artifact classes. Keep their names and expectations
 explicit:
 
 - **Mac development artifact:** an ad-hoc-signed Universal 2 DMG for source/CI
-  testing, not a notarized default download.
+  testing and GitHub prereleases, not a notarized default download.
 - **C152 firmware release:** a merged image, split-image archive, product/image
   manifests, and SHA-256 checksums built from `firmware/stopwatch-c152`.
 - **Mac public release:** `TokenLink-<version>.dmg`, containing the Universal 2
@@ -114,14 +114,16 @@ are missing:
 Never store the decoded certificate, private keys, or passwords in the
 repository or release artifacts.
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, imports the release
-identity into an ephemeral keychain, rebuilds both artifact classes from that
-tag, verifies their versions/checksums, and creates a GitHub Release from
-`docs/releases/<version>.md`. A tag containing a hyphen is published as a
-prerelease; a plain version tag such as `v0.2.2` is published as stable. The
-firmware source is already in the tag. Do not add a source ZIP copied from
-another repository.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, rebuilds both artifact
+classes from that tag, verifies their versions/checksums, and creates a GitHub
+Release from `docs/releases/<tag-without-v>.md`. A supported tag containing
+`-alpha.N`, `-beta.N`, or `-rc.N` is published as a prerelease with an explicitly
+ad-hoc-signed Mac development DMG. A plain version tag such as `v0.2.3` imports
+the release identity into an ephemeral keychain and is published as stable only
+after Developer ID signing and Apple notarization succeed. The firmware source
+is already in the tag. Do not add a source ZIP copied from another repository.
 
-Until Apple signing credentials are configured, ordinary CI may still create an
-ad-hoc development DMG, but the tag workflow will refuse to publish it. Promote
-a public DMG only after Gatekeeper verification on a separate Mac.
+Until Apple signing credentials are configured, ordinary CI and explicitly
+labelled prereleases may publish ad-hoc development DMGs. Stable tag workflows
+still fail closed. Promote a stable public DMG only after Gatekeeper verification
+on a separate Mac.
