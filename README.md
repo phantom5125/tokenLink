@@ -352,8 +352,9 @@ and host-native tests now live in `firmware/stopwatch-c152`. The firmware subtre
 is independently licensed under MIT and speaks the same v1/v2 contract used by
 `TokenLinkDevice`. The previous release candidate has a verified C152 flash,
 boot, protocol-v2 exchange, multi-provider sync, and user-observed UI iteration;
-the v0.2.1 rebuild now has its own flash, boot, and live-sync regression record.
-Physical UI confirmation and the 24-hour power soak remain separate gates.
+the v0.2.1 rebuild now has its own flash, boot, live-sync, reconnect, C04 command,
+physical UI, and session-focus acceptance record. The 24-hour power soak remains
+separate follow-up evidence.
 
 ## Contributing
 
