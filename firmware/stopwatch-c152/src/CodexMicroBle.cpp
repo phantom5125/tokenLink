@@ -4,6 +4,7 @@
 
 #include "CodexMicroBle.h"
 
+#include "BleIdentity.h"
 #include "HostRpcRequest.h"
 #include "QuotaPayload.h"
 #include "WatchCommandFrame.h"
@@ -25,6 +26,7 @@ constexpr char CodexMicroBle::kFirmwareVersion[];
 #include <Preferences.h>
 #include <esp_gap_ble_api.h>
 #include <esp_mac.h>
+#include <esp_system.h>
 #endif
 
 namespace {
@@ -94,10 +96,11 @@ class SecurityCallbacks final : public BLESecurityCallbacks {
 bool markGattMigrationPending() {
   Preferences preferences;
   if (!preferences.begin("codex-ble", false)) return false;
-  // Revision 2 adds the capabilities and command characteristics. Existing
-  // encrypted bonds can leave hosts using the old attribute table forever, so
-  // remove them once on-device and let the next connection pair cleanly.
-  constexpr uint8_t kGattRevision = 2;
+  // Revision 2 added the capabilities and command characteristics. Revision 3
+  // gives every full installation its own persistent BLE identity. Existing
+  // encrypted bonds belong to the previous identity and must not survive an
+  // application-only upgrade into this revision.
+  constexpr uint8_t kGattRevision = 3;
   if (preferences.getUChar("gatt-rev", 0) >= kGattRevision) {
     preferences.end();
     return false;
@@ -127,17 +130,45 @@ void clearIncompatibleBonds() {
   Serial.printf("BLE bond migration complete removed=%d\n", removed);
 }
 
-void configureVersionedBleAddress(BLEAdvertising* advertising) {
-  esp_bd_addr_t address = {};
-  if (esp_read_mac(address, ESP_MAC_BT) != ESP_OK) {
-    Serial.println("BLE v2 identity unavailable; using public address");
-    return;
+bool prepareInstallationBleAddress(esp_bd_addr_t address) {
+  Preferences preferences;
+  if (preferences.begin("codex-ble", false)) {
+    constexpr char kIdentityKey[] = "identity";
+    if (preferences.getBytesLength(kIdentityKey) == ble_identity::kAddressSize &&
+        preferences.getBytes(kIdentityKey, address,
+                             ble_identity::kAddressSize) ==
+            ble_identity::kAddressSize &&
+        ble_identity::isRandomStatic(address)) {
+      preferences.end();
+      Serial.println("BLE install identity loaded");
+      return true;
+    }
+
+    uint8_t entropy[ble_identity::kAddressSize] = {};
+    esp_fill_random(entropy, sizeof(entropy));
+    ble_identity::makeRandomStatic(entropy, address);
+    const bool stored =
+        preferences.putBytes(kIdentityKey, address,
+                             ble_identity::kAddressSize) ==
+        ble_identity::kAddressSize;
+    preferences.end();
+    if (stored) {
+      Serial.println("BLE install identity generated");
+      return true;
+    }
   }
-  // A stable random-static identity makes the v2 attribute table a genuinely
-  // new peripheral to hosts that cached the v1 table by public address. Derive
-  // it locally from the chip address; never hard-code a device identifier.
-  address[0] = static_cast<uint8_t>((address[0] & 0x3F) | 0xC0);
+
+  // If NVS is unavailable, retain the old deterministic v2 identity rather
+  // than changing address on every reboot.
+  if (esp_read_mac(address, ESP_MAC_BT) != ESP_OK) return false;
+  ble_identity::makeRandomStatic(address, address);
   address[5] ^= 0x22;
+  Serial.println("BLE install identity persistence unavailable");
+  return true;
+}
+
+void configureVersionedBleAddress(BLEAdvertising* advertising,
+                                  esp_bd_addr_t address) {
   advertising->setDeviceAddress(address, BLE_ADDR_TYPE_RANDOM);
   Serial.println("BLE v2 identity configured");
 }
@@ -230,6 +261,9 @@ void CodexMicroBle::begin() {
   // Preferences must be committed before Bluedroid starts. Opening a new NVS
   // namespace after stack initialization is not reliable on this board.
   const bool migrateGattBond = markGattMigrationPending();
+  esp_bd_addr_t installationAddress = {};
+  const bool installationAddressReady =
+      prepareInstallationBleAddress(installationAddress);
 #endif
 
   BLEDevice::init(kDeviceName);
@@ -410,7 +444,11 @@ void CodexMicroBle::begin() {
 
   BLEAdvertising* advertising = BLEDevice::getAdvertising();
 #if defined(CONFIG_BLUEDROID_ENABLED)
-  configureVersionedBleAddress(advertising);
+  if (installationAddressReady) {
+    configureVersionedBleAddress(advertising, installationAddress);
+  } else {
+    Serial.println("BLE v2 identity unavailable; using public address");
+  }
 #endif
   advertising->setAppearance(GENERIC_HID);
   advertising->addServiceUUID(hidService_->getUUID());

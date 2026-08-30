@@ -312,6 +312,8 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
 
   #expect(model.configuration.boundDeviceIdentifier == identifier)
   #expect(!model.configuration.requiresBluetoothRebinding)
+  #expect(await transport.connectCount == 1)
+  #expect(model.devicePhase == .connected)
   model.stop()
 }
 

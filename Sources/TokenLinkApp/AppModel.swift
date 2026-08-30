@@ -654,27 +654,35 @@ public final class AppModel {
   public func bindDevice(_ identifier: UUID) async throws {
     guard let bluetoothTransport, !isChangingBinding else { return }
     isChangingBinding = true
-    defer { isChangingBinding = false }
-    bindingGeneration &+= 1
-    let previousBridge = bridge
-    await cancelActiveWatchSync()
-    bridgeEventTask?.cancel()
-    bridgeEventTask = nil
-    watchCommandTask?.cancel()
-    watchCommandTask = nil
-    await previousBridge?.stopObservingTransport()
-    await previousBridge?.disconnect()
-    configuration.boundDeviceIdentifier = identifier
-    configuration.requiresBluetoothRebinding = false
-    bridge = DeviceBridge(
-      transport: bluetoothTransport,
-      boundIdentifier: identifier)
-    devicePhase = .disconnected
-    try saveConfiguration()
-    await ensureBridgeObservation()
-    await refreshBluetoothDiagnostics()
-    discoveredDeviceIdentifiers = []
-    record("Bound StopWatch")
+    do {
+      bindingGeneration &+= 1
+      let previousBridge = bridge
+      await cancelActiveWatchSync()
+      bridgeEventTask?.cancel()
+      bridgeEventTask = nil
+      watchCommandTask?.cancel()
+      watchCommandTask = nil
+      await previousBridge?.stopObservingTransport()
+      await previousBridge?.disconnect()
+      configuration.boundDeviceIdentifier = identifier
+      configuration.requiresBluetoothRebinding = false
+      bridge = DeviceBridge(
+        transport: bluetoothTransport,
+        boundIdentifier: identifier)
+      devicePhase = .disconnected
+      try saveConfiguration()
+      await ensureBridgeObservation()
+      await refreshBluetoothDiagnostics()
+      discoveredDeviceIdentifiers = []
+      record("Bound StopWatch; connecting")
+    } catch {
+      isChangingBinding = false
+      throw error
+    }
+    isChangingBinding = false
+    // Binding is an end-to-end action: connect immediately instead of showing
+    // a persisted UUID while waiting for an unrelated refresh to prove it.
+    await syncCodexNow()
   }
 
   public func unbindDevice() async throws {

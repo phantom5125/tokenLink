@@ -16,6 +16,7 @@ if [[ ! -d "$arduino_json" ]]; then
 fi
 
 plain_tests=(
+  ble_identity_test
   completion_banner_test
   connection_health_test
   gesture_test
