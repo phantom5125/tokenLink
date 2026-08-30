@@ -56,6 +56,9 @@ public enum L10n {
     // Costs
     case costsTitle = "costs.title"
     case costsBetaBadge = "costs.betaBadge"
+    case costsPeriodToday = "costs.periodToday"
+    case costsPeriodWeek = "costs.periodWeek"
+    case costsPeriodMonth = "costs.periodMonth"
     case costsSubtitle = "costs.subtitle"
     case costsBetaOffTitle = "costs.betaOffTitle"
     case costsBetaOffBody = "costs.betaOffBody"
@@ -338,9 +341,9 @@ public enum L10n {
       .japanese: "%@ クォータ、残り %lld パーセント",
     ],
     .menubarEstimateAccessibilityFormat: [
-      .english: "%@; %@ local Estimated/API-equivalent cost %@ for the last 7 days; %@",
-      .simplifiedChinese: "%@；%@ 本地 Estimated/API-equivalent 成本 %@，近 7 天；%@",
-      .japanese: "%@、%@ のローカル Estimated/API-equivalent コスト %@、直近7日間、%@",
+      .english: "%@; %@ local Estimated/API-equivalent cost %@ for %@; %@",
+      .simplifiedChinese: "%@；%@ 本地 Estimated/API-equivalent 成本 %@，%@；%@",
+      .japanese: "%@、%@ のローカル Estimated/API-equivalent コスト %@、%@、%@",
     ],
     .menubarBalanceAccessibilityFormat: [
       .english: "%@; %@ authoritative balance %@ remaining; %@",
@@ -359,7 +362,7 @@ public enum L10n {
       .japanese: "更新中、前回のデータを表示",
     ],
     .menubarEstimateCompactFormat: [
-      .english: "≈%@/7d", .simplifiedChinese: "≈%@/7天", .japanese: "≈%@/7日",
+      .english: "≈%@/%@", .simplifiedChinese: "≈%@/%@", .japanese: "≈%@/%@",
     ],
     .menubarBalanceCompactFormat: [
       .english: "%@ %@ left", .simplifiedChinese: "%@ 剩余 %@", .japanese: "%@ 残り %@",
@@ -369,6 +372,15 @@ public enum L10n {
     ],
     .costsBetaBadge: [
       .english: "Beta", .simplifiedChinese: "Beta", .japanese: "ベータ",
+    ],
+    .costsPeriodToday: [
+      .english: "Today", .simplifiedChinese: "今天", .japanese: "今日",
+    ],
+    .costsPeriodWeek: [
+      .english: "Week", .simplifiedChinese: "本周", .japanese: "週間",
+    ],
+    .costsPeriodMonth: [
+      .english: "Month", .simplifiedChinese: "本月", .japanese: "月間",
     ],
     .costsSubtitle: [
       .english:

@@ -37,7 +37,7 @@ public actor CostStore {
   public static let estimateTTL: TimeInterval = 30 * 60
 
   private var authoritativeStates: [UUID: AuthoritativeCostState] = [:]
-  private var estimatedStates: [ProviderID: EstimatedCostState] = [:]
+  private var estimatedStates: [EstimatedCostKey: EstimatedCostState] = [:]
   private let now: @Sendable () -> Date
 
   public init(now: @escaping @Sendable () -> Date = { Date() }) {
@@ -62,14 +62,16 @@ public actor CostStore {
 
   public func acceptEstimate(
     _ result: Result<EstimatedCostSnapshot, ProviderFailure>,
-    provider: ProviderID
+    provider: ProviderID,
+    period: CostDisplayPeriod = .week
   ) {
+    let key = EstimatedCostKey(provider: provider, period: period)
     switch result {
     case .success(let snapshot):
-      estimatedStates[provider] = .init(phase: .healthy, snapshot: snapshot)
+      estimatedStates[key] = .init(phase: .healthy, snapshot: snapshot)
     case .failure(let failure):
-      let old = estimatedStates[provider]?.snapshot
-      estimatedStates[provider] = .init(
+      let old = estimatedStates[key]?.snapshot
+      estimatedStates[key] = .init(
         phase: failurePhase(for: failure, hasSnapshot: old != nil),
         snapshot: old,
         error: failure)
@@ -83,9 +85,13 @@ public actor CostStore {
       snapshot: old?.snapshot)
   }
 
-  public func markEstimateRefreshing(_ provider: ProviderID) {
-    let old = estimatedStates[provider]
-    estimatedStates[provider] = .init(
+  public func markEstimateRefreshing(
+    _ provider: ProviderID,
+    period: CostDisplayPeriod = .week
+  ) {
+    let key = EstimatedCostKey(provider: provider, period: period)
+    let old = estimatedStates[key]
+    estimatedStates[key] = .init(
       phase: .refreshing,
       snapshot: old?.snapshot)
   }
@@ -97,8 +103,11 @@ public actor CostStore {
     return agedAuthoritative(state)
   }
 
-  public func estimatedState(for provider: ProviderID) -> EstimatedCostState {
-    guard let state = estimatedStates[provider] else {
+  public func estimatedState(
+    for provider: ProviderID,
+    period: CostDisplayPeriod = .week
+  ) -> EstimatedCostState {
+    guard let state = estimatedStates[EstimatedCostKey(provider: provider, period: period)] else {
       return .init(phase: .disabled)
     }
     return agedEstimate(state)
@@ -109,7 +118,11 @@ public actor CostStore {
   }
 
   public func allEstimatedStates() -> [ProviderID: EstimatedCostState] {
-    estimatedStates.mapValues(agedEstimate)
+    Dictionary(
+      uniqueKeysWithValues: estimatedStates.compactMap { key, state in
+        guard key.period == .week else { return nil }
+        return (key.provider, agedEstimate(state))
+      })
   }
 
   public func clear() {
@@ -146,4 +159,9 @@ public actor CostStore {
     result.phase = .stale
     return result
   }
+}
+
+private struct EstimatedCostKey: Hashable, Sendable {
+  let provider: ProviderID
+  let period: CostDisplayPeriod
 }

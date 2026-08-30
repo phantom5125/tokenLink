@@ -1156,6 +1156,13 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
     model.menuBarAccessibilityLabel
       == "Codex quota, 42 percent remaining; Codex local Estimated/API-equivalent cost $8.31 for the last 7 days; fresh"
   )
+
+  try await model.setCostDisplayPeriod(.month)
+  #expect(model.menuBarLabel == "Codex 42% · ≈$8.31/30d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Codex local Estimated/API-equivalent cost $8.31 for the last 30 days; fresh"
+  )
 }
 
 @MainActor @Test func menuBarCostAuthoritativeBalanceAndMissingFallback() async throws {

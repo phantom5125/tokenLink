@@ -84,6 +84,7 @@ public struct CostDiagnosticMetadata: Equatable, Sendable {
 @Observable
 public final class CostDashboardModel {
   public private(set) var isEnabled: Bool
+  public private(set) var selectedPeriod: CostDisplayPeriod
   public private(set) var isRefreshing = false
   public private(set) var authoritativeRows: [AuthoritativeCostRow] = []
   public private(set) var estimateRows: [EstimatedCostRow] = []
@@ -96,14 +97,43 @@ public final class CostDashboardModel {
     @Sendable (AuthoritativeCostSource) async -> Result<
       AuthoritativeCostSnapshot, ProviderFailure
     >
-  @ObservationIgnored private let estimateLoader:
-    @Sendable (ProviderID) async -> Result<EstimatedCostSnapshot, ProviderFailure>
+  @ObservationIgnored private let periodEstimateLoader:
+    @Sendable (ProviderID) async -> Result<EstimatedCostPeriodCollection, ProviderFailure>
   @ObservationIgnored private let now: @Sendable () -> Date
   @ObservationIgnored private var refreshTask: Task<Void, Never>?
   @ObservationIgnored private var refreshToken: UUID?
   @ObservationIgnored private var agingTask: Task<Void, Never>?
 
   public init(
+    enabled: Bool,
+    selectedPeriod: CostDisplayPeriod = .week,
+    authoritativeSources: [AuthoritativeCostSource],
+    estimateProviders: [ProviderID],
+    store: CostStore = CostStore(),
+    authoritativeLoader:
+      @escaping @Sendable (AuthoritativeCostSource) async -> Result<
+        AuthoritativeCostSnapshot, ProviderFailure
+      >,
+    periodEstimateLoader:
+      @escaping @Sendable (ProviderID) async -> Result<
+        EstimatedCostPeriodCollection, ProviderFailure
+      >,
+    now: @escaping @Sendable () -> Date = { Date() }
+  ) {
+    self.isEnabled = enabled
+    self.selectedPeriod = selectedPeriod
+    self.authoritativeSources = authoritativeSources
+    self.estimateProviders = estimateProviders
+    self.store = store
+    self.authoritativeLoader = authoritativeLoader
+    self.periodEstimateLoader = periodEstimateLoader
+    self.now = now
+  }
+
+  /// Compatibility initializer for callers that still supply one 7-day
+  /// snapshot. New production code should use `periodEstimateLoader` so one
+  /// scan populates all three display periods.
+  public convenience init(
     enabled: Bool,
     authoritativeSources: [AuthoritativeCostSource],
     estimateProviders: [ProviderID],
@@ -118,13 +148,22 @@ public final class CostDashboardModel {
       >,
     now: @escaping @Sendable () -> Date = { Date() }
   ) {
-    self.isEnabled = enabled
-    self.authoritativeSources = authoritativeSources
-    self.estimateProviders = estimateProviders
-    self.store = store
-    self.authoritativeLoader = authoritativeLoader
-    self.estimateLoader = estimateLoader
-    self.now = now
+    self.init(
+      enabled: enabled,
+      selectedPeriod: .week,
+      authoritativeSources: authoritativeSources,
+      estimateProviders: estimateProviders,
+      store: store,
+      authoritativeLoader: authoritativeLoader,
+      periodEstimateLoader: { provider in
+        await estimateLoader(provider).map { snapshot in
+          EstimatedCostPeriodCollection(
+            provider: provider,
+            snapshots: Dictionary(
+              uniqueKeysWithValues: CostDisplayPeriod.allCases.map { ($0, snapshot) }))
+        }
+      },
+      now: now)
   }
 
   public var diagnosticMetadata: CostDiagnosticMetadata {
@@ -185,6 +224,12 @@ public final class CostDashboardModel {
     }
   }
 
+  public func setDisplayPeriod(_ period: CostDisplayPeriod) async {
+    guard selectedPeriod != period else { return }
+    selectedPeriod = period
+    await updateRows()
+  }
+
   public func disable() async {
     isEnabled = false
     refreshToken = nil
@@ -210,8 +255,15 @@ public final class CostDashboardModel {
 
     var estimatesToLoad: [ProviderID] = []
     for provider in estimateProviders {
-      let state = await store.estimatedState(for: provider)
-      if force || state.phase != .healthy {
+      var hasUnhealthyPeriod = false
+      for period in CostDisplayPeriod.allCases {
+        let state = await store.estimatedState(for: provider, period: period)
+        if state.phase != .healthy {
+          hasUnhealthyPeriod = true
+          break
+        }
+      }
+      if force || hasUnhealthyPeriod {
         estimatesToLoad.append(provider)
       }
     }
@@ -223,7 +275,7 @@ public final class CostDashboardModel {
 
     isRefreshing = true
     let authoritativeLoader = self.authoritativeLoader
-    let estimateLoader = self.estimateLoader
+    let periodEstimateLoader = self.periodEstimateLoader
     await withTaskGroup(of: CostLoadResult.self) { group in
       for source in authoritativeToLoad {
         await store.markAuthoritativeRefreshing(source.accountID)
@@ -234,11 +286,13 @@ public final class CostDashboardModel {
         }
       }
       for provider in estimatesToLoad {
-        await store.markEstimateRefreshing(provider)
+        for period in CostDisplayPeriod.allCases {
+          await store.markEstimateRefreshing(provider, period: period)
+        }
         group.addTask {
           .estimate(
             provider: provider,
-            result: await estimateLoader(provider))
+            result: await periodEstimateLoader(provider))
         }
       }
 
@@ -248,7 +302,28 @@ public final class CostDashboardModel {
         case .authoritative(let accountID, let value):
           await store.acceptAuthoritative(value, accountID: accountID)
         case .estimate(let provider, let value):
-          await store.acceptEstimate(value, provider: provider)
+          switch value {
+          case .success(let collection):
+            for period in CostDisplayPeriod.allCases {
+              if let snapshot = collection.snapshots[period] {
+                await store.acceptEstimate(
+                  .success(snapshot), provider: provider, period: period)
+              } else {
+                await store.acceptEstimate(
+                  .failure(
+                    ProviderFailure(
+                      kind: .decoding,
+                      message: "The local cost scan did not produce every display period.")),
+                  provider: provider,
+                  period: period)
+              }
+            }
+          case .failure(let failure):
+            for period in CostDisplayPeriod.allCases {
+              await store.acceptEstimate(
+                .failure(failure), provider: provider, period: period)
+            }
+          }
         }
         await updateRows()
       }
@@ -272,7 +347,7 @@ public final class CostDashboardModel {
       estimates.append(
         EstimatedCostRow(
           provider: provider,
-          state: await store.estimatedState(for: provider)))
+          state: await store.estimatedState(for: provider, period: selectedPeriod)))
     }
     authoritativeRows = authoritative
     estimateRows = estimates
@@ -316,5 +391,5 @@ private enum CostLoadResult: Sendable {
     result: Result<AuthoritativeCostSnapshot, ProviderFailure>)
   case estimate(
     provider: ProviderID,
-    result: Result<EstimatedCostSnapshot, ProviderFailure>)
+    result: Result<EstimatedCostPeriodCollection, ProviderFailure>)
 }

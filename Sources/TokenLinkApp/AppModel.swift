@@ -379,6 +379,7 @@ public final class AppModel {
     }
     return CostDashboardModel(
       enabled: configuration.betaCostsEnabled,
+      selectedPeriod: configuration.costDisplayPeriod,
       authoritativeSources: sources,
       estimateProviders: estimateProviders,
       authoritativeLoader: { source in
@@ -387,19 +388,18 @@ public final class AppModel {
         }
         return await entry.provider.fetch()
       },
-      estimateLoader: { provider in
+      periodEstimateLoader: { provider in
         guard let estimator else {
           return .failure(.configuration("The bundled price catalog is unavailable."))
         }
         let task = Task.detached(priority: .utility) {
-          () -> Result<EstimatedCostSnapshot, ProviderFailure> in
+          () -> Result<EstimatedCostPeriodCollection, ProviderFailure> in
           do {
             try Task.checkCancellation()
             let through = Date()
             return .success(
-              try estimator.estimate(
+              try estimator.estimatePeriods(
                 provider: provider,
-                since: through.addingTimeInterval(-7 * 86_400),
                 through: through))
           } catch is CancellationError {
             return .failure(.timeout("Local cost scan was cancelled."))
@@ -532,6 +532,7 @@ public final class AppModel {
         quota,
         Self.displayName(for: row.provider),
         CostFormatting.amount(amount, language: currentLanguage),
+        costDisplayPeriodAccessibilityText(configuration.costDisplayPeriod),
         costFreshness(row.state.phase))
     case .authoritativeBalance(let accountID, let currency):
       guard
@@ -563,7 +564,8 @@ public final class AppModel {
       else { return nil }
       return String(
         format: text(.menubarEstimateCompactFormat),
-        CostFormatting.amount(amount, language: currentLanguage))
+        CostFormatting.amount(amount, language: currentLanguage),
+        costDisplayPeriodCompactText(configuration.costDisplayPeriod))
     case .authoritativeBalance(let accountID, let currency):
       guard
         let row = costDashboard.authoritativeRows.first(where: { $0.id == accountID }),
@@ -593,6 +595,42 @@ public final class AppModel {
       text(.menubarCostRefreshing)
     case .disabled, .missingCredential, .error:
       text(.phaseError)
+    }
+  }
+
+  public func costDisplayPeriodText(_ period: CostDisplayPeriod) -> String {
+    switch period {
+    case .today: text(.costsPeriodToday)
+    case .week: text(.costsPeriodWeek)
+    case .month: text(.costsPeriodMonth)
+    }
+  }
+
+  private func costDisplayPeriodAccessibilityText(_ period: CostDisplayPeriod) -> String {
+    switch (currentLanguage, period) {
+    case (.english, .today): "today"
+    case (.english, .week): "the last 7 days"
+    case (.english, .month): "the last 30 days"
+    case (.simplifiedChinese, .today): "今天"
+    case (.simplifiedChinese, .week): "近 7 天"
+    case (.simplifiedChinese, .month): "近 30 天"
+    case (.japanese, .today): "今日"
+    case (.japanese, .week): "直近7日間"
+    case (.japanese, .month): "直近30日間"
+    }
+  }
+
+  private func costDisplayPeriodCompactText(_ period: CostDisplayPeriod) -> String {
+    switch (currentLanguage, period) {
+    case (.english, .today): "today"
+    case (.english, .week): "7d"
+    case (.english, .month): "30d"
+    case (.simplifiedChinese, .today): "今天"
+    case (.simplifiedChinese, .week): "7天"
+    case (.simplifiedChinese, .month): "30天"
+    case (.japanese, .today): "今日"
+    case (.japanese, .week): "7日"
+    case (.japanese, .month): "30日"
     }
   }
 
@@ -1217,6 +1255,19 @@ public final class AppModel {
     }
     configuration.menuBarCostMetric = metric
     try saveConfiguration()
+  }
+
+  public func setCostDisplayPeriod(_ period: CostDisplayPeriod) async throws {
+    guard configuration.costDisplayPeriod != period else { return }
+    let previous = configuration.costDisplayPeriod
+    configuration.costDisplayPeriod = period
+    do {
+      try saveConfiguration()
+    } catch {
+      configuration.costDisplayPeriod = previous
+      throw error
+    }
+    await costDashboard.setDisplayPeriod(period)
   }
 
   public func loadCostsIfNeeded() async {

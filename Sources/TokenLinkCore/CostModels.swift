@@ -6,6 +6,33 @@ public enum MenuBarCostMetric: Codable, Equatable, Hashable, Sendable {
   case authoritativeBalance(accountID: UUID, currency: String)
 }
 
+public enum CostDisplayPeriod: String, CaseIterable, Codable, Equatable, Hashable, Sendable,
+  Identifiable
+{
+  case today
+  case week
+  case month
+
+  public var id: Self { self }
+
+  /// Today is the local calendar day; Week and Month are trailing 7- and
+  /// 30-calendar-day windows, including today.
+  public func interval(
+    endingAt date: Date,
+    calendar: Calendar = .current
+  ) -> DateInterval {
+    let today = calendar.startOfDay(for: date)
+    let dayOffset =
+      switch self {
+      case .today: 0
+      case .week: -6
+      case .month: -29
+      }
+    let start = calendar.date(byAdding: .day, value: dayOffset, to: today) ?? today
+    return DateInterval(start: start, end: date)
+  }
+}
+
 public struct CurrencyAmount: Equatable, Sendable {
   public let value: Decimal
   public let currency: String
@@ -275,6 +302,19 @@ public struct EstimatedCostSnapshot: Equatable, Sendable {
     self.catalogVersion = catalogVersion
     self.catalogEffectiveDate = catalogEffectiveDate
     self.scannedAt = scannedAt
+  }
+}
+
+public struct EstimatedCostPeriodCollection: Equatable, Sendable {
+  public let provider: ProviderID
+  public let snapshots: [CostDisplayPeriod: EstimatedCostSnapshot]
+
+  public init(
+    provider: ProviderID,
+    snapshots: [CostDisplayPeriod: EstimatedCostSnapshot]
+  ) {
+    self.provider = provider
+    self.snapshots = snapshots
   }
 }
 

@@ -6,6 +6,14 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+- Added a persisted Today / Week / Month selector shared by the Costs screen
+  and local-estimate menu-bar supplement.
+- Built all three local estimate windows from one bounded transcript pass and
+  cached them independently, so changing the visible period performs no new
+  file reads.
+- Matched authoritative daily, weekly, and monthly spend to the same selected
+  period while keeping provider balances visible and separate.
+
 - Added an opt-in Costs beta that keeps provider-reported OpenRouter and
   DeepSeek balances separate from coding-plan quota.
 - Added seven-day local `Estimated/API-equivalent` cost estimates for Codex,

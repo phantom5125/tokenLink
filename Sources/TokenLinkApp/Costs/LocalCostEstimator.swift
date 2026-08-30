@@ -49,6 +49,34 @@ public struct LocalCostEstimator: Sendable {
     }
   }
 
+  /// Builds Today / Week / Month from one bounded transcript pass. Changing
+  /// the visible period therefore never reopens local session files.
+  public func estimatePeriods(
+    provider: ProviderID,
+    through: Date,
+    calendar: Calendar = .current
+  ) throws -> EstimatedCostPeriodCollection {
+    switch provider {
+    case .codex:
+      return try estimatePeriods(
+        CodexCostRecordParser.self,
+        through: through,
+        calendar: calendar)
+    case .claude:
+      return try estimatePeriods(
+        ClaudeCostRecordParser.self,
+        through: through,
+        calendar: calendar)
+    case .kimi:
+      return try estimatePeriods(
+        KimiCostRecordParser.self,
+        through: through,
+        calendar: calendar)
+    default:
+      throw LocalCostEstimatorError.unsupportedProvider(provider)
+    }
+  }
+
   private func estimate<P: LocalUsageRecordParser>(
     _ parser: P.Type,
     since: Date,
@@ -122,6 +150,114 @@ public struct LocalCostEstimator: Sendable {
       catalogVersion: catalog.version,
       catalogEffectiveDate: catalog.effectiveDate,
       scannedAt: now())
+  }
+
+  private func estimatePeriods<P: LocalUsageRecordParser>(
+    _ parser: P.Type,
+    through: Date,
+    calendar: Calendar
+  ) throws -> EstimatedCostPeriodCollection {
+    let intervals = Dictionary(
+      uniqueKeysWithValues: CostDisplayPeriod.allCases.map {
+        ($0, $0.interval(endingAt: through, calendar: calendar))
+      })
+    guard let scanStart = intervals[.month]?.start else {
+      throw LocalCostEstimatorError.invalidInterval
+    }
+
+    var aggregates = Dictionary(
+      uniqueKeysWithValues: CostDisplayPeriod.allCases.map {
+        ($0, [AggregateKey: CostAggregate]())
+      })
+    var unknownModelIDs = Dictionary(
+      uniqueKeysWithValues: CostDisplayPeriod.allCases.map {
+        ($0, Set<String>())
+      })
+    var rejectedOverflow: Set<CostDisplayPeriod> = []
+    var seenEventIDs: Set<String> = []
+
+    let report = try observer.scanRecords(
+      parser,
+      since: scanStart,
+      through: through
+    ) { usage in
+      if !usage.deduplicationKey.isEmpty,
+        !seenEventIDs.insert(usage.deduplicationKey).inserted
+      {
+        return
+      }
+      let matchingPeriods = CostDisplayPeriod.allCases.filter { period in
+        guard let interval = intervals[period] else { return false }
+        return usage.timestamp >= interval.start && usage.timestamp <= interval.end
+      }
+      guard !matchingPeriods.isEmpty else { return }
+      guard let price = catalog.entry(provider: P.provider, modelID: usage.modelID) else {
+        for period in matchingPeriods {
+          unknownModelIDs[period, default: []].insert(usage.modelID)
+        }
+        return
+      }
+      let canonicalUsage = NormalizedModelUsage(
+        provider: usage.provider,
+        modelID: price.modelID,
+        timestamp: usage.timestamp,
+        uncachedInputTokens: usage.uncachedInputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        cacheWriteDuration: usage.cacheWriteDuration,
+        outputTokens: usage.outputTokens)
+      guard let item = CostCalculator.lineItem(usage: canonicalUsage, price: price) else {
+        for period in matchingPeriods {
+          unknownModelIDs[period, default: []].insert(usage.modelID)
+        }
+        return
+      }
+      let key = AggregateKey(modelID: price.modelID, currency: item.amount.currency)
+      for period in matchingPeriods {
+        var periodAggregates = aggregates[period] ?? [:]
+        var aggregate =
+          periodAggregates[key]
+          ?? CostAggregate(provider: P.provider, modelID: price.modelID)
+        if aggregate.add(item) {
+          periodAggregates[key] = aggregate
+          aggregates[period] = periodAggregates
+        } else {
+          rejectedOverflow.insert(period)
+        }
+      }
+    }
+
+    let skippedFiles = report.oversizedFileCount + report.unreadableFileCount
+    let snapshots: [CostDisplayPeriod: EstimatedCostSnapshot] = Dictionary(
+      uniqueKeysWithValues: CostDisplayPeriod.allCases.map { period in
+        let interval = intervals[period] ?? period.interval(endingAt: through, calendar: calendar)
+        let periodAggregates = aggregates[period] ?? [:]
+        let lineItems = periodAggregates.keys.sorted().compactMap { key in
+          periodAggregates[key]?.lineItem(currency: key.currency)
+        }
+        var warnings: [CostWarning] = []
+        if skippedFiles > 0 || report.oversizedRecordCount > 0 {
+          warnings.append(
+            .partialLocalScan(
+              fileCount: skippedFiles,
+              recordCount: report.oversizedRecordCount))
+        }
+        if rejectedOverflow.contains(period) {
+          warnings.append(.invalidTokenCount)
+        }
+        let snapshot = EstimatedCostSnapshot(
+          provider: P.provider,
+          period: interval,
+          lineItems: lineItems,
+          totals: CostCalculator.totals(for: lineItems),
+          unknownModelIDs: (unknownModelIDs[period] ?? []).sorted(),
+          warnings: warnings,
+          catalogVersion: catalog.version,
+          catalogEffectiveDate: catalog.effectiveDate,
+          scannedAt: now())
+        return (period, snapshot)
+      })
+    return EstimatedCostPeriodCollection(provider: P.provider, snapshots: snapshots)
   }
 }
 

@@ -310,9 +310,11 @@ The two cost domains are intentionally not merged:
   inventing a balance. DeepSeek calls `/user/balance` and preserves every
   returned currency separately, including valid zero balances. TokenLink does
   not convert currencies or infer spend from balance changes.
-- **`Estimated/API-equivalent`** values price the last seven days of supported
-  local CLI token records using the bundled catalog's version and effective
-  date. They estimate what equivalent API traffic would cost; they do not
+- **`Estimated/API-equivalent`** values can show Today, a trailing seven-day
+  Week, or a trailing 30-day Month of supported local CLI token records using
+  the bundled catalog's version and effective date. One bounded 30-day pass
+  fills all three cached windows, so switching periods does not reopen session
+  files. They estimate what equivalent API traffic would cost; they do not
   estimate, allocate, or assign monetary value to a Coding Plan subscription.
   Unknown models and token categories without a reviewed price are excluded and
   surfaced as warnings.

@@ -23,6 +23,7 @@ struct CostsView: View {
         }
 
         if model.configuration.betaCostsEnabled {
+          periodPicker
           authoritativeSection
           estimateSection
         } else {
@@ -35,6 +36,39 @@ struct CostsView: View {
     .background(Color(nsColor: .controlBackgroundColor).opacity(0.55))
     .navigationTitle(model.text(.costsTitle))
     .task { await model.loadCostsIfNeeded() }
+  }
+
+  private var periodPicker: some View {
+    HStack(spacing: 3) {
+      ForEach(CostDisplayPeriod.allCases) { period in
+        Button {
+          Task { try? await model.setCostDisplayPeriod(period) }
+        } label: {
+          Text(model.costDisplayPeriodText(period))
+            .font(.subheadline.weight(.semibold))
+            .frame(minWidth: 74)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .foregroundStyle(
+              model.configuration.costDisplayPeriod == period
+                ? Color.primary : Color.secondary
+            )
+            .background {
+              if model.configuration.costDisplayPeriod == period {
+                Capsule()
+                  .fill(Color(nsColor: .controlBackgroundColor))
+                  .shadow(color: .black.opacity(0.10), radius: 2, y: 1)
+              }
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityAddTraits(
+          model.configuration.costDisplayPeriod == period ? .isSelected : [])
+      }
+    }
+    .padding(3)
+    .background(Color.secondary.opacity(0.12), in: Capsule())
+    .animation(.easeOut(duration: 0.15), value: model.configuration.costDisplayPeriod)
   }
 
   private var betaDisabledCard: some View {
@@ -140,7 +174,7 @@ struct CostsView: View {
             }
           }
         }
-        ForEach(Array(snapshot.periodSpend.enumerated()), id: \.offset) { _, spend in
+        ForEach(Array(selectedSpend(in: snapshot).enumerated()), id: \.offset) { _, spend in
           LabeledContent(periodText(spend.period)) {
             Text(CostFormatting.amount(spend.amount, language: model.currentLanguage))
               .monospacedDigit()
@@ -231,6 +265,18 @@ struct CostsView: View {
     case .monthly: model.text(.costsMonthlySpend)
     case .lifetime: model.text(.costsLifetimeSpend)
     }
+  }
+
+  private func selectedSpend(
+    in snapshot: AuthoritativeCostSnapshot
+  ) -> [ProviderPeriodSpend] {
+    let target: ProviderSpendPeriod =
+      switch model.configuration.costDisplayPeriod {
+      case .today: .daily
+      case .week: .weekly
+      case .month: .monthly
+      }
+    return snapshot.periodSpend.filter { $0.period == target }
   }
 
   @ViewBuilder

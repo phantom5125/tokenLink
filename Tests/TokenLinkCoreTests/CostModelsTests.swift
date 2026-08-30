@@ -5,6 +5,23 @@ import Testing
 
 private let sourceURL = URL(string: "https://example.com/pricing")!
 
+@Test func costDisplayPeriodsUseLocalCalendarDayAndTrailingWindows() throws {
+  var calendar = Calendar(identifier: .gregorian)
+  calendar.timeZone = try #require(TimeZone(secondsFromGMT: 9 * 3_600))
+  let through = try #require(
+    calendar.date(from: DateComponents(year: 2026, month: 8, day: 31, hour: 18)))
+
+  #expect(
+    CostDisplayPeriod.today.interval(endingAt: through, calendar: calendar).start
+      == calendar.startOfDay(for: through))
+  #expect(
+    CostDisplayPeriod.week.interval(endingAt: through, calendar: calendar).start
+      == calendar.date(byAdding: .day, value: -6, to: calendar.startOfDay(for: through)))
+  #expect(
+    CostDisplayPeriod.month.interval(endingAt: through, calendar: calendar).start
+      == calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: through)))
+}
+
 @Test func priceCalculationUsesFourIndependentBuckets() throws {
   // Catches dropping or double-charging any cache/input/output bucket.
   let usage = NormalizedModelUsage(

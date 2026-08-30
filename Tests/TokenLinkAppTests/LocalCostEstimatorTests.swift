@@ -194,6 +194,61 @@ import TokenLinkProviders
   #expect(snapshot.warnings.contains(.invalidTokenCount))
 }
 
+@Test func localCostEstimatorBuildsAllDisplayPeriodsFromOneBoundedResult() throws {
+  let root = try temporaryCostHome()
+  defer { try? FileManager.default.removeItem(at: root) }
+  let directory = root.appending(
+    path: ".kimi-code/sessions/project/session/agents/agent",
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+
+  var calendar = Calendar(identifier: .gregorian)
+  calendar.timeZone = try #require(TimeZone(secondsFromGMT: 0))
+  let through = try #require(
+    calendar.date(from: DateComponents(year: 2026, month: 8, day: 31, hour: 18)))
+  let today = through.addingTimeInterval(-2 * 3_600)
+  let week = through.addingTimeInterval(-3 * 86_400)
+  let month = through.addingTimeInterval(-20 * 86_400)
+  try Data(
+    """
+    {"type":"usage.record","time":\(Int(today.timeIntervalSince1970 * 1_000)),"model":"priced","usage":{"inputOther":1000000,"inputCacheRead":0,"inputCacheCreation":0,"output":0}}
+    {"type":"usage.record","time":\(Int(week.timeIntervalSince1970 * 1_000)),"model":"priced","usage":{"inputOther":1000000,"inputCacheRead":0,"inputCacheCreation":0,"output":0}}
+    {"type":"usage.record","time":\(Int(month.timeIntervalSince1970 * 1_000)),"model":"priced","usage":{"inputOther":1000000,"inputCacheRead":0,"inputCacheCreation":0,"output":0}}
+
+    """.utf8
+  ).write(to: directory.appending(path: "periods.jsonl"))
+
+  let catalog = PriceCatalog(
+    version: "period-test",
+    effectiveDate: month,
+    entries: [
+      ModelPrice(
+        provider: .kimi,
+        modelID: "priced",
+        aliases: [],
+        currency: "USD",
+        uncachedInputPerMillion: 1,
+        cacheReadPerMillion: nil,
+        outputPerMillion: nil,
+        sourceURL: URL(string: "https://example.com/kimi")!)
+    ])
+  let periods = try LocalCostEstimator(
+    observer: LocalUsageObserver(homeURL: root),
+    catalog: catalog,
+    now: { through }
+  ).estimatePeriods(provider: .kimi, through: through, calendar: calendar)
+
+  #expect(periods.snapshots[.today]?.totals.first?.value == 1)
+  #expect(periods.snapshots[.week]?.totals.first?.value == 2)
+  #expect(periods.snapshots[.month]?.totals.first?.value == 3)
+  #expect(
+    periods.snapshots[.today]?.period
+      == CostDisplayPeriod.today.interval(endingAt: through, calendar: calendar))
+  #expect(
+    periods.snapshots[.month]?.period
+      == CostDisplayPeriod.month.interval(endingAt: through, calendar: calendar))
+}
+
 private func temporaryCostHome() throws -> URL {
   let root = FileManager.default.temporaryDirectory.appending(
     path: UUID().uuidString,

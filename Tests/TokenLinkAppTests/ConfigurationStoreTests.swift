@@ -20,6 +20,7 @@ import TokenLinkProviders
     glmRegion: .china)
   expected.fairPaceEnabled = true
   expected.betaLocalUsageEnabled = true
+  expected.costDisplayPeriod = .month
   expected.watchSettings = WatchSettings(
     syncedProviders: [.codex, .kimi],
     faceID: .pet,
@@ -128,6 +129,7 @@ import TokenLinkProviders
   #expect(loaded.legacyKeychainMigrationCompleted == false)
   #expect(loaded.betaCostsEnabled == false)
   #expect(loaded.menuBarCostMetric == .none)
+  #expect(loaded.costDisplayPeriod == .week)
   #expect(!loaded.accounts.contains { [.openrouter, .deepseek].contains($0.provider) })
   #expect(loaded.watchSettings == WatchSettings())
 }
@@ -141,6 +143,7 @@ import TokenLinkProviders
   #expect(!AppConfiguration.default.accounts.contains { $0.provider == .deepseek })
   #expect(AppConfiguration.default.betaCostsEnabled == false)
   #expect(AppConfiguration.default.menuBarCostMetric == .none)
+  #expect(AppConfiguration.default.costDisplayPeriod == .week)
 }
 
 @Test func accountsRoundTripWithStableIDsAndLabels() throws {

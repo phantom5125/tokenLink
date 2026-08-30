@@ -120,6 +120,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
   public var betaCostsEnabled: Bool
   /// Fixed optional supplement displayed after the primary quota label.
   public var menuBarCostMetric: MenuBarCostMetric
+  /// Persisted display period shared by the Costs screen and menu-bar estimate.
+  public var costDisplayPeriod: CostDisplayPeriod
   /// StopWatch v2 preferences (face, wake, hour format, synced providers).
   public var watchSettings: WatchSettings
 
@@ -144,6 +146,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     legacyKeychainMigrationCompleted: Bool = true,
     betaCostsEnabled: Bool = false,
     menuBarCostMetric: MenuBarCostMetric = .none,
+    costDisplayPeriod: CostDisplayPeriod = .week,
     watchSettings: WatchSettings = WatchSettings()
   ) {
     self.accounts = accounts
@@ -161,6 +164,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     self.legacyKeychainMigrationCompleted = legacyKeychainMigrationCompleted
     self.betaCostsEnabled = betaCostsEnabled
     self.menuBarCostMetric = menuBarCostMetric
+    self.costDisplayPeriod = costDisplayPeriod
     self.watchSettings = watchSettings
   }
 
@@ -228,6 +232,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     case legacyKeychainMigrationCompleted
     case betaCostsEnabled
     case menuBarCostMetric
+    case costDisplayPeriod
     case watchSettings
   }
 
@@ -284,6 +289,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         Bool.self, forKey: .betaCostsEnabled) ?? false,
       menuBarCostMetric: try container.decodeIfPresent(
         MenuBarCostMetric.self, forKey: .menuBarCostMetric) ?? .none,
+      costDisplayPeriod: try container.decodeIfPresent(
+        CostDisplayPeriod.self, forKey: .costDisplayPeriod) ?? .week,
       watchSettings: try container.decodeIfPresent(
         WatchSettings.self, forKey: .watchSettings) ?? WatchSettings())
   }
@@ -309,6 +316,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
       legacyKeychainMigrationCompleted, forKey: .legacyKeychainMigrationCompleted)
     try container.encode(betaCostsEnabled, forKey: .betaCostsEnabled)
     try container.encode(menuBarCostMetric, forKey: .menuBarCostMetric)
+    try container.encode(costDisplayPeriod, forKey: .costDisplayPeriod)
     try container.encode(watchSettings, forKey: .watchSettings)
   }
 }
