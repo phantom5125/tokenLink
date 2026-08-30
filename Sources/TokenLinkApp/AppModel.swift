@@ -662,6 +662,8 @@ public final class AppModel {
     await cancelActiveWatchSync()
     bridgeEventTask?.cancel()
     bridgeEventTask = nil
+    watchCommandTask?.cancel()
+    watchCommandTask = nil
     await previousBridge?.stopObservingTransport()
     await previousBridge?.disconnect()
     configuration.boundDeviceIdentifier = identifier
@@ -686,6 +688,8 @@ public final class AppModel {
     await cancelActiveWatchSync()
     bridgeEventTask?.cancel()
     bridgeEventTask = nil
+    watchCommandTask?.cancel()
+    watchCommandTask = nil
     await previousBridge?.stopObservingTransport()
     await previousBridge?.disconnect()
     bridge = nil
@@ -1165,6 +1169,12 @@ public final class AppModel {
       for await command in bridge.commandStream {
         guard !Task.isCancelled, let self else { return }
         guard self.isCurrentBinding(generation, bridge: bridge) else { return }
+        switch command {
+        case .focus(let slot):
+          self.record("Watch command received: focus slot \(slot)")
+        case .refresh:
+          self.record("Watch command received: refresh")
+        }
         let outcome = await focusHandler.handle(command)
         self.applyFocusOutcome(outcome)
       }

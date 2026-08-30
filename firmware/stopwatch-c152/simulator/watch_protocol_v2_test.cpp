@@ -2,8 +2,10 @@
 
 #include <cassert>
 #include <cstring>
+#include <string>
 
 #include "WatchProtocolV2.h"
+#include "WatchCommandFrame.h"
 
 namespace {
 
@@ -19,6 +21,15 @@ bool parseJson(const char* json, watch_v2::Payload& payload) {
 }  // namespace
 
 int main() {
+  {
+    char frame[watch_command_frame::kDefaultAttPayloadBytes + 1] = {};
+    assert(watch_command_frame::encode(frame, sizeof(frame), "focus", 2));
+    assert(std::string(frame) == R"({"a":"f","s":2})");
+    assert(std::strlen(frame) <= watch_command_frame::kDefaultAttPayloadBytes);
+    assert(watch_command_frame::encode(frame, sizeof(frame), "refresh", -1));
+    assert(std::string(frame) == R"({"a":"r"})");
+    assert(!watch_command_frame::encode(frame, sizeof(frame), "focus", 3));
+  }
   {
     watch_v2::Payload payload;
     assert(parseJson(

@@ -1,9 +1,9 @@
 import Foundation
 import Testing
 import TokenLinkCore
-import TokenLinkDevice
 
 @testable import TokenLinkApp
+@testable import TokenLinkDevice
 
 private actor CountingRefresher: AppRefreshing {
   private(set) var count = 0
@@ -41,8 +41,8 @@ private final class TestCodexDesktopActivator: CodexDesktopActivating, @unchecke
 }
 
 private actor TestBLETransport: BLETransport {
-  nonisolated let eventStream: AsyncStream<BLETransportEvent>
-  nonisolated let eventContinuation: AsyncStream<BLETransportEvent>.Continuation
+  nonisolated let eventHub = AsyncEventHub<BLETransportEvent>()
+  nonisolated let commandHub = AsyncEventHub<Data>()
   let failuresBeforeSuccess: Int
   let connectDelay: Duration?
   let writeDelay: Duration?
@@ -70,8 +70,6 @@ private actor TestBLETransport: BLETransport {
     self.noncancellableWriteDelays = noncancellableWriteDelays
     self.capabilities = capabilities
     self.diagnostics = diagnostics
-    (eventStream, eventContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
   }
 
   func discoveredIdentifiers() async throws -> [UUID] { [] }
@@ -82,7 +80,7 @@ private actor TestBLETransport: BLETransport {
     if connectCount <= failuresBeforeSuccess {
       throw BluetoothTransportError.disconnected
     }
-    eventContinuation.yield(.connected(identifier))
+    eventHub.yield(.connected(identifier))
   }
 
   func writeWithResponse(_ data: Data) async throws {
@@ -107,15 +105,23 @@ private actor TestBLETransport: BLETransport {
 
   func disconnect() async {
     if let disconnectDelay { try? await Task.sleep(for: disconnectDelay) }
-    eventContinuation.yield(.disconnected(nil))
+    eventHub.yield(.disconnected(nil))
   }
 
   nonisolated func connectionEvents() -> AsyncStream<BLETransportEvent> {
-    eventStream
+    eventHub.stream()
+  }
+
+  nonisolated func commandEvents() -> AsyncStream<Data> {
+    commandHub.stream()
+  }
+
+  func emitCommand(_ data: Data) {
+    commandHub.yield(data)
   }
 
   func emitDisconnect(_ identifier: UUID) {
-    eventContinuation.yield(.disconnected(identifier))
+    eventHub.yield(.disconnected(identifier))
   }
 }
 
@@ -179,6 +185,53 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   #expect(activator.openedThreadIDs == ["thread-123"])
   #expect(model.lastWatchFocusOutcome == .openedThread)
   #expect(model.lastWatchFocusAt == Date(timeIntervalSince1970: 100))
+  model.stop()
+}
+
+@MainActor @Test func compactWatchFocusSurvivesDeviceRebind() async throws {
+  let originalIdentifier = UUID(uuidString: "00000000-0000-0000-0000-000000000041")!
+  let replacementIdentifier = UUID(uuidString: "00000000-0000-0000-0000-000000000042")!
+  let transport = TestBLETransport(
+    capabilities: WatchCapabilities(protocolVersions: [1, 2], firmware: "0.2.2"))
+  let store = WorkItemStore()
+  await store.upsert(
+    id: "thread-compact",
+    name: "Compact focus",
+    source: .codex,
+    state: .running,
+    updatedAt: Date(timeIntervalSince1970: 90))
+  let activator = TestCodexDesktopActivator()
+  var configuration = AppConfiguration.default
+  configuration.boundDeviceIdentifier = originalIdentifier
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let codex = snapshot(.codex, remaining: 72)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in [codexAccount.id: ProviderState(phase: .healthy, snapshot: codex)] },
+    configuration: configuration,
+    bluetoothTransport: transport,
+    workItemStore: store,
+    codexDesktopActivator: activator)
+
+  await model.requestRefresh(reason: "Initial connection")
+  await transport.emitCommand(Data(#"{"a":"f","s":0}"#.utf8))
+  for _ in 0..<50 {
+    if activator.openedThreadIDs.count == 1 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+  #expect(activator.openedThreadIDs == ["thread-compact"])
+
+  try await model.bindDevice(replacementIdentifier)
+  await model.requestRefresh(reason: "Replacement connection")
+  await transport.emitCommand(Data(#"{"a":"f","s":0}"#.utf8))
+  for _ in 0..<50 {
+    if activator.openedThreadIDs.count == 2 { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(activator.openedThreadIDs == ["thread-compact", "thread-compact"])
+  #expect(model.events.contains { $0.message == "Watch command received: focus slot 0" })
+  #expect(model.lastWatchFocusOutcome == .openedThread)
   model.stop()
 }
 

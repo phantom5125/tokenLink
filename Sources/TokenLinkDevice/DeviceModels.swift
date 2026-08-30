@@ -110,11 +110,12 @@ extension BLETransport {
 }
 
 public actor DeviceBridge {
-  nonisolated private let phaseStream: AsyncStream<DevicePhase>
-  nonisolated private let phaseContinuation: AsyncStream<DevicePhase>.Continuation
+  nonisolated private let phaseHub = AsyncEventHub<DevicePhase>()
   /// Watch → Mac commands; only populated after negotiating protocol v2.
-  public nonisolated let commandStream: AsyncStream<WatchCommand>
-  nonisolated private let commandContinuation: AsyncStream<WatchCommand>.Continuation
+  nonisolated private let commandHub = AsyncEventHub<WatchCommand>()
+  public nonisolated var commandStream: AsyncStream<WatchCommand> {
+    commandHub.stream()
+  }
   private let transport: any BLETransport
   private let boundIdentifier: UUID?
   private let connectTimeout: Duration
@@ -133,10 +134,6 @@ public actor DeviceBridge {
     connectTimeout: Duration = .seconds(12),
     writeTimeout: Duration = .seconds(7)
   ) {
-    (phaseStream, phaseContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
-    (commandStream, commandContinuation) = AsyncStream.makeStream(
-      bufferingPolicy: .bufferingNewest(8))
     self.transport = transport
     self.boundIdentifier = boundIdentifier
     self.connectTimeout = connectTimeout
@@ -145,7 +142,7 @@ public actor DeviceBridge {
   }
 
   public nonisolated func phaseEvents() -> AsyncStream<DevicePhase> {
-    phaseStream
+    phaseHub.stream()
   }
 
   public func startObservingTransport() {
@@ -242,7 +239,7 @@ public actor DeviceBridge {
       droppedCommandCount += 1
       return
     }
-    commandContinuation.yield(command)
+    commandHub.yield(command)
   }
 
   /// Reads firmware capabilities; every failure path falls back to v1 so a
@@ -264,7 +261,7 @@ public actor DeviceBridge {
 
   private func updatePhase(_ replacement: DevicePhase) {
     phase = replacement
-    phaseContinuation.yield(replacement)
+    phaseHub.yield(replacement)
   }
 
   private static func perform<T: Sendable>(

@@ -6,6 +6,7 @@
 
 #include "HostRpcRequest.h"
 #include "QuotaPayload.h"
+#include "WatchCommandFrame.h"
 
 // Out-of-line definition: kFirmwareVersion is odr-used by snprintf.
 constexpr char CodexMicroBle::kFirmwareVersion[];
@@ -491,19 +492,18 @@ void CodexMicroBle::sendJoystick(float angle, float distance) {
 void CodexMicroBle::sendWatchCommand(const char* action, int8_t slot) {
   if (command_ == nullptr || action == nullptr) return;
 
-  StaticJsonDocument<128> message;
-  message["action"] = action;
-  if (slot >= 0) {
-    message["slot"] = slot;
+  char frame[watch_command_frame::kDefaultAttPayloadBytes + 1] = {};
+  if (!watch_command_frame::encode(frame, sizeof(frame), action, slot)) {
+    Serial.printf("WATCH command ignored action=%s slot=%d\n", action, slot);
+    return;
   }
-  String json;
-  serializeJson(message, json);
   // The value stays readable for pollers; subscribers get it immediately.
-  command_->setValue(json.c_str());
+  command_->setValue(frame);
   if (connected()) {
     command_->notify();
   }
-  Serial.printf("WATCH command=%s slot=%d\n", action, slot);
+  Serial.printf("WATCH command=%s slot=%d bytes=%u\n", action, slot,
+                static_cast<unsigned>(std::strlen(frame)));
 }
 
 bool CodexMicroBle::connected() {

@@ -6,6 +6,13 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## 0.2.2 — Unreleased
 
+- Keep watch-to-Mac focus commands within the 20-byte default ATT payload so
+  they are delivered even when the C152 also has a low-MTU HID connection.
+  TokenLink accepts both the compact on-device frame and the earlier verbose
+  protocol-v2 command format.
+- Recreate the watch-command listener whenever a StopWatch is rebound, and log
+  redacted command receipt before resolving its slot to a Codex task.
+
 - Added a credential-free StopWatch checklist for Bluetooth authorization,
   adapter readiness, device binding, connection progress, protocol-v2 C04
   command notifications, and last successful sync.
