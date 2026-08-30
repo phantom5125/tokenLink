@@ -2,10 +2,25 @@
 
 [English](README.md) | **简体中文**
 
-[![CI](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
-
 <!-- markdownlint-disable MD033 -->
+<p align="center">
+  <strong>把所有 AI 编程额度集中到 Mac，并可选同步到手腕。</strong>
+</p>
+<p align="center">
+  <a href="#没有-m5stack-stopwatch"><img alt="原生 macOS 14+" src="https://img.shields.io/badge/%E5%8E%9F%E7%94%9F_macOS-14%2B-111111?logo=apple&amp;logoColor=white"></a>
+  <a href="#配置各家额度源"><img alt="五家编程套餐" src="https://img.shields.io/badge/coding_plans-5-7c3aed"></a>
+  <a href="#有-m5stack-stopwatch-c152"><img alt="M5Stack StopWatch C152" src="https://img.shields.io/badge/M5Stack-StopWatch_C152-f7d000?logo=m5stack&amp;logoColor=111111"></a>
+  <a href="firmware/stopwatch-c152/README.md"><img alt="ESP32-S3 固件" src="https://img.shields.io/badge/ESP32--S3-firmware-e7352c?logo=espressif&amp;logoColor=white"></a>
+  <a href="#stopwatch-绑定与协议-v1v2"><img alt="BLE 协议 v1 和 v2" src="https://img.shields.io/badge/BLE_protocol-v1_%E2%86%94_v2-0082fc?logo=bluetooth&amp;logoColor=white"></a>
+  <a href="#隐私与安全"><img alt="本地优先且无遥测" src="https://img.shields.io/badge/local--first-no_telemetry-159957"></a>
+</p>
+<p align="center">
+  <a href="https://github.com/phantom5125/tokenLink/releases/latest"><img alt="最新版本" src="https://img.shields.io/github/v/release/phantom5125/tokenLink?display_name=tag&amp;sort=semver"></a>
+  <a href="https://github.com/phantom5125/tokenLink/stargazers"><img alt="GitHub stars" src="https://img.shields.io/github/stars/phantom5125/tokenLink?style=flat&amp;logo=github&amp;label=stars"></a>
+  <a href="https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml"><img alt="CI 状态" src="https://github.com/phantom5125/tokenLink/actions/workflows/ci.yml/badge.svg?branch=main"></a>
+  <a href="LICENSE"><img alt="Apache 2.0 许可证" src="https://img.shields.io/badge/license-Apache--2.0-blue.svg"></a>
+</p>
+
 <p align="center">
   <img
     src="assets/readme/tokenlink-watch-v2-hero.png"
@@ -19,6 +34,9 @@ TokenLink 是一个原生 macOS 菜单栏管控中枢，用于集中展示各家
 并可作为 M5Stack StopWatch 手表的伴随应用。0.2 版本在同一个本地界面里展示
 Codex、Claude、Kimi、MiniMax 和 GLM 的额度，新增协商式手表协议 v2，同时保持
 协议 v1 固件路径的字节级兼容。
+
+**没有手表也能在 Mac 上完整运行。** 原生菜单栏应用提供完整体验；C152 在此基础上
+增加可选的常驻显示与交互界面。
 
 > 状态：早期开发。各厂商接口可能随时变动。v0.2 界面已在 C152 上完成协议 v2
 > 协商、完整 Active 计数、三家 provider 同步及实体 UI 反馈迭代。0.2.1 将这份固件
