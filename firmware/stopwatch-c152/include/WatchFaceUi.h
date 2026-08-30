@@ -448,23 +448,6 @@ void drawRoundedHomeArc(Surface& surface, int endDegrees,
   surface.fillCircle(end.x, end.y, kCapRadius, color);
 }
 
-inline const char* homeWindowLabel(const char* id) {
-  if (std::strcmp(id, "week") == 0 || std::strcmp(id, "weekly") == 0 ||
-      std::strcmp(id, "seven_day") == 0 ||
-      std::strcmp(id, "seven_day_opus") == 0 ||
-      std::strcmp(id, "seven_day_sonnet") == 0) {
-    return "WEEK LEFT";
-  }
-  if (std::strcmp(id, "month") == 0 || std::strcmp(id, "monthly") == 0 ||
-      std::strcmp(id, "mcp-monthly") == 0) {
-    return "MONTH LEFT";
-  }
-  if (std::strcmp(id, "5h") == 0 || std::strcmp(id, "primary") == 0) {
-    return "5H LEFT";
-  }
-  return "QUOTA LEFT";
-}
-
 template <typename Surface>
 void drawHomeSessionPill(Surface& surface,
                          const watch_model::Store& store) {
@@ -555,8 +538,6 @@ void renderHome(Surface& surface, const State& state,
     surface.unloadFont();
 
     surface.loadFont(dashboard::font_data::kSpaceMono18Vlw);
-    dashboard::centered(surface, homeWindowLabel(window.id), kCenterX, 274,
-                        dashboard::kMuted);
     const std::uint32_t remainingReset =
         watch_face_quota::remainingResetSeconds(
             window.resetInSeconds, provider->receivedAtMs, state.nowMs);
