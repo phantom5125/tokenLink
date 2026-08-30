@@ -68,3 +68,17 @@ jobs:
           name: TokenLink-StopWatch-C152
           path: dist/firmware/*
           if-no-files-found: error
+
+  build-test:
+    name: build-test
+    if: ${{ always() }}
+    needs: [macos, firmware]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require Mac and firmware CI
+        env:
+          MACOS_RESULT: ${{ needs.macos.result }}
+          FIRMWARE_RESULT: ${{ needs.firmware.result }}
+        run: |
+          test "$MACOS_RESULT" = success
+          test "$FIRMWARE_RESULT" = success
