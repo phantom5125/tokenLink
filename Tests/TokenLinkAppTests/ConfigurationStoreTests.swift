@@ -95,6 +95,7 @@ import TokenLinkProviders
   #expect(loaded.glmRegion == .global)
   #expect(loaded.fairPaceEnabled == false)
   #expect(loaded.betaLocalUsageEnabled == false)
+  #expect(loaded.legacyKeychainMigrationCompleted == false)
   #expect(loaded.watchSettings == WatchSettings())
 }
 
@@ -113,5 +114,57 @@ import TokenLinkProviders
   let loaded = try store.load()
   #expect(loaded == expected)
   #expect(loaded.accounts.contains(extra))
-  #expect(loaded.enabledProviders == [.kimi, .minimax, .glm, .claude])
+  #expect(loaded.enabledProviders == [.kimi, .minimax, .glm])
+}
+
+@Test func legacyBundleIdentityBindingRequiresOneExplicitRebind() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let legacyIdentifier = "00000000-0000-0000-0000-000000000042"
+  let legacy = """
+    {
+      "boundDeviceIdentifier" : "\(legacyIdentifier)",
+      "enabledProviders" : ["codex"],
+      "refreshMinutes" : 5,
+      "miniMaxRegion" : "global",
+      "glmRegion" : "global"
+    }
+    """
+  try Data(legacy.utf8).write(to: directory.appending(path: "config.json"))
+  let store = ConfigurationStore(directory: directory)
+
+  let migrated = try store.load()
+
+  #expect(migrated.boundDeviceIdentifier == nil)
+  #expect(migrated.requiresBluetoothRebinding)
+
+  try store.save(migrated)
+  let persisted = try store.load()
+  #expect(persisted.boundDeviceIdentifier == nil)
+  #expect(persisted.requiresBluetoothRebinding)
+}
+
+@Test func currentBluetoothBindingRoundTripsWithoutRequiringMigration() throws {
+  let directory = FileManager.default.temporaryDirectory
+    .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+  defer { try? FileManager.default.removeItem(at: directory) }
+  let store = ConfigurationStore(directory: directory)
+  let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000043")!
+  var expected = AppConfiguration.default
+  expected.boundDeviceIdentifier = identifier
+
+  try store.save(expected)
+  let loaded = try store.load()
+
+  #expect(loaded.boundDeviceIdentifier == identifier)
+  #expect(!loaded.requiresBluetoothRebinding)
+}
+
+@Test func freshConfigurationRequiresExplicitClaudeOptIn() {
+  #expect(!AppConfiguration.default.enabledProviders.contains(.claude))
+  #expect(AppConfiguration.default.claudeCredentialAccessAuthorized == false)
+  #expect(AppConfiguration.default.legacyKeychainMigrationCompleted == true)
+  #expect(AppConfiguration.default.requiresBluetoothRebinding == false)
 }

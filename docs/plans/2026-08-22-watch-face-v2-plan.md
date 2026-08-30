@@ -1,5 +1,9 @@
 # TokenLink 表盘与协议 v2 实施计划
 
+> **v0.2.1 迁移说明（2026-08-30）：** 本文中的“外部固件仓库”描述记录的是计划制定时
+> 的历史边界。当前默认 C152 固件已迁入 `firmware/stopwatch-c152`，TokenLink 构建、
+> CI 和 release 不再依赖外部 checkout；许可证与原作者署名继续保留。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the approved-direction watch face and protocol v2 design (`docs/specs/2026-08-22-watch-face-v2-design.md`): a versioned multi-provider quota payload, named work items with Codex tap-to-focus, a watch→Mac command channel, watch configuration in the Mac control center, and coordinated firmware work in `codex-micro-stopwatch`.
@@ -275,9 +279,10 @@ git add Sources/TokenLinkApp Tests/TokenLinkAppTests
 git commit -m "feat: add watch face settings and payload preview"
 ```
 
-## Task 7: 固件协调任务（外部仓库 codex-micro-stopwatch）
+## Task 7: 固件协调任务（历史外部任务，现已迁入本仓库）
 
-以下工作在固件仓库实施，本计划只定义接口契约与验收标准；TokenLink 侧用特征开关兼容旧固件。
+以下条目保留原始验收标准；对应源码现位于 `firmware/stopwatch-c152`，TokenLink 侧仍用
+特征协商兼容旧固件。
 
 - [ ] **Step 1: 固件新增 capabilities characteristic（`…C03`）**，返回 `{"protocol_versions":[1,2],"firmware":"<version>"}`。验收：旧 Mac companion（v0.1）连接该固件行为不变。
 - [ ] **Step 2: 固件四页面结构**（P0 主页 / P1 额度 / P2 会话 / P3 系统）+ 按键映射按设计第 4 节：右键短按翻页、右键长按回主页、中央键长按承接 Voice Chat。验收：v1 payload 下 P0 行为与现状一致。
@@ -321,4 +326,5 @@ Task 4 (工作单元) ───────────────────�
 Task 7 (固件) 与 Mac 侧并行，经 capabilities 解耦；Task 8 最后。
 ```
 
-Task 1–6 全部可用 fake transport 在无硬件条件下完成并测试；Task 7 需要固件仓库与 C152 真机。
+Task 1–6 全部可用 fake transport 在无硬件条件下完成并测试；Task 7 的源码与原生测试
+现已在本仓库，但烧录、AMOLED、触摸、BLE 和功耗验收仍需要 C152 真机。

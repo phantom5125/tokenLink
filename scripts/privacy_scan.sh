@@ -24,7 +24,7 @@ fi
 uuid_matches="$(git grep -nIE "$uuid_pattern" "${scan_paths[@]}" || true)"
 if [[ -n "$uuid_matches" ]]; then
   unexpected="$(printf '%s\n' "$uuid_matches" \
-    | grep -Ev "$service_uuid|$write_uuid|$capabilities_uuid|$command_uuid|$zero_uuid" || true)"
+    | grep -Eiv "$service_uuid|$write_uuid|$capabilities_uuid|$command_uuid|$zero_uuid" || true)"
   if [[ -n "$unexpected" ]]; then
     echo "Privacy scan: unexpected UUID found:" >&2
     echo "$unexpected" >&2

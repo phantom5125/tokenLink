@@ -55,7 +55,9 @@ public struct SystemKeychainClient: KeychainClient {
       kSecAttrAccount as String: account,
     ]
     let update: [String: Any] = [
-      kSecValueData as String: data
+      kSecValueData as String: data,
+      kSecAttrLabel as String: "TokenLink",
+      kSecAttrDescription as String: "TokenLink provider credential",
     ]
     var status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
     if status == errSecItemNotFound {
@@ -64,6 +66,8 @@ public struct SystemKeychainClient: KeychainClient {
         kSecAttrService as String: service,
         kSecAttrAccount as String: account,
         kSecValueData as String: data,
+        kSecAttrLabel as String: "TokenLink",
+        kSecAttrDescription as String: "TokenLink provider credential",
         kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
       ]
       status = SecItemAdd(add as CFDictionary, nil)
@@ -142,12 +146,35 @@ private struct ClaudeKeychainCredential: Decodable {
   }
 }
 
+private actor ClaudeAccessTokenCache {
+  private var entry: (value: String, storedAt: Date)?
+
+  /// Collapses the explicit authorization read and the immediately following
+  /// quota/status refresh into one Keychain request. It deliberately expires
+  /// quickly so a rotated or revoked Claude credential is observed normally.
+  func value(now: Date = Date()) -> String? {
+    guard let entry, now.timeIntervalSince(entry.storedAt) < 30 else {
+      entry = nil
+      return nil
+    }
+    return entry.value
+  }
+
+  func store(_ value: String, now: Date = Date()) {
+    entry = (value, now)
+  }
+
+  func clear() { entry = nil }
+}
+
 public struct KeychainVault: CredentialReader, Sendable {
-  public static let service = "io.github.phantom5125.tokenlink.provider"
+  public static let service = "app.tokenlink.provider"
+  public static let legacyService = "io.github.phantom5125.tokenlink.provider"
 
   private let client: any KeychainClient
   private let kimiTokenReader: any KimiTokenReading
   private let claudeTokenReader: any ClaudeTokenReading
+  private let claudeTokenCache: ClaudeAccessTokenCache
   private let environment: @Sendable (String) -> String?
 
   public init(
@@ -162,6 +189,7 @@ public struct KeychainVault: CredentialReader, Sendable {
     self.client = client
     self.kimiTokenReader = kimiTokenReader
     self.claudeTokenReader = claudeTokenReader ?? ClaudeCLICredentialReader(client: client)
+    self.claudeTokenCache = ClaudeAccessTokenCache()
     self.environment = environment
   }
 
@@ -178,11 +206,9 @@ public struct KeychainVault: CredentialReader, Sendable {
 
   public func apiKey(forAccount account: String) async throws -> String? {
     do {
-      guard
-        let data = try await client.read(
-          service: Self.service,
-          account: account)
-      else { return nil }
+      guard let data = try await client.read(service: Self.service, account: account) else {
+        return nil
+      }
       guard let value = String(data: data, encoding: .utf8) else {
         throw ProviderFailure.configuration("Keychain value is not valid UTF-8.")
       }
@@ -191,6 +217,33 @@ public struct KeychainVault: CredentialReader, Sendable {
       throw failure
     } catch {
       throw ProviderFailure.configuration("Keychain access failed.")
+    }
+  }
+
+  /// Copies credentials from TokenLink's pre-0.2.1 service only after a user
+  /// explicitly starts migration. Normal refresh and status paths never call
+  /// this method or read the legacy service.
+  public func migrateLegacyAPIKeys(forAccounts accounts: [String]) async throws -> Int {
+    do {
+      var migrated = 0
+      for account in Set(accounts).sorted() {
+        if try await client.read(service: Self.service, account: account) != nil {
+          continue
+        }
+        guard
+          let legacy = try await client.read(
+            service: Self.legacyService, account: account)
+        else { continue }
+
+        // Copy rather than move so an interrupted migration can never destroy
+        // the user's only stored provider key. Legacy cleanup stays a manual
+        // Keychain Access action and can never prompt during normal app use.
+        try await client.write(legacy, service: Self.service, account: account)
+        migrated += 1
+      }
+      return migrated
+    } catch {
+      throw ProviderFailure.configuration("Legacy Keychain migration failed.")
     }
   }
 
@@ -207,10 +260,17 @@ public struct KeychainVault: CredentialReader, Sendable {
     case .kimi:
       return try await kimiTokenReader.accessToken()
     case .claude:
-      return try await claudeTokenReader.accessToken()
+      if let cached = await claudeTokenCache.value() { return cached }
+      guard let token = try await claudeTokenReader.accessToken() else { return nil }
+      await claudeTokenCache.store(token)
+      return token
     default:
       return nil
     }
+  }
+
+  public func clearClaudeAccessTokenCache() async {
+    await claudeTokenCache.clear()
   }
 
   /// Reads only the environment variables declared in the provider's spec.

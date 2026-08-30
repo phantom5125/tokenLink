@@ -13,6 +13,14 @@ private actor FakeKeychainClient: KeychainClient {
   private var values: [Address: Data] = [:]
   private(set) var lastAddress: Address?
 
+  func set(_ data: Data, service: String, account: String) {
+    values[Address(service: service, account: account)] = data
+  }
+
+  func value(service: String, account: String) -> Data? {
+    values[Address(service: service, account: account)]
+  }
+
   func read(service: String, account: String) async throws -> Data? {
     let address = Address(service: service, account: account)
     lastAddress = address
@@ -55,6 +63,10 @@ private struct FailingKeychainClient: KeychainClient {
 
 @Test func keychainUsesFixedServiceAndStableProviderAccount() async throws {
   let client = FakeKeychainClient()
+  await client.set(
+    Data("legacy-value".utf8),
+    service: KeychainVault.legacyService,
+    account: "minimax")
   let vault = KeychainVault(client: client, kimiTokenReader: NoCLIToken())
 
   try await vault.setAPIKey("secret-value", for: .minimax)
@@ -62,11 +74,14 @@ private struct FailingKeychainClient: KeychainClient {
   #expect(
     await client.lastAddress
       == .init(
-        service: "io.github.phantom5125.tokenlink.provider",
+        service: "app.tokenlink.provider",
         account: "minimax"))
 
   try await vault.deleteAPIKey(for: .minimax)
   #expect(try await vault.apiKey(for: .minimax) == nil)
+  #expect(
+    await client.value(service: KeychainVault.legacyService, account: "minimax")
+      == Data("legacy-value".utf8))
 }
 
 @Test func keychainFailureIsReportedAsConfigurationError() async {
@@ -82,6 +97,30 @@ private struct FailingKeychainClient: KeychainClient {
   } catch {
     Issue.record("Unexpected error type: \(error)")
   }
+}
+
+@Test func legacyTokenLinkServiceIsReadOnlyDuringExplicitMigration() async throws {
+  let client = FakeKeychainClient()
+  await client.set(
+    Data("legacy-secret".utf8),
+    service: KeychainVault.legacyService,
+    account: "glm")
+  let vault = KeychainVault(client: client, kimiTokenReader: NoCLIToken())
+
+  // Normal refresh/status reads only the current TokenLink service.
+  #expect(try await vault.apiKey(for: .glm) == nil)
+  #expect(await client.value(service: KeychainVault.service, account: "glm") == nil)
+
+  let migrated = try await vault.migrateLegacyAPIKeys(forAccounts: ["glm"])
+
+  #expect(migrated == 1)
+  #expect(try await vault.apiKey(for: .glm) == "legacy-secret")
+  #expect(
+    await client.value(service: KeychainVault.service, account: "glm")
+      == Data("legacy-secret".utf8))
+  #expect(
+    await client.value(service: KeychainVault.legacyService, account: "glm")
+      == Data("legacy-secret".utf8))
 }
 
 @Test func additionalAccountsAreNamespacedByAccountID() async throws {

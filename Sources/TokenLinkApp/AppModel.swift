@@ -8,8 +8,26 @@ import TokenLinkDevice
 import TokenLinkProviders
 
 private let tokenLinkEventLogger = Logger(
-  subsystem: "io.github.phantom5125.tokenlink",
+  subsystem: "app.tokenlink",
   category: "events")
+
+private struct ClaudeCredentialGate: CredentialReader {
+  let base: any CredentialReader
+  let allowsKeychainCredential: Bool
+
+  func apiKey(forAccount account: String) async throws -> String? {
+    try await base.apiKey(forAccount: account)
+  }
+
+  func cliAccessToken(for provider: ProviderID) async throws -> String? {
+    guard provider != .claude || allowsKeychainCredential else { return nil }
+    return try await base.cliAccessToken(for: provider)
+  }
+
+  func environmentAPIKey(for provider: ProviderID) async throws -> String? {
+    try await base.environmentAPIKey(for: provider)
+  }
+}
 
 public protocol AppRefreshing: Sendable {
   func refresh() async
@@ -89,6 +107,8 @@ public final class AppModel {
   /// Beta: locally observed token usage per provider (empty unless enabled).
   public private(set) var localUsageSummaries: [LocalUsageSummary] = []
   public private(set) var isScanningLocalUsage = false
+  public private(set) var isAuthorizingClaudeCredential = false
+  public private(set) var isMigratingLegacyCredentials = false
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -254,7 +274,11 @@ public final class AppModel {
             accountID: account.id,
             isDefault: isDefault),
           http: http,
-          credentials: vault)
+          credentials: account.provider == .claude
+            ? ClaudeCredentialGate(
+              base: vault,
+              allowsKeychainCredential: configuration.claudeCredentialAccessAuthorized)
+            : vault)
       }
       providers.append(AccountProvider(accountID: account.id, provider: provider))
     }
@@ -548,7 +572,8 @@ public final class AppModel {
     guard let vault else { return }
     var byAccount: [UUID: Bool] = [:]
     var sources: [UUID: CredentialSource] = [:]
-    for account in configuration.accounts where account.provider != .codex {
+    for account in configuration.accounts
+    where account.enabled && account.provider != .codex {
       let name = KeychainVault.keychainAccountName(
         provider: account.provider,
         accountID: account.id,
@@ -560,11 +585,15 @@ public final class AppModel {
         continue
       }
       if ProviderRegistry.spec(for: account.provider)?.allowsCLICredential == true {
-        let token = (try? await vault.cliAccessToken(for: account.provider)) ?? nil
-        if let token, !token.isEmpty {
-          byAccount[account.id] = true
-          sources[account.id] = .cliCredential
-          continue
+        let mayReadCLI =
+          account.provider != .claude || configuration.claudeCredentialAccessAuthorized
+        if mayReadCLI {
+          let token = (try? await vault.cliAccessToken(for: account.provider)) ?? nil
+          if let token, !token.isEmpty {
+            byAccount[account.id] = true
+            sources[account.id] = .cliCredential
+            continue
+          }
         }
       }
       let envKey = (try? await vault.environmentAPIKey(for: account.provider)) ?? nil
@@ -614,6 +643,7 @@ public final class AppModel {
     await previousBridge?.stopObservingTransport()
     await previousBridge?.disconnect()
     configuration.boundDeviceIdentifier = identifier
+    configuration.requiresBluetoothRebinding = false
     bridge = DeviceBridge(
       transport: bluetoothTransport,
       boundIdentifier: identifier)
@@ -637,6 +667,7 @@ public final class AppModel {
     await previousBridge?.disconnect()
     bridge = nil
     configuration.boundDeviceIdentifier = nil
+    configuration.requiresBluetoothRebinding = false
     devicePhase = .unbound
     try saveConfiguration()
     record("Unbound StopWatch")
@@ -666,8 +697,90 @@ public final class AppModel {
         configuration.accounts[index].enabled = false
       }
     }
-    configurationRestartRequired = true
     try saveConfiguration()
+    if provider == .claude {
+      rebuildRefresher(reason: "Claude provider setting applied")
+    } else {
+      configurationRestartRequired = true
+    }
+  }
+
+  /// The only path that may initiate access to Claude Code's Keychain item.
+  /// Enabling the provider or launching TokenLink never calls this implicitly.
+  public func authorizeClaudeCredentialAccess() async throws {
+    guard !isAuthorizingClaudeCredential else { return }
+    guard configuration.enabledProviders.contains(.claude) else {
+      throw ProviderFailure.configuration(text(.providersClaudeEnableFirst))
+    }
+    guard let vault else {
+      throw ProviderFailure.configuration(text(.providersClaudeCredentialUnavailable))
+    }
+
+    isAuthorizingClaudeCredential = true
+    defer { isAuthorizingClaudeCredential = false }
+    let token: String?
+    do {
+      token = try await vault.cliAccessToken(for: .claude)
+    } catch {
+      throw ProviderFailure.configuration(text(.providersClaudeAuthorizationDenied))
+    }
+    guard let token, !token.isEmpty else {
+      throw ProviderFailure.configuration(text(.providersClaudeCredentialUnavailable))
+    }
+
+    configuration.claudeCredentialAccessAuthorized = true
+    try saveConfiguration()
+    if let refresherBuilder { refresher = refresherBuilder(configuration) }
+    await refreshCredentialStates()
+    await requestRefresh(reason: "Claude Code credential authorized")
+    record("Authorized Claude Code credential access")
+  }
+
+  /// Stops all future reads of Claude Code's Keychain item. macOS owns the
+  /// item's ACL; users can separately remove TokenLink there to revoke the OS
+  /// permission itself.
+  public func stopUsingClaudeCredential() async throws {
+    configuration.claudeCredentialAccessAuthorized = false
+    try saveConfiguration()
+    await vault?.clearClaudeAccessTokenCache()
+    if let refresherBuilder { refresher = refresherBuilder(configuration) }
+    await refreshCredentialStates()
+    record("Stopped using Claude Code credential")
+  }
+
+  /// Explicitly copies TokenLink-owned provider keys from the pre-0.2.1
+  /// service. Automatic refresh and launch paths never access that service.
+  @discardableResult
+  public func migrateLegacyCredentials() async throws -> Int {
+    guard !isMigratingLegacyCredentials else { return 0 }
+    guard let vault else {
+      throw ProviderFailure.configuration("Keychain is unavailable.")
+    }
+
+    isMigratingLegacyCredentials = true
+    defer { isMigratingLegacyCredentials = false }
+    let accounts = configuration.accounts.compactMap { account -> String? in
+      guard account.provider != .codex, account.provider != .claude else { return nil }
+      return KeychainVault.keychainAccountName(
+        provider: account.provider,
+        accountID: account.id,
+        isDefault: configuration.isDefaultAccount(account))
+    }
+    let migrated = try await vault.migrateLegacyAPIKeys(forAccounts: accounts)
+    configuration.legacyKeychainMigrationCompleted = true
+    try saveConfiguration()
+    await refreshCredentialStates()
+    await requestRefresh(reason: "Legacy TokenLink credentials migrated")
+    record("Migrated legacy TokenLink credentials: \(migrated)")
+    return migrated
+  }
+
+  /// Dismisses the upgrade-only migration offer without touching the legacy
+  /// Keychain service. Users can paste fresh keys into TokenLink instead.
+  public func dismissLegacyCredentialMigration() throws {
+    configuration.legacyKeychainMigrationCompleted = true
+    try saveConfiguration()
+    record("Dismissed legacy TokenLink credential migration")
   }
 
   public func setCodexPath(_ path: String?) throws {
@@ -1066,6 +1179,7 @@ public final class AppModel {
     case .peripheralNotFound: return "bound device not found"
     case .serviceNotFound: return "quota service not found"
     case .characteristicNotFound: return "quota characteristic not found"
+    case .commandNotificationsUnavailable: return "watch command notifications unavailable"
     case .disconnected: return "device disconnected"
     case .system: return "CoreBluetooth system error"
     }
@@ -1093,7 +1207,7 @@ public final class AppModel {
     }
     monitor.start(
       queue: DispatchQueue(
-        label: "io.github.phantom5125.tokenlink.network"))
+        label: "app.tokenlink.network"))
     pathMonitor = monitor
   }
 

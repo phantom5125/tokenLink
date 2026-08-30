@@ -1,0 +1,20 @@
+{
+  "products": [
+    {
+      "build_environment": "m5stack-stopwatch",
+      "chip": "esp32s3",
+      "display_name": "M5Stack StopWatch Dev Kit C152",
+      "id": "m5stack-stopwatch-c152",
+      "platformio_project": "firmware/stopwatch-c152",
+      "protocol_versions": [
+        1,
+        2
+      ],
+      "release_manifest": "dist/firmware/firmware-manifest.json",
+      "variants": [
+        "wireless"
+      ]
+    }
+  ],
+  "schema_version": 1
+}

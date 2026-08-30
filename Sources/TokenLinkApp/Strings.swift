@@ -38,6 +38,8 @@ public enum L10n {
     case actionQuit = "action.quit"
     case actionSave = "action.save"
     case actionDelete = "action.delete"
+    case actionCancel = "action.cancel"
+    case actionContinue = "action.continue"
     // Menu bar
     case menubarNoProviders = "menubar.noProviders"
     case menubarEnableHint = "menubar.enableHint"
@@ -81,6 +83,8 @@ public enum L10n {
     case watchCompatBody = "watch.compatBody"
     case watchBoundDevice = "watch.boundDevice"
     case watchNoBoundDevice = "watch.noBoundDevice"
+    case watchRebindTitle = "watch.rebindTitle"
+    case watchRebindBody = "watch.rebindBody"
     case watchSyncNow = "watch.syncNow"
     case watchUnbind = "watch.unbind"
     case watchUnboundMessage = "watch.unboundMessage"
@@ -153,6 +157,16 @@ public enum L10n {
     case providersTitle = "providers.title"
     case providersSubtitle = "providers.subtitle"
     case providersRestartBanner = "providers.restartBanner"
+    case providersLegacyMigrationTitle = "providers.legacyMigrationTitle"
+    case providersLegacyMigrationNote = "providers.legacyMigrationNote"
+    case providersLegacyMigrationAction = "providers.legacyMigrationAction"
+    case providersLegacyMigrationDismiss = "providers.legacyMigrationDismiss"
+    case providersLegacyMigrationAuthorizationTitle =
+      "providers.legacyMigrationAuthorizationTitle"
+    case providersLegacyMigrationAuthorizationExplanation =
+      "providers.legacyMigrationAuthorizationExplanation"
+    case providersLegacyMigrationSucceeded = "providers.legacyMigrationSucceeded"
+    case providersLegacyMigrationNone = "providers.legacyMigrationNone"
     case providersEnabled = "providers.enabled"
     case providersCodexExecutable = "providers.codexExecutable"
     case providersCodexPathPlaceholder = "providers.codexPathPlaceholder"
@@ -189,6 +203,16 @@ public enum L10n {
     case subtitleGLM = "subtitle.glm"
     case subtitleClaude = "subtitle.claude"
     case providersClaudeNote = "providers.claudeNote"
+    case providersClaudeAuthorize = "providers.claudeAuthorize"
+    case providersClaudeAuthorizationTitle = "providers.claudeAuthorizationTitle"
+    case providersClaudeAuthorizationExplanation = "providers.claudeAuthorizationExplanation"
+    case providersClaudeAuthorized = "providers.claudeAuthorized"
+    case providersClaudeAuthorizationSucceeded = "providers.claudeAuthorizationSucceeded"
+    case providersClaudeStopUsing = "providers.claudeStopUsing"
+    case providersClaudeStopped = "providers.claudeStopped"
+    case providersClaudeEnableFirst = "providers.claudeEnableFirst"
+    case providersClaudeCredentialUnavailable = "providers.claudeCredentialUnavailable"
+    case providersClaudeAuthorizationDenied = "providers.claudeAuthorizationDenied"
   }
 
   public static func text(_ key: Key, language: AppLanguage) -> String {
@@ -218,6 +242,10 @@ public enum L10n {
     ],
     .actionSave: [.english: "Save", .simplifiedChinese: "保存", .japanese: "保存"],
     .actionDelete: [.english: "Delete", .simplifiedChinese: "删除", .japanese: "削除"],
+    .actionCancel: [.english: "Cancel", .simplifiedChinese: "取消", .japanese: "キャンセル"],
+    .actionContinue: [
+      .english: "Continue", .simplifiedChinese: "继续", .japanese: "続ける",
+    ],
     .menubarNoProviders: [
       .english: "No providers enabled", .simplifiedChinese: "未启用任何额度源",
       .japanese: "有効なプロバイダーがありません",
@@ -356,6 +384,19 @@ public enum L10n {
     .watchNoBoundDevice: [
       .english: "No StopWatch bound", .simplifiedChinese: "未绑定 StopWatch",
       .japanese: "StopWatch はバインドされていません",
+    ],
+    .watchRebindTitle: [
+      .english: "Bind the StopWatch once for the new TokenLink identity",
+      .simplifiedChinese: "请为新的 TokenLink 身份重新绑定一次 StopWatch",
+      .japanese: "新しい TokenLink ID で StopWatch を一度再バインドしてください",
+    ],
+    .watchRebindBody: [
+      .english:
+        "TokenLink 0.2.1 now uses app.tokenlink. The previous app identity's Bluetooth device identifier was cleared because macOS may scope it to that identity. Press Scan, review the Bluetooth prompt, allow nearby-device access, then bind this C152 again. This permission covers Bluetooth discovery, connection, quota sync, and watch commands; it does not grant Keychain access.",
+      .simplifiedChinese:
+        "TokenLink 0.2.1 现在统一使用 app.tokenlink。由于 macOS 可能按应用身份隔离蓝牙设备标识，旧身份保存的标识已被清除。请按“扫描”，阅读蓝牙弹窗并允许附近设备访问，然后重新绑定这台 C152。该权限仅用于蓝牙发现、连接、额度同步和手表命令，不包含钥匙串访问。",
+      .japanese:
+        "TokenLink 0.2.1 は app.tokenlink に統一されました。macOS は Bluetooth デバイス識別子をアプリ ID ごとに分離する場合があるため、以前の ID で保存した識別子を消去しました。「スキャン」を押して Bluetooth の説明を確認し、周辺デバイスへのアクセスを許可してから、この C152 を再度バインドしてください。この権限は Bluetooth の検出、接続、クォータ同期、ウォッチコマンドにのみ使用され、キーチェーンへのアクセスは含みません。",
     ],
     .watchSyncNow: [
       .english: "Sync watch now", .simplifiedChinese: "立即同步手表",
@@ -642,6 +683,49 @@ public enum L10n {
       .simplifiedChinese: "额度源启用状态和 Codex 路径的修改将在重启 TokenLink 后生效。",
       .japanese: "プロバイダーの有効化と Codex パスの変更は TokenLink の再起動後に適用されます。",
     ],
+    .providersLegacyMigrationTitle: [
+      .english: "Upgrade from TokenLink 0.2.0?",
+      .simplifiedChinese: "从 TokenLink 0.2.0 升级？",
+      .japanese: "TokenLink 0.2.0 からアップグレードしますか？",
+    ],
+    .providersLegacyMigrationNote: [
+      .english:
+        "TokenLink no longer reads its old Keychain service automatically. Review the scope before copying any saved provider keys, or dismiss this if you are not upgrading.",
+      .simplifiedChinese:
+        "TokenLink 不再自动读取旧钥匙串 service。复制已有 provider key 前请先确认授权范围；如果不是升级安装，可以忽略。",
+      .japanese:
+        "TokenLink は旧キーチェーンサービスを自動では読み取りません。保存済みプロバイダーキーをコピーする前に範囲を確認してください。新規インストールの場合は閉じられます。",
+    ],
+    .providersLegacyMigrationAction: [
+      .english: "Review and migrate…", .simplifiedChinese: "查看说明并迁移…",
+      .japanese: "確認して移行…",
+    ],
+    .providersLegacyMigrationDismiss: [
+      .english: "Don't migrate", .simplifiedChinese: "不迁移", .japanese: "移行しない",
+    ],
+    .providersLegacyMigrationAuthorizationTitle: [
+      .english: "Allow one-time access to old TokenLink credentials?",
+      .simplifiedChinese: "允许一次性访问旧 TokenLink 凭据？",
+      .japanese: "旧 TokenLink 認証情報への一時アクセスを許可しますか？",
+    ],
+    .providersLegacyMigrationAuthorizationExplanation: [
+      .english:
+        "The next step checks only configured Kimi, MiniMax, and GLM items under the old internal service ‘io.github.phantom5125.tokenlink.provider’, which belonged to TokenLink 0.2.0. macOS may ask separately for each stored item. TokenLink copies found keys into its new service and keeps the old items as a safety fallback; it does not access Claude Code or any unrelated Keychain item. This is a one-time migration, so Allow is sufficient—Always Allow is unnecessary.",
+      .simplifiedChinese:
+        "下一步只会检查旧内部 service“io.github.phantom5125.tokenlink.provider”下已配置的 Kimi、MiniMax 和 GLM 条目；这个名称来自 TokenLink 0.2.0。macOS 可能会针对每个已有条目分别询问。TokenLink 会把找到的 key 复制到新 service，并保留旧条目作为安全备份；不会访问 Claude Code 或任何无关钥匙串条目。这是一次性迁移，点“允许”即可，无需点“始终允许”。",
+      .japanese:
+        "次の操作では、TokenLink 0.2.0 が使用していた旧内部サービス ‘io.github.phantom5125.tokenlink.provider’ にある設定済み Kimi、MiniMax、GLM 項目だけを確認します。保存項目ごとに macOS が許可を求める場合があります。見つかったキーは新サービスへコピーし、安全のため旧項目も残します。Claude Code や無関係なキーチェーン項目にはアクセスしません。1 回限りの移行なので「許可」で十分で、「常に許可」は不要です。",
+    ],
+    .providersLegacyMigrationSucceeded: [
+      .english: "Migrated %ld legacy credential item(s).",
+      .simplifiedChinese: "已迁移 %ld 个旧凭据条目。",
+      .japanese: "%ld 件の旧認証情報を移行しました。",
+    ],
+    .providersLegacyMigrationNone: [
+      .english: "No legacy TokenLink credentials were found.",
+      .simplifiedChinese: "未找到旧 TokenLink 凭据。",
+      .japanese: "旧 TokenLink 認証情報は見つかりませんでした。",
+    ],
     .providersEnabled: [.english: "Enabled", .simplifiedChinese: "启用", .japanese: "有効"],
     .providersCodexExecutable: [
       .english: "Codex executable", .simplifiedChinese: "Codex 可执行文件",
@@ -769,11 +853,63 @@ public enum L10n {
     ],
     .providersClaudeNote: [
       .english:
-        "Uses the local Claude Code CLI sign-in (OAuth usage endpoint). Anthropic pay-as-you-go keys do not report subscription quota, so TokenLink does not store one.",
+        "TokenLink does not access Claude Code credentials at launch. Enable Claude, then authorize this read explicitly. Anthropic pay-as-you-go keys do not report subscription quota, so there is no API-key field here.",
       .simplifiedChinese:
-        "使用本机 Claude Code CLI 登录态（OAuth 用量接口）。Anthropic 按量付费 key 查询不到订阅额度，因此 TokenLink 不保存 key。",
+        "TokenLink 启动时不会访问 Claude Code 凭据。请先启用 Claude，再明确授权读取。Anthropic 按量付费 key 查询不到订阅额度，因此这里不提供 API key 输入框。",
       .japanese:
-        "ローカルの Claude Code CLI ログイン状態（OAuth 使用量エンドポイント）を使用します。従量課金キーではサブスクリプションのクォータを取得できないため、TokenLink はキーを保存しません。",
+        "TokenLink は起動時に Claude Code の認証情報へアクセスしません。Claude を有効にしてから、読み取りを明示的に許可してください。従量課金キーではサブスクリプションのクォータを取得できないため、API キー入力欄はありません。",
+    ],
+    .providersClaudeAuthorize: [
+      .english: "Authorize Claude Code…", .simplifiedChinese: "授权 Claude Code…",
+      .japanese: "Claude Code を許可…",
+    ],
+    .providersClaudeAuthorizationTitle: [
+      .english: "Allow TokenLink to read Claude Code credentials?",
+      .simplifiedChinese: "允许 TokenLink 读取 Claude Code 凭据？",
+      .japanese: "TokenLink に Claude Code 認証情報の読み取りを許可しますか？",
+    ],
+    .providersClaudeAuthorizationExplanation: [
+      .english:
+        "The next step asks macOS for the entire ‘Claude Code-credentials’ Keychain item—not your whole Keychain. TokenLink uses the access token and expiry for Claude quota; the raw item may also contain a refresh token, which TokenLink does not decode or use. Your Mac password is verified by macOS and is never given to TokenLink. Choose Always Allow only for a TokenLink build you trust and if you want automatic background refresh; Allow Once asks again later.",
+      .simplifiedChinese:
+        "下一步会请求 macOS 开放完整的“Claude Code-credentials”钥匙串条目，而不是整个钥匙串。TokenLink 使用其中的 access token 和有效期查询 Claude 额度；原始条目可能还含 refresh token，但 TokenLink 不解析也不使用它。Mac 密码只由 macOS 验证，不会交给 TokenLink。只有在你信任当前 TokenLink 构建并希望后台自动刷新时，才建议点“始终允许”；点“允许一次”以后仍会再次询问。",
+      .japanese:
+        "次の操作では、キーチェーン全体ではなく ‘Claude Code-credentials’ 項目全体へのアクセスを macOS に要求します。TokenLink は Claude クォータ取得にアクセストークンと有効期限を使用します。元の項目にリフレッシュトークンが含まれる場合でも、TokenLink は解析も使用もしません。Mac のパスワードは macOS だけが検証し、TokenLink には渡りません。信頼できる TokenLink ビルドで自動バックグラウンド更新を使う場合のみ「常に許可」を選んでください。「1回だけ許可」では後で再確認されます。",
+    ],
+    .providersClaudeAuthorized: [
+      .english: "TokenLink is set to use the Claude Code credential",
+      .simplifiedChinese: "TokenLink 已设为使用 Claude Code 凭据",
+      .japanese: "TokenLink は Claude Code 認証情報を使用する設定です",
+    ],
+    .providersClaudeAuthorizationSucceeded: [
+      .english: "Claude Code access authorized. TokenLink can now refresh Claude quota.",
+      .simplifiedChinese: "Claude Code 已授权，TokenLink 现在可以刷新 Claude 额度。",
+      .japanese: "Claude Code のアクセスを許可しました。Claude クォータを更新できます。",
+    ],
+    .providersClaudeStopUsing: [
+      .english: "Stop using credential", .simplifiedChinese: "停止使用此凭据",
+      .japanese: "認証情報の使用を停止",
+    ],
+    .providersClaudeStopped: [
+      .english: "TokenLink will no longer read the Claude Code Keychain item.",
+      .simplifiedChinese: "TokenLink 将不再读取 Claude Code 钥匙串条目。",
+      .japanese: "TokenLink は Claude Code のキーチェーン項目を読み取らなくなります。",
+    ],
+    .providersClaudeEnableFirst: [
+      .english: "Enable Claude before authorizing its credential.",
+      .simplifiedChinese: "请先启用 Claude，再授权凭据。",
+      .japanese: "認証情報を許可する前に Claude を有効にしてください。",
+    ],
+    .providersClaudeCredentialUnavailable: [
+      .english:
+        "No valid Claude Code Keychain credential was found. Sign in with Claude Code first.",
+      .simplifiedChinese: "未找到有效的 Claude Code 钥匙串凭据，请先登录 Claude Code。",
+      .japanese: "有効な Claude Code キーチェーン認証情報が見つかりません。先に Claude Code へログインしてください。",
+    ],
+    .providersClaudeAuthorizationDenied: [
+      .english: "macOS did not grant access to the Claude Code credential.",
+      .simplifiedChinese: "macOS 未授予 Claude Code 凭据访问权限。",
+      .japanese: "macOS から Claude Code 認証情報へのアクセスが許可されませんでした。",
     ],
   ]
 }
