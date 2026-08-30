@@ -15,6 +15,8 @@ enum class Indicator : std::uint8_t {
   Pulse,
   Check,
   Alert,
+  Ring,
+  Dot,
 };
 
 struct Visual {
@@ -23,18 +25,21 @@ struct Visual {
   bool animated;
 };
 
-inline Visual visualFor(watch_v2::WorkState state) {
+inline Visual visualFor(watch_v2::WorkState state, bool seen = false) {
   switch (state) {
     case watch_v2::WorkState::Running:
       return {0x4292F5, Indicator::Orbit, true};       // azure
     case watch_v2::WorkState::NeedsInput:
+      if (seen) return {0xF7AC42, Indicator::Ring, false};
       return {0xF7AC42, Indicator::Pulse, true};       // amber
     case watch_v2::WorkState::Complete:
       return {0x2BC96E, Indicator::Check, false};      // spring green
     case watch_v2::WorkState::Failed:
       return {0xF55A68, Indicator::Alert, false};      // coral
+    case watch_v2::WorkState::Unknown:
+      return {0x7D8A98, Indicator::Dot, false};        // neutral grey
   }
-  return {0x7D8A98, Indicator::Alert, false};          // defensive grey
+  return {0x7D8A98, Indicator::Dot, false};            // defensive grey
 }
 
 constexpr std::uint16_t rgb565(std::uint32_t rgb) {

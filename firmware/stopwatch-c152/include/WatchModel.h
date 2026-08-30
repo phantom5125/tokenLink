@@ -58,10 +58,9 @@ class Store {
     entry->syncedAt = payload.syncedAt;
     entry->hasSyncedAt = payload.hasSyncedAt;
 
-    // work_items is a Mac-managed full slot set. The parser cannot
-    // distinguish an empty array from an absent key, so the Mac omits the key
-    // to leave slots alone and sends the items it manages otherwise.
-    if (payload.workItemCount > 0) {
+    // work_items is a Mac-managed full slot set. Presence replaces the whole
+    // set, including an explicitly empty array; absence leaves slots alone.
+    if (payload.hasWorkItems) {
       workItemCount_ = payload.workItemCount;
       for (std::uint8_t i = 0; i < payload.workItemCount; ++i) {
         workItems_[i] = payload.workItems[i];

@@ -4,6 +4,7 @@ import TokenLinkCore
 
 @testable import TokenLinkApp
 @testable import TokenLinkDevice
+@testable import TokenLinkProviders
 
 private actor CountingRefresher: AppRefreshing {
   private(set) var count = 0
@@ -125,6 +126,29 @@ private actor TestBLETransport: BLETransport {
   }
 }
 
+private actor SequencedThreadTransport: AppServerTransport {
+  private var pages: [Data]
+  private(set) var listCount = 0
+
+  init(_ pages: [Data]) {
+    self.pages = pages
+  }
+
+  func start(executable: URL) async throws {}
+  func send(_ message: AppServerMessage) async throws {}
+
+  func response(id: Int, timeout: Duration) async throws -> Data {
+    if id == 0 { return Data(#"{"id":0,"result":{}}"#.utf8) }
+    guard id == 2, !pages.isEmpty else {
+      throw AppServerTransportError.malformedResponse
+    }
+    listCount += 1
+    return pages.count == 1 ? pages[0] : pages.removeFirst()
+  }
+
+  func stop() async {}
+}
+
 private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapshot {
   QuotaSnapshot(
     provider: provider,
@@ -171,7 +195,7 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
     id: "thread-123",
     name: "TokenLink",
     source: .codex,
-    state: .running,
+    state: .needsInput,
     updatedAt: Date(timeIntervalSince1970: 90))
   let activator = TestCodexDesktopActivator()
   let model = AppModel(
@@ -185,6 +209,8 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   #expect(activator.openedThreadIDs == ["thread-123"])
   #expect(model.lastWatchFocusOutcome == .openedThread)
   #expect(model.lastWatchFocusAt == Date(timeIntervalSince1970: 100))
+  #expect(await store.item(forSlot: 0)?.state == .needsInput)
+  #expect(await store.payloadItems().first?.seen == true)
   model.stop()
 }
 
@@ -216,10 +242,14 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   await model.requestRefresh(reason: "Initial connection")
   await transport.emitCommand(Data(#"{"a":"f","s":0}"#.utf8))
   for _ in 0..<50 {
-    if activator.openedThreadIDs.count == 1 { break }
+    if activator.openedThreadIDs.count == 1, await transport.writes.count >= 2 { break }
     try? await Task.sleep(for: .milliseconds(5))
   }
   #expect(activator.openedThreadIDs == ["thread-compact"])
+  let acknowledgedData = try #require(await transport.writes.last)
+  let acknowledgedPayload = try JSONDecoder().decode(WatchPayloadV2.self, from: acknowledgedData)
+  #expect(acknowledgedPayload.workItems.first?.state == .running)
+  #expect(acknowledgedPayload.workItems.first?.seen == true)
 
   try await model.bindDevice(replacementIdentifier)
   await model.requestRefresh(reason: "Replacement connection")
@@ -238,6 +268,34 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
 @MainActor @Test func schedulerUsesConfiguredFiveMinuteInterval() {
   let scheduler = RefreshScheduler(minutes: 5)
   #expect(scheduler.interval == .seconds(300))
+}
+
+@MainActor @Test func sessionLifecyclePollsIndependentlyOfQuotaRefresh() async {
+  let transport = SequencedThreadTransport([
+    Data(
+      #"{"id":2,"result":{"data":[{"id":"thread-live","name":"live","updatedAt":100,"status":{"type":"idle"},"turns":[{"status":"completed"}]}],"nextCursor":null}}"#
+        .utf8),
+    Data(
+      #"{"id":2,"result":{"data":[{"id":"thread-live","name":"live","updatedAt":110,"status":{"type":"active"},"turns":[{"status":"inProgress"}]}],"nextCursor":null}}"#
+        .utf8),
+  ])
+  let tracker = CodexWorkItemTracker(
+    executable: URL(filePath: "/test/codex"),
+    transport: transport)
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    codexWorkItemTracker: tracker,
+    sessionPollInterval: .milliseconds(10))
+
+  await model.start()
+  for _ in 0..<100 {
+    if model.workItems.first?.state == .running { break }
+    try? await Task.sleep(for: .milliseconds(5))
+  }
+
+  #expect(model.workItems.first?.state == .running)
+  #expect(await transport.listCount >= 2)
+  model.stop()
 }
 
 @MainActor @Test func explicitBindingCompletesBluetoothIdentityMigration() async throws {

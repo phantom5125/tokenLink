@@ -48,6 +48,9 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
   public var source: ProviderID
   public var state: WorkItemState
   public var updatedAt: Date
+  /// Local acknowledgement time. A provider update newer than this makes the
+  /// item unseen again without conflating acknowledgement with completion.
+  public var seenAt: Date?
   /// Mac-side rename wins over anything a poll wants to write into `name`.
   public internal(set) var isCustomNamed: Bool
 
@@ -58,6 +61,7 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     source: ProviderID,
     state: WorkItemState,
     updatedAt: Date,
+    seenAt: Date? = nil,
     isCustomNamed: Bool = false
   ) {
     self.id = id
@@ -66,6 +70,7 @@ public struct WorkItem: Equatable, Sendable, Identifiable {
     self.source = source
     self.state = state
     self.updatedAt = updatedAt
+    self.seenAt = seenAt
     self.isCustomNamed = isCustomNamed
   }
 
@@ -94,19 +99,23 @@ public struct WorkItemPayload: Codable, Equatable, Sendable {
   /// Present only on the most recently updated session. Optional keeps the
   /// v2 payload compact and remains compatible with existing firmware.
   public let latest: Bool?
+  /// Present only after the user has opened this exact provider update.
+  public let seen: Bool?
 
   public init(
     slot: Int,
     name: String,
     source: String,
     state: WorkItemState,
-    latest: Bool = false
+    latest: Bool = false,
+    seen: Bool = false
   ) {
     self.slot = slot
     self.name = name
     self.source = source
     self.state = state
     self.latest = latest ? true : nil
+    self.seen = seen ? true : nil
   }
 }
 
@@ -152,6 +161,9 @@ public actor WorkItemStore {
   ) -> WorkItem? {
     let cleanName = WorkItem.sanitizedName(name)
     if var existing = storage[id] {
+      if state != existing.state || updatedAt > existing.updatedAt {
+        existing.seenAt = nil
+      }
       existing.state = state
       existing.updatedAt = updatedAt
       if !existing.isCustomNamed {
@@ -201,16 +213,30 @@ public actor WorkItemStore {
     storage.values.first { $0.slot == slot }
   }
 
+  /// Marks the currently displayed provider update as opened. Returns true
+  /// only when the wire-visible acknowledgement changed.
+  @discardableResult
+  public func acknowledge(slot: Int, at date: Date) -> Bool {
+    guard let id = storage.values.first(where: { $0.slot == slot })?.id,
+      var item = storage[id]
+    else { return false }
+    if let seenAt = item.seenAt, seenAt >= item.updatedAt { return false }
+    item.seenAt = max(date, item.updatedAt)
+    storage[id] = item
+    return true
+  }
+
   /// Snapshot for the v2 payload `work_items` array, sorted by slot.
   public func payloadItems() -> [WorkItemPayload] {
     let latestID = storage.values.max(by: { $0.updatedAt < $1.updatedAt })?.id
-    return items.map {
+    return items.map { item in
       WorkItemPayload(
-        slot: $0.slot,
-        name: $0.name,
-        source: $0.source.rawValue,
-        state: $0.state,
-        latest: $0.id == latestID)
+        slot: item.slot,
+        name: item.name,
+        source: item.source.rawValue,
+        state: item.state,
+        latest: item.id == latestID,
+        seen: item.seenAt.map { $0 >= item.updatedAt } ?? false)
     }
   }
 

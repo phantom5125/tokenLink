@@ -31,7 +31,8 @@ private func snapshot(
     ],
     workItems: [
       WorkItemPayload(slot: 0, name: "review", source: "codex", state: .running),
-      WorkItemPayload(slot: 1, name: "fix-ci", source: "codex", state: .needsInput),
+      WorkItemPayload(
+        slot: 1, name: "fix-ci", source: "codex", state: .needsInput, seen: true),
     ],
     activeSessionCount: 4,
     settings: WatchSettingsPayload(theme: "pet", wake: "tap", hourFormat: "h24"),
@@ -43,6 +44,9 @@ private func snapshot(
     JSONSerialization.jsonObject(with: data) as? [String: Any])
   #expect(object["v"] as? Int == 2)
   #expect(object["active_count"] as? Int == 4)
+  let workItems = try #require(object["work_items"] as? [[String: Any]])
+  #expect(workItems[0]["seen"] == nil)
+  #expect(workItems[1]["seen"] as? Bool == true)
   let settings = try #require(object["settings"] as? [String: Any])
   #expect(settings["theme"] as? String == "pet")
   #expect(settings["wake"] as? String == "tap")

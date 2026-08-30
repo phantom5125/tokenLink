@@ -109,7 +109,7 @@ private let threadListFixture = Data(
   #expect(
     CodexWorkItemStateMapping.state(statusType: "idle", lastTurnStatus: "failed") == .failed)
   #expect(
-    CodexWorkItemStateMapping.state(statusType: "notLoaded", lastTurnStatus: nil) == .completed)
+    CodexWorkItemStateMapping.state(statusType: "notLoaded", lastTurnStatus: nil) == .unknown)
   #expect(CodexWorkItemStateMapping.state(statusType: "surprise") == .unknown)
 }
 
@@ -123,7 +123,7 @@ private let threadListFixture = Data(
   #expect(threads[0].updatedAt == Date(timeIntervalSince1970: 1_781_790_583))
 
   #expect(threads[1].name == "daily inbox")  // preview first line, truncated
-  #expect(threads[1].state == .completed)
+  #expect(threads[1].state == .unknown)
 
   #expect(threads[2].name == "IPv6")  // non-ASCII filtered out
   #expect(threads[2].state == .failed)  // last turn interrupted
@@ -145,6 +145,11 @@ private let threadListFixture = Data(
     path == "/trusted/live.jsonl" ? .running : nil
   }
   #expect(threads.first?.state == .running)
+
+  let completed = try CodexThreadListParser.parse(data: fixture) { path in
+    path == "/trusted/live.jsonl" ? .completed : nil
+  }
+  #expect(completed.first?.state == .completed)
 }
 
 @Test func rolloutReaderRecognizesOnlyFreshUnfinishedTurns() throws {
@@ -159,7 +164,11 @@ private let threadListFixture = Data(
 
   let complete = #"{"type":"event_msg","payload":{"type":"task_complete"}}"#
   try Data((started + "\n" + complete + "\n").utf8).write(to: file)
-  #expect(CodexRolloutActivityReader.state(atPath: file.path, allowedRoot: root) == nil)
+  #expect(CodexRolloutActivityReader.state(atPath: file.path, allowedRoot: root) == .completed)
+
+  let aborted = #"{"type":"event_msg","payload":{"type":"turn_aborted"}}"#
+  try Data((started + "\n" + aborted + "\n").utf8).write(to: file)
+  #expect(CodexRolloutActivityReader.state(atPath: file.path, allowedRoot: root) == .failed)
 }
 
 @Test func rolloutReaderRejectsSymlinksEscapingTheAllowedRoot() throws {
@@ -294,7 +303,7 @@ private let threadListFixture = Data(
   #expect(items.count == 3)
   #expect(!items.contains(where: { $0.id == "archived" }))
   #expect(items.map(\.source) == [.codex, .codex, .codex])
-  #expect(items.map(\.state) == [.needsInput, .completed, .failed])
+  #expect(items.map(\.state) == [.needsInput, .unknown, .failed])
   #expect(await store.activeSessionCount == 1)
 }
 

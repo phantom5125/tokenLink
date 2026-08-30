@@ -39,6 +39,14 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 - Give every Sessions state a distinct color, shape, text label, and motion
   policy: blue running orbit, amber needs-input pulse, static green completion
   check, and static red failure alert.
+- Refresh Codex session lifecycle independently every ten seconds and consult
+  the local rollout lifecycle before treating Desktop-owned tasks as terminal.
+  Ambiguous tasks stay neutral `UNKNOWN`; only explicit completion evidence
+  gets a green `DONE` check.
+- Keep execution state separate from acknowledgement. Opening a pending task
+  changes its amber attention pulse from `ACTION` to a static `OPENED` ring;
+  it does not mark the task complete, and a newer provider event makes it
+  actionable again.
 - Show both the aggregate active count and visible row count on Sessions, while
   keeping protocol v2 and the three-slot focus contract unchanged.
 

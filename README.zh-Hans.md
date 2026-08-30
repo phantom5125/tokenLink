@@ -34,7 +34,7 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 - **2026-08-30 — 0.2.2 稳定性候选已完成整合。** 蓝牙诊断、明确的 Codex 任务链接
   结果、完整 thread 分页、稳定优先级槽位和无障碍 C152 session 指示器已进入同一
-  release 分支；组合测试为 185 项 Swift 测试和 11 个固件测试程序。
+  release 分支；组合测试为 190 项 Swift 测试和 11 个固件测试程序。
 - **2026-08-30 — C152 固件已迁入 TokenLink。** 当前默认无线版源码、模拟器测试、
   分区表、MIT/OFL 声明及固定版本 PlatformIO 构建都位于
   `firmware/stopwatch-c152`；全新 checkout 不再需要另一个仓库即可构建 Mac 与固件制品。
@@ -75,6 +75,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 - 分页读取完整 Codex thread 列表并报告完整 Active 数，同时保留三个稳定、按优先级
   排列的手表聚焦行。聚焦会向 Codex 投递对应 `codex://threads/<id>` 链接，并在不暴露
   任务标识的前提下显示准确的投递或回退结果。
+- Session 生命周期每 10 秒独立刷新；只有明确完成才显示绿色 `DONE`。待处理任务在
+  点击前为琥珀色动态 `ACTION`，点击后仍保持原执行状态，仅变为静态 `OPENED`；后续
+  新状态会再次恢复待处理提示。
 - 可配置 v2 主题、唤醒方式、时制与同步额度源，并在 StopWatch 页面预览最近 payload。
 - 诊断导出前自动脱敏密钥、用户路径、账户标签和设备标识。
 - 界面语言：English / 中文（简体）/ 日本語，跟随系统或手动选择。

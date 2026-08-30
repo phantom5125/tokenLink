@@ -27,10 +27,16 @@ public enum CodexWorkItemStateMapping {
       case "inProgress":
         // Race between polls: turn still in flight while thread shows idle.
         return .running
+      case "completed":
+        return .completed
       case "interrupted", "failed":
         return .failed
       default:
-        return .completed
+        // A separately launched app-server commonly reports Desktop-owned
+        // tasks as notLoaded without turns. Absence of evidence is not a
+        // successful terminal event, so render it as unknown until the local
+        // rollout or a later poll proves running/completed/failed.
+        return .unknown
       }
     default:
       return .unknown
@@ -75,7 +81,7 @@ public enum CodexThreadListParser {
         activeFlags: thread.status.activeFlags ?? [],
         lastTurnStatus: thread.turns?.last?.status)
       let effectiveState: WorkItemState
-      if reportedState == .completed,
+      if reportedState == .completed || reportedState == .unknown,
         let path = thread.path,
         let localState = rolloutState(path)
       {
@@ -145,7 +151,12 @@ public enum CodexRolloutActivityReader {
       else { continue }
       lastLifecycle = type
     }
-    return lastLifecycle == "task_started" ? .running : nil
+    switch lastLifecycle {
+    case "task_started": return .running
+    case "task_complete": return .completed
+    case "turn_aborted": return .failed
+    default: return nil
+    }
   }
 }
 
@@ -177,9 +188,9 @@ private struct TurnSummary: Decodable {
   let status: String?
 }
 
-/// Polls codex app-server `thread/list`. No dedicated timer: AppModel hangs
-/// this on the existing quota refresh cycle and feeds the results into a
-/// `WorkItemStore` via `poll(into:)`.
+/// Polls codex app-server `thread/list`. AppModel runs this on a short session
+/// lifecycle cadence, independently of the slower quota refresh cycle, and
+/// feeds the results into a `WorkItemStore` via `poll(into:)`.
 public struct CodexWorkItemTracker: Sendable {
   private let client: CodexAppServerClient
   private let threadLimit: Int

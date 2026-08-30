@@ -114,7 +114,8 @@ public enum WatchProjectionV2 {
           name: WorkItem.sanitizedName(item.name),
           source: item.source,
           state: item.state,
-          latest: item.latest == true)
+          latest: item.latest == true,
+          seen: item.seen == true)
       }
       .prefix(3)
     let payload = WatchPayloadV2(

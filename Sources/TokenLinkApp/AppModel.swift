@@ -144,7 +144,10 @@ public final class AppModel {
   @ObservationIgnored private let workItemStore: WorkItemStore
   @ObservationIgnored private let codexWorkItemTracker: CodexWorkItemTracker?
   @ObservationIgnored private let codexDesktopActivator: any CodexDesktopActivating
+  @ObservationIgnored private let sessionPollInterval: Duration
   @ObservationIgnored private var watchCommandTask: Task<Void, Never>?
+  @ObservationIgnored private var sessionPollTask: Task<Void, Never>?
+  @ObservationIgnored private var isPollingWorkItems = false
   /// Current watch work items (cache of the actor store for UI binding).
   public private(set) var workItems: [WorkItem] = []
   /// Last payload actually sent to the watch (already redacted by design).
@@ -170,7 +173,8 @@ public final class AppModel {
     localUsageObserver: LocalUsageObserver? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
     codexWorkItemTracker: CodexWorkItemTracker? = nil,
-    codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator()
+    codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator(),
+    sessionPollInterval: Duration = .seconds(10)
   ) {
     self.refresher = refresher
     self.refresherBuilder = refresherBuilder
@@ -187,6 +191,7 @@ public final class AppModel {
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
     self.codexDesktopActivator = codexDesktopActivator
+    self.sessionPollInterval = sessionPollInterval
     self.states = [:]
     self.devicePhase = configuration.boundDeviceIdentifier == nil ? .unbound : .disconnected
     self.scheduler = RefreshScheduler(minutes: configuration.refreshMinutes)
@@ -392,6 +397,7 @@ public final class AppModel {
     scheduler.start { [weak self] in
       await self?.requestRefresh(reason: "Scheduled refresh")
     }
+    startSessionPolling()
     observeWake()
     observeNetwork()
   }
@@ -412,6 +418,8 @@ public final class AppModel {
     bridgeEventTask = nil
     watchCommandTask?.cancel()
     watchCommandTask = nil
+    sessionPollTask?.cancel()
+    sessionPollTask = nil
     if let bridge {
       Task { await bridge.stopObservingTransport() }
     }
@@ -438,18 +446,8 @@ public final class AppModel {
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
     burnEstimates = await estimateLoader()
     await postNotifications(previousStates: previousStates)
-    if let codexWorkItemTracker,
-      let codexAccount = configuration.defaultAccount(for: .codex),
-      states[codexAccount.id]?.phase == .healthy
-    {
-      if let failure = await codexWorkItemTracker.poll(into: workItemStore) {
-        record("Codex work items unavailable: \(failure.kind.rawValue)")
-      }
-      workItems = await workItemStore.items
-      let activeSessionCount = await workItemStore.activeSessionCount
-      record(
-        "Codex work items available: \(workItems.count); active sessions: \(activeSessionCount)")
-    }
+    _ = await refreshCodexWorkItems(
+      reason: "Quota refresh", syncWatchOnChange: false)
     if bridge != nil, hasWatchSyncCandidate(allowStale: false) {
       await syncCodex(allowStale: false, attempts: 2, automatic: true)
     } else if case .synced = devicePhase {
@@ -870,6 +868,7 @@ public final class AppModel {
   public func focusWorkItemOnMac(slot: Int) async {
     let outcome = await makeFocusHandler().handle(.focus(slot: slot))
     applyFocusOutcome(outcome)
+    await reconcileFocusedWorkItem(slot: slot, outcome: outcome)
   }
 
   public func setWatchSyncedProvider(_ provider: ProviderID, enabled: Bool) throws {
@@ -1177,6 +1176,9 @@ public final class AppModel {
         }
         let outcome = await focusHandler.handle(command)
         self.applyFocusOutcome(outcome)
+        if case .focus(let slot) = command {
+          await self.reconcileFocusedWorkItem(slot: slot, outcome: outcome)
+        }
       }
     }
     bridgeEventTask = Task { @MainActor [weak self] in
@@ -1220,6 +1222,79 @@ public final class AppModel {
     guard let outcome else { return }
     lastWatchFocusOutcome = outcome
     lastWatchFocusAt = now()
+  }
+
+  /// Reconciles execution state immediately after a successful task link and
+  /// records acknowledgement independently. An item stays needs-input until
+  /// Codex reports a real lifecycle transition; opening it only sets `seen`.
+  private func reconcileFocusedWorkItem(
+    slot: Int,
+    outcome: WatchFocusOutcome?
+  ) async {
+    guard outcome == .openedThread else { return }
+    let acknowledged = await workItemStore.acknowledge(slot: slot, at: now())
+    let refreshed = await refreshCodexWorkItems(
+      reason: "Focused session", syncWatchOnChange: false)
+    workItems = await workItemStore.items
+    guard acknowledged || refreshed, bridge != nil,
+      hasWatchSyncCandidate(allowStale: true)
+    else { return }
+    await syncCodex(allowStale: true, attempts: 2, automatic: true)
+  }
+
+  /// Polls task lifecycle independently of the quota cadence. Successful
+  /// changes are the only scheduled polls that write a new watch payload.
+  @discardableResult
+  private func refreshCodexWorkItems(
+    reason: String,
+    syncWatchOnChange: Bool
+  ) async -> Bool {
+    guard !isPollingWorkItems, let codexWorkItemTracker,
+      configuration.defaultAccount(for: .codex)?.enabled == true
+    else { return false }
+    isPollingWorkItems = true
+    defer { isPollingWorkItems = false }
+
+    let previousItems = await workItemStore.items
+    let previousActiveCount = await workItemStore.activeSessionCount
+    if let failure = await codexWorkItemTracker.poll(into: workItemStore) {
+      record("Codex work items unavailable: \(failure.kind.rawValue)")
+      return false
+    }
+    let replacementItems = await workItemStore.items
+    let activeSessionCount = await workItemStore.activeSessionCount
+    workItems = replacementItems
+    let changed =
+      replacementItems != previousItems
+      || activeSessionCount != previousActiveCount
+    if changed || reason != "Scheduled session refresh" {
+      record(
+        "Codex work items available: \(replacementItems.count); active sessions: \(activeSessionCount)"
+      )
+    }
+    if changed, syncWatchOnChange, bridge != nil,
+      hasWatchSyncCandidate(allowStale: true)
+    {
+      await syncCodex(allowStale: true, attempts: 2, automatic: true)
+    }
+    return changed
+  }
+
+  private func startSessionPolling() {
+    sessionPollTask?.cancel()
+    let interval = sessionPollInterval
+    sessionPollTask = Task { @MainActor [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(for: interval)
+        } catch {
+          return
+        }
+        guard !Task.isCancelled, let self, self.started else { return }
+        await self.refreshCodexWorkItems(
+          reason: "Scheduled session refresh", syncWatchOnChange: true)
+      }
+    }
   }
 
   private func cancelActiveWatchSync() async {

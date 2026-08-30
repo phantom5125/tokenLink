@@ -33,19 +33,22 @@ int main() {
   {
     watch_v2::Payload payload;
     assert(parseJson(
-        R"({"v":2,"provider_id":"codex","windows":[{"id":"5h","remaining_percent":72,"reset_in_seconds":900}],"work_items":[{"slot":0,"name":"review","source":"codex","state":"running"},{"slot":1,"name":"fix-ci","source":"codex","state":"needs_input","latest":true}],"active_count":5,"synced_at":1787616000})",
+        R"({"v":2,"provider_id":"codex","windows":[{"id":"5h","remaining_percent":72,"reset_in_seconds":900}],"work_items":[{"slot":0,"name":"review","source":"codex","state":"running"},{"slot":1,"name":"fix-ci","source":"codex","state":"needs_input","latest":true,"seen":true},{"slot":2,"name":"maybe","source":"codex","state":"unknown"}],"active_count":5,"synced_at":1787616000})",
         payload));
     assert(std::strcmp(payload.providerId, "codex") == 0);
     assert(payload.windowCount == 1);
     assert(std::strcmp(payload.windows[0].id, "5h") == 0);
     assert(payload.windows[0].remainingPercent == 72.0f);
     assert(payload.windows[0].resetInSeconds == 900);
-    assert(payload.workItemCount == 2);
+    assert(payload.hasWorkItems);
+    assert(payload.workItemCount == 3);
     assert(payload.workItems[0].slot == 0);
     assert(std::strcmp(payload.workItems[0].name, "review") == 0);
     assert(payload.workItems[0].state == watch_v2::WorkState::Running);
     assert(payload.workItems[1].state == watch_v2::WorkState::NeedsInput);
     assert(payload.workItems[1].latest);
+    assert(payload.workItems[1].seen);
+    assert(payload.workItems[2].state == watch_v2::WorkState::Unknown);
     assert(payload.hasActiveCount && payload.activeCount == 5);
     assert(payload.hasSyncedAt && payload.syncedAt == 1787616000);
     assert(!payload.settings.hasTheme);
@@ -59,9 +62,19 @@ int main() {
         payload));
     assert(std::strcmp(payload.providerId, "kimi") == 0);
     assert(payload.windowCount == 1);
+    assert(!payload.hasWorkItems);
     assert(payload.workItemCount == 0);
     assert(!payload.hasActiveCount);
     assert(!payload.hasSyncedAt);
+  }
+
+  // Presence of an empty array is distinct from an omitted work_items key.
+  {
+    watch_v2::Payload payload;
+    assert(parseJson(R"({"v":2,"provider_id":"codex","work_items":[]})",
+                     payload));
+    assert(payload.hasWorkItems);
+    assert(payload.workItemCount == 0);
   }
 
   // Invalid entries are skipped, valid siblings survive.

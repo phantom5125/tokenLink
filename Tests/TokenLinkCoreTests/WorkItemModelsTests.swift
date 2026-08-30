@@ -210,3 +210,34 @@ private func at(_ seconds: TimeInterval) -> Date {
         slot: 1, name: "fix-ci", source: "codex", state: .needsInput, latest: true),
     ])
 }
+
+@Test func acknowledgementIsIndependentAndResetsOnNewProviderUpdate() async {
+  let store = WorkItemStore()
+  _ = await store.upsert(
+    id: "approval", name: "approval", source: .codex, state: .needsInput,
+    updatedAt: at(100))
+
+  #expect(await store.acknowledge(slot: 0, at: at(110)))
+  #expect(await store.payloadItems().first?.seen == true)
+  #expect(await store.item(forSlot: 0)?.state == .needsInput)
+  #expect(!(await store.acknowledge(slot: 0, at: at(120))))
+
+  _ = await store.upsert(
+    id: "approval", name: "approval", source: .codex, state: .running,
+    updatedAt: at(100))
+  #expect(await store.payloadItems().first?.seen == nil)
+
+  #expect(await store.acknowledge(slot: 0, at: at(140)))
+  #expect(await store.payloadItems().first?.seen == true)
+
+  _ = await store.upsert(
+    id: "approval", name: "approval", source: .codex, state: .needsInput,
+    updatedAt: at(100))
+  #expect(await store.payloadItems().first?.seen == nil)
+  #expect(await store.acknowledge(slot: 0, at: at(145)))
+
+  _ = await store.upsert(
+    id: "approval", name: "approval", source: .codex, state: .needsInput,
+    updatedAt: at(150))
+  #expect(await store.payloadItems().first?.seen == nil)
+}

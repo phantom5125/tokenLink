@@ -66,6 +66,7 @@ int main() {
 
   // Work items replace as a set; settings merge field by field.
   watch_v2::Payload payload = makePayload("codex", 80.0f);
+  payload.hasWorkItems = true;
   payload.workItemCount = 2;
   payload.workItems[0].slot = 0;
   watch_v2::copyAscii(payload.workItems[0].name,
@@ -89,4 +90,10 @@ int main() {
   // A payload without work_items keeps the previous set.
   store.apply(makePayload("codex", 70.0f), 9000);
   assert(store.workItemCount() == 2);
+
+  // An explicitly empty work_items array clears stale rows.
+  watch_v2::Payload empty = makePayload("codex", 65.0f);
+  empty.hasWorkItems = true;
+  store.apply(empty, 10000);
+  assert(store.workItemCount() == 0);
 }
