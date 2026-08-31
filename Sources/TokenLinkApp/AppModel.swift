@@ -745,6 +745,7 @@ public final class AppModel {
     await refresher.refresh()
     let previousStates = states
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
+    recordQuotaRefreshStateSummary()
     burnEstimates = await estimateLoader()
     await postNotifications(previousStates: previousStates)
     _ = await refreshCodexWorkItems(
@@ -1486,6 +1487,17 @@ public final class AppModel {
       else { continue }
       candidates.append((provider, snapshot))
     }
+    let candidateProviders = Set(candidates.map(\.provider))
+    let skipped = enabledWatchProviders.filter { !candidateProviders.contains($0) }
+    if !skipped.isEmpty {
+      let details = skipped.map { provider in
+        let phase = configuration.defaultAccount(for: provider)
+          .flatMap { states[$0.id] }?.phase.rawValue ?? "missing"
+        return "\(Self.displayName(for: provider))=\(phase)"
+      }
+      .joined(separator: ", ")
+      record("Watch quota candidates unavailable: \(details)")
+    }
     let items = await workItemStore.payloadItems()
     let activeSessionCount = await workItemStore.activeSessionCount
     let decisions = WatchSyncPolicy.payloads(
@@ -1501,13 +1513,32 @@ public final class AppModel {
     case .v1:
       record("Negotiated StopWatch protocol v1")
     case .v2:
-      record("Negotiated StopWatch protocol v2; sending \(decisions.count) providers")
+      let providerCount = Set(decisions.map(\.provider)).count
+      record(
+        "Negotiated StopWatch protocol v2; sending \(providerCount) providers in \(decisions.count) payloads"
+      )
     }
     lastWatchPayloadSummary =
       decisions
       .map { String(decoding: $0.data, as: UTF8.self) }
       .joined(separator: "\n")
     return decisions
+  }
+
+  private func recordQuotaRefreshStateSummary() {
+    let details = enabledWatchProviders.map { provider in
+      guard let account = configuration.defaultAccount(for: provider),
+        let state = states[account.id]
+      else {
+        return "\(Self.displayName(for: provider))=missing"
+      }
+      if let kind = state.error?.kind.rawValue {
+        return "\(Self.displayName(for: provider))=\(state.phase.rawValue)(\(kind))"
+      }
+      return "\(Self.displayName(for: provider))=\(state.phase.rawValue)"
+    }
+    .joined(separator: ", ")
+    record("Quota refresh states: \(details)")
   }
 
   private func performWatchSync(
@@ -1555,7 +1586,10 @@ public final class AppModel {
         lastWatchSyncFailure = nil
         lastWatchSyncFailureAt = nil
         await refreshBluetoothDiagnostics()
-        let names = decisions.map { Self.displayName(for: $0.provider) }
+        let names = decisions.map(\.provider).reduce(into: [ProviderID]()) { result, provider in
+          if !result.contains(provider) { result.append(provider) }
+        }
+        .map { Self.displayName(for: $0) }
           .joined(separator: ", ")
         record(
           automatic

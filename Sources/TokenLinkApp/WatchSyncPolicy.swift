@@ -14,9 +14,11 @@ public enum WatchSyncPolicy {
   }
 
   /// Builds the complete write batch for one connection. A v1 watch receives
-  /// one Codex payload; a v2 watch receives one mergeable payload per
+  /// one Codex payload; a v2 watch receives one mergeable quota payload per
   /// candidate so its Quota page mirrors every selected menu-bar provider in
-  /// the same refresh, instead of rotating sources over several minutes.
+  /// the same refresh. The Mac-managed session set appears in exactly one
+  /// packet: repeating it in every provider packet can cross the 512-byte BLE
+  /// limit and used to silently discard the longer Kimi/MiniMax payloads.
   public static func payloads(
     negotiated: NegotiatedProtocol,
     candidates: [(provider: ProviderID, snapshot: QuotaSnapshot)],
@@ -44,15 +46,50 @@ public enum WatchSyncPolicy {
         wake: settings.wakeMode.rawValue,
         hourFormat: settings.hourFormat == .system
           ? "system" : settings.hourFormat.rawValue)
-      return zip(candidates, state.providers).compactMap { candidate, provider in
-        guard
-          let data = try? WatchProjectionV2.encode(
+      let pairs = Array(zip(candidates, state.providers))
+      var decisions: [Decision] = []
+      var includedWorkItems = false
+      for (index, pair) in pairs.enumerated() {
+        let candidate = pair.0
+        let provider = pair.1
+        let carriesWorkItems = index == 0
+        let fullData = carriesWorkItems
+          ? try? WatchProjectionV2.encode(
             state: state,
             provider: provider,
-            settings: settingsPayload)
-        else { return nil }
-        return Decision(data: data, provider: candidate.provider, nextCursor: 0)
+            settings: settingsPayload,
+            includesWorkItems: true)
+          : nil
+        let data = fullData ?? (try? WatchProjectionV2.encode(
+          state: state,
+          provider: provider,
+          settings: settingsPayload,
+          includesWorkItems: false))
+        guard let data else { continue }
+        includedWorkItems = includedWorkItems || fullData != nil
+        decisions.append(
+          Decision(data: data, provider: candidate.provider, nextCursor: 0))
       }
+
+      // A maximum-size Sessions set can make even the first provider's
+      // combined quota/session packet too large. Preserve every quota packet,
+      // then append one session-only merge packet. Firmware intentionally
+      // leaves existing provider windows untouched when `windows` is empty.
+      if !includedWorkItems, let first = pairs.first {
+        let sessionCarrier = WatchFaceProviderState(
+          id: first.1.id,
+          windows: [])
+        if let data = try? WatchProjectionV2.encode(
+          state: state,
+          provider: sessionCarrier,
+          settings: settingsPayload,
+          includesWorkItems: true)
+        {
+          decisions.append(
+            Decision(data: data, provider: first.0.provider, nextCursor: 0))
+        }
+      }
+      return decisions
     }
   }
 

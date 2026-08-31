@@ -1,3 +1,4 @@
+import AppKit
 import Testing
 import TokenLinkCore
 import TokenLinkProviders
@@ -9,4 +10,9 @@ import TokenLinkProviders
   for provider in ProviderRegistry.quotaProviderIDs {
     #expect(ProviderLogo.image(for: provider) != nil)
   }
+}
+
+@MainActor @Test func menuBarMarkUsesCodexBarSizedPointCanvas() {
+  let image = TokenLinkMark.image(pointSize: 18)
+  #expect(image.size == NSSize(width: 18, height: 18))
 }

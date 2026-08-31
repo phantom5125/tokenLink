@@ -83,6 +83,20 @@ private func snapshot(
   #expect(decoded.activeSessionCount == nil)
 }
 
+@Test func payloadV2CanOmitWorkItemsWithoutChangingItsDecodedShape() throws {
+  let payload = WatchPayloadV2(
+    providerID: "kimi", windows: [], workItems: [], syncedAt: 1,
+    includesWorkItems: false)
+  let data = try JSONEncoder().encode(payload)
+  let object = try #require(
+    JSONSerialization.jsonObject(with: data) as? [String: Any])
+  #expect(object["work_items"] == nil)
+
+  let decoded = try JSONDecoder().decode(WatchPayloadV2.self, from: data)
+  #expect(decoded.workItems.isEmpty)
+  #expect(decoded.includesWorkItems == false)
+}
+
 @Test func payloadV2IgnoresUnknownFieldsForForwardCompatibility() throws {
   let json = """
     {

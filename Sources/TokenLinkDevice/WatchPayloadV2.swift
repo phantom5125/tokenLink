@@ -56,6 +56,10 @@ public struct WatchPayloadV2: Codable, Equatable, Sendable {
   public let providerID: String
   public let windows: [WatchWindowPayload]  // ≤ 3
   public let workItems: [WorkItemPayload]  // ≤ 3
+  /// The firmware distinguishes an omitted `work_items` key (leave the
+  /// current session list unchanged) from an explicitly empty array (clear
+  /// it). Multi-provider batches use this to carry the full list only once.
+  public let includesWorkItems: Bool
   /// Full Mac-side active count; may exceed the three displayed work items.
   public let activeSessionCount: Int?
   public let settings: WatchSettingsPayload?
@@ -67,12 +71,14 @@ public struct WatchPayloadV2: Codable, Equatable, Sendable {
     workItems: [WorkItemPayload],
     activeSessionCount: Int? = nil,
     settings: WatchSettingsPayload? = nil,
-    syncedAt: Int
+    syncedAt: Int,
+    includesWorkItems: Bool = true
   ) {
     self.v = Self.protocolVersion
     self.providerID = providerID
     self.windows = windows
     self.workItems = workItems
+    self.includesWorkItems = includesWorkItems
     self.activeSessionCount = activeSessionCount
     self.settings = settings
     self.syncedAt = syncedAt
@@ -84,6 +90,34 @@ public struct WatchPayloadV2: Codable, Equatable, Sendable {
     case workItems = "work_items"
     case activeSessionCount = "active_count"
     case syncedAt = "synced_at"
+  }
+
+  public init(from decoder: Decoder) throws {
+    let container = try decoder.container(keyedBy: CodingKeys.self)
+    v = try container.decode(Int.self, forKey: .v)
+    providerID = try container.decode(String.self, forKey: .providerID)
+    windows = try container.decode([WatchWindowPayload].self, forKey: .windows)
+    includesWorkItems = container.contains(.workItems)
+    workItems = try container.decodeIfPresent(
+      [WorkItemPayload].self, forKey: .workItems) ?? []
+    activeSessionCount = try container.decodeIfPresent(
+      Int.self, forKey: .activeSessionCount)
+    settings = try container.decodeIfPresent(
+      WatchSettingsPayload.self, forKey: .settings)
+    syncedAt = try container.decode(Int.self, forKey: .syncedAt)
+  }
+
+  public func encode(to encoder: Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(v, forKey: .v)
+    try container.encode(providerID, forKey: .providerID)
+    try container.encode(windows, forKey: .windows)
+    if includesWorkItems {
+      try container.encode(workItems, forKey: .workItems)
+    }
+    try container.encodeIfPresent(activeSessionCount, forKey: .activeSessionCount)
+    try container.encodeIfPresent(settings, forKey: .settings)
+    try container.encode(syncedAt, forKey: .syncedAt)
   }
 }
 
@@ -118,7 +152,8 @@ public enum WatchProjectionV2 {
   public static func encode(
     state: WatchFaceState,
     provider: WatchFaceProviderState,
-    settings: WatchSettingsPayload? = nil
+    settings: WatchSettingsPayload? = nil,
+    includesWorkItems: Bool = true
   ) throws -> Data {
     let windows =
       provider.windows
@@ -154,7 +189,8 @@ public enum WatchProjectionV2 {
       workItems: Array(items),
       activeSessionCount: state.activeSessionCount.map { min(Int(UInt16.max), $0) },
       settings: settings,
-      syncedAt: Int(state.capturedAt.timeIntervalSince1970))
+      syncedAt: Int(state.capturedAt.timeIntervalSince1970),
+      includesWorkItems: includesWorkItems)
     let data = try JSONEncoder().encode(payload)
     guard data.count <= 512 else {
       throw WatchProjectionError.payloadTooLarge
