@@ -3,13 +3,16 @@
 TokenLink has three artifact classes. Keep their names and expectations
 explicit:
 
-- **Mac development artifact:** an ad-hoc-signed Universal 2 DMG for source/CI
-  testing and GitHub prereleases, not a notarized default download.
+- **Mac community artifact:** an ad-hoc-signed Universal 2 DMG for source/CI
+  testing and releases funded without an Apple Developer Program membership.
+  Its release notes and Homebrew caveat must identify that it is not notarized.
 - **C152 firmware release:** a merged image, split-image archive, product/image
   manifests, and SHA-256 checksums built from `firmware/stopwatch-c152`.
-- **Mac public release:** `TokenLink-<version>.dmg`, containing the Universal 2
-  app and an Applications shortcut, Developer ID signed, Apple-notarized,
-  stapled, checksummed, and attached to a versioned GitHub Release.
+- **Mac notarized release:** `TokenLink-<version>.dmg`, containing the Universal
+  2 app and an Applications shortcut, Developer ID signed, Apple-notarized,
+  stapled, checksummed, and attached to a versioned GitHub Release. The release
+  workflow selects this stronger identity automatically when all Apple secrets
+  are configured.
 
 ## Release gates
 
@@ -97,10 +100,11 @@ cd dist
 shasum -a 256 -c TokenLink-<version>.dmg.sha256
 ```
 
-## Configure GitHub release signing
+## Configure optional GitHub release signing
 
-The tag workflow requires these GitHub Actions secrets and fails closed if any
-are missing:
+The tag workflow uses these GitHub Actions secrets when the project has a paid
+Apple Developer Program identity. Configure all six together or none of them;
+a partial configuration fails closed:
 
 | Secret | Content |
 | --- | --- |
@@ -118,12 +122,37 @@ Pushing a `v*` tag runs `.github/workflows/release.yml`, rebuilds both artifact
 classes from that tag, verifies their versions/checksums, and creates a GitHub
 Release from `docs/releases/<tag-without-v>.md`. A supported tag containing
 `-alpha.N`, `-beta.N`, or `-rc.N` is published as a prerelease with an explicitly
-ad-hoc-signed Mac development DMG. A plain version tag such as `v0.2.3` imports
-the release identity into an ephemeral keychain and is published as stable only
-after Developer ID signing and Apple notarization succeed. The firmware source
-is already in the tag. Do not add a source ZIP copied from another repository.
+ad-hoc-signed Mac development DMG. A plain version tag imports the release
+identity into an ephemeral keychain when all six secrets exist. Without them,
+the workflow publishes an explicitly labelled community build and adds the
+same warning to its Homebrew cask. The firmware source is already in the tag.
+Do not add a source ZIP copied from another repository.
 
-Until Apple signing credentials are configured, ordinary CI and explicitly
-labelled prereleases may publish ad-hoc development DMGs. Stable tag workflows
-still fail closed. Promote a stable public DMG only after Gatekeeper verification
-on a separate Mac.
+## Publish through the Homebrew tap
+
+Stable tags update `phantom5125/homebrew-tap` only after the GitHub Release and
+its checksummed DMG exist. Bootstrap that public repository with a `main` branch
+before the first stable release, then create a fine-grained GitHub token with
+Contents read/write access limited to that repository. Store it in the TokenLink
+repository as `HOMEBREW_TAP_TOKEN`.
+
+The stable release workflow:
+
+1. verifies access to the tap before creating the GitHub Release;
+2. validates the DMG against its published SHA-256 file;
+3. renders `Casks/tokenlink.rb` from `packaging/homebrew/tokenlink.rb.in`;
+4. audits and installs the cask from an isolated local test tap; and
+5. commits the exact version and SHA-256 to the public tap.
+
+Users then install or upgrade with:
+
+```bash
+brew install --cask phantom5125/tap/tokenlink
+brew upgrade --cask tokenlink
+```
+
+Community builds can be installed by the custom tap, but macOS can still require
+the user to approve the first launch in **System Settings → Privacy & Security**.
+Do not remove quarantine attributes in the cask. When donor funding makes an
+Apple Developer Program membership available, configure the six Apple secrets;
+the same workflow will emit a notarized cask without the community warning.

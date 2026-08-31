@@ -76,10 +76,11 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
   TokenLink-arc quota face and Mac Cost Center ship together with request-level
   Codex token accounting, current reviewed prices, and explicit separation
   between subscription quota and API-equivalent estimates.
-- **2026-08-31 — Direct Mac installation is ready for release signing.** The Mac
-  builder now produces a checked Universal 2 `TokenLink-0.2.2.dmg` with an
-  Applications shortcut. Public tags fail closed unless Developer ID signing
-  and Apple notarization credentials are configured.
+- **2026-08-31 — Direct Mac installation supports community and notarized
+  releases.** The Mac builder produces a checked Universal 2 DMG with an
+  Applications shortcut. Releases use Developer ID signing and Apple
+  notarization when funded credentials are configured; otherwise the release
+  and Homebrew cask explicitly identify the ad-hoc community build.
 - **2026-08-30 — The 0.2.2 stability candidate is integrated.** Bluetooth
   diagnostics, explicit Codex task-link outcomes, complete thread pagination,
   stable priority slots, and accessible C152 session indicators now share one
@@ -168,8 +169,9 @@ image:
 2. Open the disk image and drag **TokenLink** onto **Applications**.
 3. Eject the disk image, then launch TokenLink from Applications.
 
-The tagged public DMG is required to be Developer ID signed, Apple-notarized,
-and stapled. CI development DMGs are ad-hoc signed and are not public downloads.
+Community-funded DMGs are ad-hoc signed and identify that limitation in their
+release notes. When Developer ID credentials are configured, the same release
+workflow signs, Apple-notarizes, staples, and Gatekeeper-verifies the artifact.
 
 To build from source instead, install Xcode 26+ or a Swift 6.2+ toolchain:
 

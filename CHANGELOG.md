@@ -6,6 +6,15 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+- Added project-owned Homebrew Cask distribution for stable releases. The tag
+  workflow verifies tap access before publication, renders the exact release
+  SHA-256, audits and installs the cask, and commits it to
+  `phantom5125/homebrew-tap` only after the GitHub Release exists.
+- Made Apple Developer ID signing an optional stronger release identity: all
+  six credentials still fail closed when partially configured, while an
+  unfunded community release is explicitly labelled ad-hoc/non-notarized in
+  both GitHub release notes and its Homebrew caveat.
+
 ## 0.3.0-rc.2 — 2026-08-31
 
 - Made `assets/branding/logo-mark-light.png` the single source of truth for the
