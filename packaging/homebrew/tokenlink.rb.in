@@ -1,0 +1,23 @@
+cask "tokenlink" do
+  version "__TOKENLINK_VERSION__"
+  sha256 "__TOKENLINK_SHA256__"
+
+  url "https://github.com/phantom5125/tokenLink/releases/download/v#{version}/TokenLink-#{version}.dmg",
+      verified: "github.com/phantom5125/tokenLink/"
+  name "TokenLink"
+  desc "Monitor coding-plan quotas, sessions, and local AI usage"
+  homepage "https://github.com/phantom5125/tokenLink"
+
+  depends_on macos: :sonoma
+
+  app "TokenLink.app"
+
+  uninstall quit: "app.tokenlink"
+
+  zap trash: [
+    "~/Library/Application Support/TokenLink",
+    "~/Library/Preferences/app.tokenlink.plist",
+  ]
+
+  __TOKENLINK_CAVEATS__
+end

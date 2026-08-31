@@ -9,15 +9,18 @@ permissions:
 
 jobs:
   macos:
-    name: Signed and notarized macOS DMG
+    name: macOS DMG
     runs-on: macos-15
+    outputs:
+      distribution: ${{ steps.signing.outputs.distribution }}
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
     steps:
       - uses: actions/checkout@v4
-      - name: Configure Developer ID and notarization
-        if: ${{ !contains(github.ref_name, '-') }}
+      - name: Configure release signing
+        id: signing
         env:
+          RELEASE_TAG: ${{ github.ref_name }}
           DEVELOPER_ID_P12_BASE64: ${{ secrets.TOKENLINK_DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.TOKENLINK_DEVELOPER_ID_P12_PASSWORD }}
           CODESIGN_IDENTITY: ${{ secrets.TOKENLINK_CODESIGN_IDENTITY }}
@@ -25,6 +28,36 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.TOKENLINK_NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.TOKENLINK_NOTARY_ISSUER_ID }}
         run: |
+          if [[ "$RELEASE_TAG" == *-* ]]; then
+            echo "distribution=development" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          release_secrets=(
+            DEVELOPER_ID_P12_BASE64
+            DEVELOPER_ID_P12_PASSWORD
+            CODESIGN_IDENTITY
+            NOTARY_KEY_P8_BASE64
+            NOTARY_KEY_ID
+            NOTARY_ISSUER_ID
+          )
+          configured_secrets=0
+          for secret_name in "${release_secrets[@]}"; do
+            if [[ -n "${!secret_name}" ]]; then
+              configured_secrets=$((configured_secrets + 1))
+            fi
+          done
+
+          if [[ "$configured_secrets" -eq 0 ]]; then
+            echo "::warning::Publishing an explicitly labelled community build without Apple notarization."
+            echo "distribution=community" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if [[ "$configured_secrets" -ne "${#release_secrets[@]}" ]]; then
+            echo "Developer ID/notarization secrets are only partially configured." >&2
+            exit 1
+          fi
+
           require_secret() {
             if [[ -z "${!1}" ]]; then
               echo "Missing required release secret: $1" >&2
@@ -77,6 +110,7 @@ jobs:
             echo "TOKENLINK_NOTARY_PROFILE=tokenlink-ci-notary"
             echo "TOKENLINK_NOTARY_KEYCHAIN=$keychain_path"
           } >> "$GITHUB_ENV"
+          echo "distribution=notarized" >> "$GITHUB_OUTPUT"
       - name: Verify tag version
         run: |
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/Info.plist)"
@@ -147,8 +181,19 @@ jobs:
           pattern: "*-release"
           path: release-assets
           merge-multiple: true
+      - name: Verify stable Homebrew tap access
+        if: ${{ !contains(github.ref_name, '-') }}
+        env:
+          GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          if [[ -z "$GH_TOKEN" ]]; then
+            echo "Missing required release secret: HOMEBREW_TAP_TOKEN" >&2
+            exit 1
+          fi
+          gh api repos/phantom5125/homebrew-tap --jq '.default_branch' | grep -Fx main
       - name: Publish checksummed assets
         env:
+          DISTRIBUTION: ${{ needs.macos.outputs.distribution }}
           GH_TOKEN: ${{ github.token }}
         run: |
           prerelease_options=()
@@ -156,9 +201,85 @@ jobs:
             prerelease_options+=(--prerelease)
           fi
 
+          notes_file="$RUNNER_TEMP/tokenlink-release-notes.md"
+          cp "docs/releases/${GITHUB_REF_NAME#v}.md" "$notes_file"
+          if [[ "$DISTRIBUTION" == "community" ]]; then
+            printf '\n\n## macOS distribution identity\n\n' >> "$notes_file"
+            printf '%s\n' \
+              'This community-funded DMG is ad-hoc signed and is not Apple-notarized.' \
+              'Review the published checksum and source before opening it. macOS may' \
+              'require explicit approval in System Settings → Privacy & Security.' \
+              >> "$notes_file"
+          elif [[ "$DISTRIBUTION" == "notarized" ]]; then
+            printf '\n\n## macOS distribution identity\n\n' >> "$notes_file"
+            printf '%s\n' \
+              'The DMG and contained app are Developer ID signed, Apple-notarized,' \
+              'stapled, and Gatekeeper-verified by the release workflow.' \
+              >> "$notes_file"
+          fi
+
           gh release create "$GITHUB_REF_NAME" \
             release-assets/* \
             --verify-tag \
             "${prerelease_options[@]}" \
             --title "TokenLink ${GITHUB_REF_NAME#v}" \
-            --notes-file "docs/releases/${GITHUB_REF_NAME#v}.md"
+            --notes-file "$notes_file"
+
+  homebrew:
+    name: Update Homebrew tap
+    if: ${{ !contains(github.ref_name, '-') }}
+    needs: [macos, publish]
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: source
+      - uses: actions/download-artifact@v4
+        with:
+          name: macos-release
+          path: release-assets
+      - uses: actions/checkout@v4
+        with:
+          repository: phantom5125/homebrew-tap
+          path: tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      - name: Render stable cask
+        env:
+          DISTRIBUTION: ${{ needs.macos.outputs.distribution }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          dmg="release-assets/TokenLink-$version.dmg"
+          checksum="$dmg.sha256"
+          test -f "$dmg"
+          test -f "$checksum"
+          (cd release-assets && shasum -a 256 -c "$(basename "$checksum")")
+          sha256="$(awk 'NR == 1 { print $1 }' "$checksum")"
+          bash source/scripts/render_homebrew_cask.sh \
+            "$version" \
+            "$sha256" \
+            "$DISTRIBUTION" \
+            tap/Casks/tokenlink.rb
+      - name: Audit and install cask from a local tap
+        run: |
+          brew tap-new tokenlink-ci/tap --no-git
+          ci_tap="$(brew --repository tokenlink-ci/tap)"
+          mkdir -p "$ci_tap/Casks"
+          cp tap/Casks/tokenlink.rb "$ci_tap/Casks/tokenlink.rb"
+          brew audit --cask --strict tokenlink-ci/tap/tokenlink
+          brew install --cask tokenlink-ci/tap/tokenlink
+          installed_version="$(/usr/libexec/PlistBuddy \
+            -c 'Print :CFBundleShortVersionString' \
+            /Applications/TokenLink.app/Contents/Info.plist)"
+          test "$installed_version" = "${GITHUB_REF_NAME#v}"
+          codesign --verify --deep --strict /Applications/TokenLink.app
+      - name: Publish cask update
+        run: |
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Casks/tokenlink.rb
+          if git -C tap diff --cached --quiet; then
+            echo "Homebrew cask is already current."
+            exit 0
+          fi
+          git -C tap commit -m "tokenlink ${GITHUB_REF_NAME#v}"
+          git -C tap push origin HEAD:main

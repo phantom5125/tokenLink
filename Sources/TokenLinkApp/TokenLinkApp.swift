@@ -34,8 +34,7 @@ struct TokenLinkApplication: App {
         .task { await model.start() }
     } label: {
       HStack(spacing: 4) {
-        TokenLinkMark(appearance: .template)
-          .frame(width: 17, height: 17)
+        TokenLinkMark(pointSize: 18)
         Text(model.menuBarLabel)
       }
       .accessibilityElement(children: .combine)

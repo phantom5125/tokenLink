@@ -115,6 +115,7 @@ public final class AppModel {
   public private(set) var lastWatchFocusOutcome: WatchFocusOutcome?
   public private(set) var lastWatchFocusAt: Date?
   public private(set) var costDashboard: CostDashboardModel
+  public private(set) var usageAnalytics: UsageAnalyticsModel
 
   @ObservationIgnored private var refresher: any AppRefreshing
   @ObservationIgnored private let refresherBuilder:
@@ -175,6 +176,7 @@ public final class AppModel {
     localUsageObserver: LocalUsageObserver? = nil,
     costDashboard: CostDashboardModel? = nil,
     costDashboardBuilder: ((AppConfiguration) -> CostDashboardModel)? = nil,
+    usageAnalytics: UsageAnalyticsModel? = nil,
     workItemStore: WorkItemStore = WorkItemStore(),
     codexWorkItemTracker: CodexWorkItemTracker? = nil,
     codexDesktopActivator: any CodexDesktopActivating = SystemCodexDesktopActivator(),
@@ -205,6 +207,7 @@ public final class AppModel {
           .failure(.configuration("No local cost source is configured."))
         })
     self.costDashboardBuilder = costDashboardBuilder
+    self.usageAnalytics = usageAnalytics ?? UsageAnalyticsModel.empty()
     self.workItemStore = workItemStore
     self.codexWorkItemTracker = codexWorkItemTracker
     self.codexDesktopActivator = codexDesktopActivator
@@ -257,6 +260,24 @@ public final class AppModel {
         observer: localUsageObserver,
         catalog: catalog)
     }
+    let usageAnalytics: UsageAnalyticsModel
+    if let catalog, let analyticsStore = try? UsageAnalyticsStore.applicationSupport() {
+      let service = UsageAnalyticsService(
+        store: analyticsStore,
+        catalog: catalog)
+      usageAnalytics = UsageAnalyticsModel {
+        let task = Task.detached(priority: .utility) {
+          try service.refresh()
+        }
+        return try await withTaskCancellationHandler {
+          try await task.value
+        } onCancel: {
+          task.cancel()
+        }
+      }
+    } else {
+      usageAnalytics = UsageAnalyticsModel.empty()
+    }
     return AppModel(
       refresher: makeCoordinator(configuration),
       refresherBuilder: makeCoordinator,
@@ -276,6 +297,7 @@ public final class AppModel {
       localUsageObserver: localUsageObserver,
       costDashboard: makeCostDashboard(configuration),
       costDashboardBuilder: makeCostDashboard,
+      usageAnalytics: usageAnalytics,
       codexWorkItemTracker: CodexWorkItemTracker(
         executable: CodexExecutableResolver.resolve(configuredPath: configuration.codexPath),
         transport: ProcessAppServerTransport(
@@ -723,6 +745,7 @@ public final class AppModel {
     await refresher.refresh()
     let previousStates = states
     states = await stateLoader(TimeInterval(configuration.refreshMinutes * 60))
+    recordQuotaRefreshStateSummary()
     burnEstimates = await estimateLoader()
     await postNotifications(previousStates: previousStates)
     _ = await refreshCodexWorkItems(
@@ -1246,6 +1269,7 @@ public final class AppModel {
         throw error
       }
       await costDashboard.disable()
+      usageAnalytics.cancelRefresh()
     }
   }
 
@@ -1272,12 +1296,16 @@ public final class AppModel {
 
   public func loadCostsIfNeeded() async {
     guard configuration.betaCostsEnabled else { return }
-    await costDashboard.loadIfNeeded()
+    async let costs: Void = costDashboard.loadIfNeeded()
+    async let analytics: Void = usageAnalytics.loadIfNeeded()
+    _ = await (costs, analytics)
   }
 
   public func refreshCosts(force: Bool) async {
     guard configuration.betaCostsEnabled else { return }
-    await costDashboard.refreshCosts(force: force)
+    async let costs: Void = costDashboard.refreshCosts(force: force)
+    async let analytics: Void = usageAnalytics.refresh()
+    _ = await (costs, analytics)
   }
 
   /// Beta: scans local CLI transcripts (last 7 days) on a background task.
@@ -1459,6 +1487,17 @@ public final class AppModel {
       else { continue }
       candidates.append((provider, snapshot))
     }
+    let candidateProviders = Set(candidates.map(\.provider))
+    let skipped = enabledWatchProviders.filter { !candidateProviders.contains($0) }
+    if !skipped.isEmpty {
+      let details = skipped.map { provider in
+        let phase = configuration.defaultAccount(for: provider)
+          .flatMap { states[$0.id] }?.phase.rawValue ?? "missing"
+        return "\(Self.displayName(for: provider))=\(phase)"
+      }
+      .joined(separator: ", ")
+      record("Watch quota candidates unavailable: \(details)")
+    }
     let items = await workItemStore.payloadItems()
     let activeSessionCount = await workItemStore.activeSessionCount
     let decisions = WatchSyncPolicy.payloads(
@@ -1474,13 +1513,32 @@ public final class AppModel {
     case .v1:
       record("Negotiated StopWatch protocol v1")
     case .v2:
-      record("Negotiated StopWatch protocol v2; sending \(decisions.count) providers")
+      let providerCount = Set(decisions.map(\.provider)).count
+      record(
+        "Negotiated StopWatch protocol v2; sending \(providerCount) providers in \(decisions.count) payloads"
+      )
     }
     lastWatchPayloadSummary =
       decisions
       .map { String(decoding: $0.data, as: UTF8.self) }
       .joined(separator: "\n")
     return decisions
+  }
+
+  private func recordQuotaRefreshStateSummary() {
+    let details = enabledWatchProviders.map { provider in
+      guard let account = configuration.defaultAccount(for: provider),
+        let state = states[account.id]
+      else {
+        return "\(Self.displayName(for: provider))=missing"
+      }
+      if let kind = state.error?.kind.rawValue {
+        return "\(Self.displayName(for: provider))=\(state.phase.rawValue)(\(kind))"
+      }
+      return "\(Self.displayName(for: provider))=\(state.phase.rawValue)"
+    }
+    .joined(separator: ", ")
+    record("Quota refresh states: \(details)")
   }
 
   private func performWatchSync(
@@ -1528,7 +1586,10 @@ public final class AppModel {
         lastWatchSyncFailure = nil
         lastWatchSyncFailureAt = nil
         await refreshBluetoothDiagnostics()
-        let names = decisions.map { Self.displayName(for: $0.provider) }
+        let names = decisions.map(\.provider).reduce(into: [ProviderID]()) { result, provider in
+          if !result.contains(provider) { result.append(provider) }
+        }
+        .map { Self.displayName(for: $0) }
           .joined(separator: ", ")
         record(
           automatic
@@ -1727,7 +1788,6 @@ public final class AppModel {
     case .peripheralNotFound: return "bound device not found"
     case .serviceNotFound: return "quota service not found"
     case .characteristicNotFound: return "quota characteristic not found"
-    case .commandNotificationsUnavailable: return "watch command notifications unavailable"
     case .disconnected: return "device disconnected"
     case .system: return "CoreBluetooth system error"
     }

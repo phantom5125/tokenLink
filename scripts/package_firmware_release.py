@@ -116,7 +116,10 @@ def package_release(
     release_version: str,
     pio: Path,
     revision: str | None = None,
+    channel: str = "stable",
 ) -> Path:
+    if channel not in {"stable", "prerelease"}:
+        raise ValueError(f"Unsupported release channel: {channel}")
     firmware_root = repo_root / "firmware" / "stopwatch-c152"
     embedded = source_version(firmware_root)
     if embedded != f"{release_version}-tokenlink":
@@ -208,7 +211,7 @@ def package_release(
         },
         "release": {
             "version": release_version,
-            "channel": "stable",
+            "channel": channel,
             "published_at": published_at(repo_root),
             "source_revision": resolved_revision,
         },
@@ -250,6 +253,7 @@ def package_release(
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
+    parser.add_argument("--channel", choices=("stable", "prerelease"), default="stable")
     parser.add_argument("--output", type=Path, default=Path("dist/firmware"))
     parser.add_argument("--pio", type=Path, required=True)
     parser.add_argument("--source-revision")
@@ -261,6 +265,7 @@ def main() -> int:
         args.version,
         args.pio.resolve(),
         revision=args.source_revision,
+        channel=args.channel,
     )
     print(manifest)
     return 0

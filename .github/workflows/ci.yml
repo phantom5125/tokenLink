@@ -28,6 +28,8 @@ jobs:
           swift format lint --recursive --strict Sources Tests
       - name: Privacy scan
         run: bash scripts/privacy_scan.sh
+      - name: Validate Homebrew cask contract
+        run: bash scripts/test_homebrew_cask.sh
       - name: Package with distribution notices
         run: |
           bash scripts/build_release_artifact.sh

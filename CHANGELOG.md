@@ -6,6 +6,50 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+- Added project-owned Homebrew Cask distribution for stable releases. The tag
+  workflow verifies tap access before publication, renders the exact release
+  SHA-256, audits and installs the cask, and commits it to
+  `phantom5125/homebrew-tap` only after the GitHub Release exists.
+- Made Apple Developer ID signing an optional stronger release identity: all
+  six credentials still fail closed when partially configured, while an
+  unfunded community release is explicitly labelled ad-hoc/non-notarized in
+  both GitHub release notes and its Homebrew caveat.
+
+## 0.3.0-rc.2 — 2026-08-31
+
+- Made `assets/branding/logo-mark-light.png` the single source of truth for the
+  Finder, menu-bar, menu-panel, notification, and packaged App icons; removed
+  the separately drawn heavy-stroke icon renderer and regenerate ICNS during
+  every release build.
+- Fixed installed-app startup by resolving SwiftPM resources from the standard
+  `Contents/Resources` app location before `Bundle.module`; mounted-DMG release
+  validation now cold-starts the distributed executable and fails on resource-
+  bundle crashes or branding drift.
+- Decoupled C04 watch-command notification setup from C02 quota readiness, so a
+  new Mac can initiate pairing and deliver quota even while optional Session
+  focus/refresh notifications are still being enabled.
+- Advanced the C152 GATT migration revision to clear pre-RC2 bonds exactly once,
+  allowing a prepared or previously tested watch to pair cleanly with its new
+  host after installing the matching firmware.
+
+## 0.3.0-rc.1 — 2026-08-31
+
+- Expanded the Mac Cost Center into a local Usage & Cost workspace with
+  Overview, Trends, Attribution, and Costs sections.
+- Added project, model, reasoning-effort, and privacy-safe Session attribution
+  across locally recorded Codex, Claude, and Kimi token usage.
+- Added a GitHub-style activity calendar, metric-switchable Token/cost/active-
+  time views, hourly distribution, and an immediately preceding equal-length
+  period comparison aligned by local calendar day.
+- Added custom date ranges and a documented active-time estimate based on
+  per-Session activity gaps of up to five minutes, including explicit overlap
+  and isolated-event caveats.
+- Added a local incremental history store with changed-file reparsing, unchanged-
+  file reuse, a 400-day/250,000-event bound, atomic owner-only persistence, and
+  no prompt, response, tool-output, full-path, or raw Session-ID retention.
+- Added API-equivalent pricing coverage directly to the dashboard so unpriced
+  usage cannot be mistaken for zero-cost usage.
+
 ## 0.2.3-rc.1 — 2026-08-31
 
 - Reworked the Data watch face around a TokenLink-style open quota arc, with

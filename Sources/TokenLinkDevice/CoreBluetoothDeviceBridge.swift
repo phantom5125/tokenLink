@@ -8,7 +8,6 @@ public enum BluetoothTransportError: Error, Equatable, Sendable {
   case peripheralNotFound
   case serviceNotFound
   case characteristicNotFound
-  case commandNotificationsUnavailable
   case disconnected
   case system(String)
 }
@@ -28,7 +27,6 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
     case connecting(UInt64)
     case discoveringServices(UInt64)
     case discoveringCharacteristics(UInt64)
-    case subscribingCommands(UInt64)
     case ready(UInt64)
   }
 
@@ -137,7 +135,6 @@ public final class CoreBluetoothTransport: NSObject, BLETransport, @unchecked Se
           case .connecting: .connecting
           case .discoveringServices: .discoveringServices
           case .discoveringCharacteristics: .discoveringCharacteristics
-          case .subscribingCommands: .subscribingCommands
           case .ready: .ready
           }
         continuation.resume(
@@ -685,12 +682,12 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
       $0.uuid == Self.commandUUID
     }) {
       commandCharacteristic = command
-      // A successful physical connection is not enough for protocol v2:
-      // session focus and refresh travel over C04 notifications. Do not expose
-      // the bridge as connected until CoreBluetooth confirms the CCCD write.
-      connectionStage = .subscribingCommands(generation)
+      // C04 carries optional watch-to-Mac controls. Enabling it must not block
+      // C02 quota delivery: on a new Mac, the encrypted C03 read or C02 write is
+      // what initiates pairing, while a CCCD callback can arrive later (or fail
+      // independently). Diagnostics still expose whether notifications became
+      // active, but quota sync is ready as soon as C02 is discovered.
       peripheral.setNotifyValue(true, for: command)
-      return
     }
     finishConnect(peripheral: peripheral, generation: generation)
   }
@@ -703,17 +700,11 @@ extension CoreBluetoothTransport: CBPeripheralDelegate {
     guard peripheral === connectedPeripheral,
       characteristic === commandCharacteristic,
       characteristic.uuid == Self.commandUUID,
-      case .subscribingCommands(let generation) = connectionStage
+      case .ready = connectionStage
     else { return }
-    if error != nil {
-      resumeConnect(throwing: BluetoothTransportError.commandNotificationsUnavailable)
-      return
-    }
-    guard characteristic.isNotifying else {
-      resumeConnect(throwing: BluetoothTransportError.commandNotificationsUnavailable)
-      return
-    }
-    finishConnect(peripheral: peripheral, generation: generation)
+    // Notification failure degrades only watch-to-Mac controls. The connection
+    // remains usable for quota writes and the checklist reports the C04 state.
+    _ = error
   }
 
   public func peripheral(

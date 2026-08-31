@@ -99,3 +99,53 @@ private func policySnapshot(_ provider: ProviderID, remaining: Double) -> QuotaS
   #expect(payloads.map(\.providerID) == ["codex", "kimi", "glm"])
   #expect(payloads.allSatisfy { $0.activeSessionCount == 6 })
 }
+
+@Test func v2BatchDoesNotDropProvidersWhenSessionsMakeCombinedPayloadsTooLarge() throws {
+  let now = Date(timeIntervalSince1970: 200)
+  let candidates: [(ProviderID, QuotaSnapshot)] = [
+    .codex, .kimi, .minimax,
+  ].map { provider in
+    (
+      provider,
+      QuotaSnapshot(
+        provider: provider,
+        planLabel: nil,
+        windows: [
+          QuotaWindow(
+            id: "5h", label: "5 hours", usedPercent: 20,
+            remainingPercent: 80, remainingCount: nil, limitCount: nil,
+            resetsAt: now.addingTimeInterval(1_000)),
+          QuotaWindow(
+            id: "weekly", label: "Weekly", usedPercent: 30,
+            remainingPercent: 70, remainingCount: nil, limitCount: nil,
+            resetsAt: now.addingTimeInterval(2_000)),
+        ],
+        source: provider == .codex ? .localAppServer : .apiKey,
+        fetchedAt: now))
+  }
+  let workItems = (0..<3).map { slot in
+    WorkItemPayload(
+      slot: slot,
+      name: "ABCDEFGHIJKL",
+      source: "12345678",
+      state: .needsInput,
+      latest: true,
+      seen: true)
+  }
+
+  let decisions = WatchSyncPolicy.payloads(
+    negotiated: .v2(WatchCapabilities(protocolVersions: [1, 2])),
+    candidates: candidates,
+    settings: WatchSettings(syncedProviders: Set(candidates.map(\.0))),
+    workItems: workItems,
+    activeSessionCount: 12,
+    now: now)
+  let payloads = try decisions.map {
+    try JSONDecoder().decode(WatchPayloadV2.self, from: $0.data)
+  }
+
+  #expect(Set(payloads.map(\.providerID)) == Set(["codex", "kimi", "minimax"]))
+  #expect(payloads.filter(\.includesWorkItems).count == 1)
+  #expect(payloads.first(where: \.includesWorkItems)?.workItems.count == 3)
+  #expect(decisions.allSatisfy { $0.data.count <= 512 })
+}
