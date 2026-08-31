@@ -4,12 +4,19 @@ import TokenLinkCore
 
 enum ProviderLogo {
   private static let resources: Bundle = {
-    let packagedBundle = Bundle.main.resourceURL?
-      .appendingPathComponent("TokenLink_TokenLinkApp.bundle")
-    if let packagedBundle, let bundle = Bundle(url: packagedBundle) {
-      return bundle
+    let bundleName = "TokenLink_TokenLinkApp.bundle"
+    let candidates = [
+      Bundle.main.resourceURL?.appendingPathComponent(bundleName),
+      Bundle.main.bundleURL.appendingPathComponent(bundleName),
+    ]
+    for case let url? in candidates {
+      if let bundle = Bundle(url: url) { return bundle }
     }
-    return Bundle.module
+    #if TOKENLINK_PACKAGED_APP
+      return Bundle.main
+    #else
+      return Bundle.module
+    #endif
   }()
 
   static func image(for provider: ProviderID) -> Image? {

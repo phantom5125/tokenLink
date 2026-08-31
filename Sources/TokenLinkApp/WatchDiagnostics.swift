@@ -188,6 +188,15 @@ extension AppModel {
           "プロトコル v1 はクォータ同期に対応しますが、Session フォーカスコマンドには対応しません。"),
         level: .attention)
     }
+    if bluetoothDiagnostics.commandCharacteristicAvailable {
+      return .init(
+        id: "commands", title: title,
+        detail: localized(
+          "Quota sync remains available; only Session focus and refresh controls are waiting for C04 notifications.",
+          "额度同步仍可用；仅 Session 聚焦与刷新控制正在等待 C04 通知。",
+          "クォータ同期は利用できます。C04 通知を待っているのは Session フォーカスと更新操作だけです。"),
+        level: .attention)
+    }
     return .init(
       id: "commands", title: title,
       detail: localized(
@@ -276,7 +285,6 @@ extension AppModel {
       case .connecting: ("connecting", "正在连接", "接続")
       case .discoveringServices: ("discovering services", "发现服务", "サービス検出")
       case .discoveringCharacteristics: ("discovering characteristics", "发现特征", "キャラクタリスティック検出")
-      case .subscribingCommands: ("enabling C04 notifications", "启用 C04 通知", "C04 通知を有効化")
       case .ready: ("ready", "就绪", "準備完了")
       }
     return switch language {

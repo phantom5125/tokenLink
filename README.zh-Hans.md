@@ -59,6 +59,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-31 — TokenLink 0.3.0 RC 2 修复发行安装与首次绑定。** 所有 Mac 图标统一
+  由 `assets/branding` 生成；发布校验会冷启动已挂载 DMG，证明 SwiftPM 资源能从
+  `Contents/Resources` 正常加载；首次配对时，C04 Session 控制也不再阻塞 C02 额度同步。
 - **2026-08-31 — TokenLink 0.3.0 RC 1 加入本地用量分析。** 项目、模型、推理强度和
   隐私安全的 Session 归因进入同一看板，并提供用量日历、分时趋势、上一周期对比、
   活跃时长估算、自定义范围和有界增量历史。

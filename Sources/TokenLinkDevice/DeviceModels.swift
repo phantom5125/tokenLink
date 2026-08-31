@@ -41,7 +41,6 @@ public enum BluetoothConnectionStep: String, Equatable, Sendable {
   case connecting
   case discoveringServices
   case discoveringCharacteristics
-  case subscribingCommands
   case ready
 }
 

@@ -18,7 +18,7 @@ TokenLink 的视觉核心概念是 **“仪表盘 × 链接”**：圆弧进度�
 | --- | --- |
 | `logo-mark-dark.png` (1024×1024) | 主标志，用于深色背景和品牌物料 |
 | `logo-mark-light.png` (1024×1024) | 浅色背景、README 和文档用标志 |
-| `../../packaging/TokenLink.icns` | macOS Finder、通知与应用元数据使用的正式图标 |
+| `../../packaging/TokenLink.icns` | 由 `logo-mark-light.png` 生成的 macOS Finder、菜单栏、通知与应用元数据图标 |
 | `banner-hero.png` (1280×720) | README 顶部横幅 |
 | `social-preview.png` (1280×640) | GitHub 仓库 Social Preview（Settings → General 上传） |
 | `../video/tokenlink-promo.mp4` (25s, 720p) | 宣传短片成片 |
@@ -37,6 +37,6 @@ TokenLink 的视觉核心概念是 **“仪表盘 × 链接”**：圆弧进度�
 
 - 不要旋转、拉伸或改色；缩放时始终保持正方形比例。
 - 深色物料优先使用 `logo-mark-dark.png`；浅底文档使用 `logo-mark-light.png`。
-- 菜单栏小图标继续使用单色 template 图形，不直接缩放彩色 App 图标。
+- Finder、菜单栏、菜单面板和通知统一使用由 `logo-mark-light.png` 生成的 App 图标，不维护另一套手绘几何。
 - 视频中不出现真实供应商商标，仅用四色光球抽象指代。
-- `packaging/TokenLink.icns` 由 `bash scripts/generate_app_icon.sh` 以小尺寸优先的矢量几何重新生成。
+- `assets/branding/logo-mark-light.png` 是 App 图标的唯一源文件；`packaging/TokenLink.icns` 由 `bash scripts/generate_app_icon.sh` 直接缩放生成，发行打包时也会重新生成并防止漂移。

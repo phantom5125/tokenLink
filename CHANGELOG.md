@@ -6,6 +6,23 @@ versioning while it is pre-1.0; hardware verification is reported separately in
 
 ## Unreleased
 
+## 0.3.0-rc.2 — 2026-08-31
+
+- Made `assets/branding/logo-mark-light.png` the single source of truth for the
+  Finder, menu-bar, menu-panel, notification, and packaged App icons; removed
+  the separately drawn heavy-stroke icon renderer and regenerate ICNS during
+  every release build.
+- Fixed installed-app startup by resolving SwiftPM resources from the standard
+  `Contents/Resources` app location before `Bundle.module`; mounted-DMG release
+  validation now cold-starts the distributed executable and fails on resource-
+  bundle crashes or branding drift.
+- Decoupled C04 watch-command notification setup from C02 quota readiness, so a
+  new Mac can initiate pairing and deliver quota even while optional Session
+  focus/refresh notifications are still being enabled.
+- Advanced the C152 GATT migration revision to clear pre-RC2 bonds exactly once,
+  allowing a prepared or previously tested watch to pair cleanly with its new
+  host after installing the matching firmware.
+
 ## 0.3.0-rc.1 — 2026-08-31
 
 - Expanded the Mac Cost Center into a local Usage & Cost workspace with

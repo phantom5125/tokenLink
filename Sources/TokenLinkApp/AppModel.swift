@@ -1754,7 +1754,6 @@ public final class AppModel {
     case .peripheralNotFound: return "bound device not found"
     case .serviceNotFound: return "quota service not found"
     case .characteristicNotFound: return "quota characteristic not found"
-    case .commandNotificationsUnavailable: return "watch command notifications unavailable"
     case .disconnected: return "device disconnected"
     case .system: return "CoreBluetooth system error"
     }

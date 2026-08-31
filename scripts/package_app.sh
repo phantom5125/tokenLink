@@ -5,7 +5,6 @@ repo_dir="$(cd "$(dirname "$0")/.." && pwd)"
 bundle="$repo_dir/.build/artifacts/TokenLink.app"
 app_resource_bundle_name="TokenLink_TokenLinkApp.bundle"
 provider_resource_bundle_name="TokenLink_TokenLinkProviders.bundle"
-app_icon="$repo_dir/packaging/TokenLink.icns"
 build_archs_value="${TOKENLINK_BUILD_ARCHS:-$(uname -m)}"
 
 cd "$repo_dir"
@@ -32,7 +31,8 @@ for architecture in "${build_archs[@]}"; do
   scratch_path="$repo_dir/.build/package-$architecture"
   swift build -c release --product tokenlink \
     --triple "$triple" \
-    --scratch-path "$scratch_path"
+    --scratch-path "$scratch_path" \
+    -Xswiftc -DTOKENLINK_PACKAGED_APP
   release_bin_dir="$(swift build -c release \
     --triple "$triple" \
     --scratch-path "$scratch_path" \
@@ -75,11 +75,6 @@ else
   done
 fi
 
-if [[ ! -f "$app_icon" ]]; then
-  echo "App icon was not found at $app_icon" >&2
-  exit 1
-fi
-
 if [[ "$bundle" != "$repo_dir/.build/artifacts/TokenLink.app" ]]; then
   echo "Refusing to replace an unexpected bundle path." >&2
   exit 1
@@ -88,9 +83,11 @@ fi
 mkdir -p "$(dirname "$bundle")"
 rm -rf "$bundle"
 mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+generated_app_icon="$repo_dir/.build/artifacts/TokenLink.icns"
+"$repo_dir/scripts/generate_app_icon.sh" "$generated_app_icon"
 cp "$repo_dir/packaging/Info.plist" "$bundle/Contents/Info.plist"
 cp "$executable" "$bundle/Contents/MacOS/TokenLink"
-cp "$app_icon" "$bundle/Contents/Resources/TokenLink.icns"
+cp "$generated_app_icon" "$bundle/Contents/Resources/TokenLink.icns"
 ditto "$app_resource_bundle" "$bundle/Contents/Resources/$app_resource_bundle_name"
 ditto "$provider_resource_bundle" "$bundle/Contents/Resources/$provider_resource_bundle_name"
 cp "$repo_dir/LICENSE" "$bundle/Contents/Resources/LICENSE"
