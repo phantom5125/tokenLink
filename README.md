@@ -64,6 +64,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-31 — TokenLink 0.3.0 RC 2 fixes distribution and first binding.**
+  Every Mac icon now derives from `assets/branding`, the mounted DMG is cold-
+  started to prove SwiftPM resources load from `Contents/Resources`, and C04
+  Session controls no longer block C02 quota sync during first-host pairing.
 - **2026-08-31 — TokenLink 0.3.0 RC 1 adds local usage analytics.** Project,
   model, reasoning-effort, and privacy-safe Session attribution now share one
   dashboard with an activity calendar, hourly trends, prior-period comparison,

@@ -97,11 +97,11 @@ class SecurityCallbacks final : public BLESecurityCallbacks {
 bool markGattMigrationPending() {
   Preferences preferences;
   if (!preferences.begin("codex-ble", false)) return false;
-  // Revision 2 added the capabilities and command characteristics. Revision 3
-  // gives every full installation its own persistent BLE identity. Existing
-  // encrypted bonds belong to the previous identity and must not survive an
-  // application-only upgrade into this revision.
-  constexpr uint8_t kGattRevision = 3;
+  // Revision 2 added capabilities/commands and revision 3 added an installation
+  // identity. Revision 4 resets pre-RC2 bonds exactly once so a watch prepared
+  // or tested on one Mac can complete the corrected first-host pairing sequence
+  // on another Mac instead of retrying the earlier notification-gated link.
+  constexpr uint8_t kGattRevision = 4;
   if (preferences.getUChar("gatt-rev", 0) >= kGattRevision) {
     preferences.end();
     return false;

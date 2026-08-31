@@ -11,9 +11,18 @@ working_dir="$(mktemp -d "${TMPDIR:-/tmp}/tokenlink-release.XXXXXX")"
 mount_dir="$working_dir/mount"
 mounted=false
 
+detach_mount() {
+  if hdiutil detach "$mount_dir" >/dev/null 2>&1; then
+    mounted=false
+    return 0
+  fi
+  hdiutil detach "$mount_dir" -force >/dev/null
+  mounted=false
+}
+
 cleanup() {
   if [[ "$mounted" == true ]]; then
-    hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+    detach_mount || true
   fi
   rm -rf "$working_dir"
 }
@@ -78,6 +87,10 @@ test -f "$mounted_app/Contents/Info.plist"
 test -f "$mounted_app/Contents/Resources/TokenLink.icns"
 test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIconFile' "$mounted_app/Contents/Info.plist")" = \
   "TokenLink.icns"
+mounted_iconset="$working_dir/TokenLink.iconset"
+iconutil -c iconset "$mounted_app/Contents/Resources/TokenLink.icns" -o "$mounted_iconset"
+cmp "$repo_dir/assets/branding/logo-mark-light.png" \
+  "$mounted_iconset/icon_512x512@2x.png"
 test -f "$mounted_app/Contents/Resources/TokenLink_TokenLinkApp.bundle/codex.png"
 test -f \
   "$mounted_app/Contents/Resources/TokenLink_TokenLinkProviders.bundle/api-equivalent-prices.json"
@@ -88,12 +101,33 @@ cmp "$repo_dir/NOTICE" "$mounted_app/Contents/Resources/NOTICE"
 lipo "$mounted_app/Contents/MacOS/TokenLink" -verify_arch arm64 x86_64
 codesign --verify --deep --strict "$mounted_app"
 
+# Launch the exact app from the read-only mounted DMG. Resource accessors with
+# build-machine-only paths fail immediately, so surviving this cold start proves
+# the distributed bundle can initialize before it reaches a user's Applications
+# folder. Terminate only the child process started here.
+launch_log="$working_dir/tokenlink-launch.log"
+"$mounted_app/Contents/MacOS/TokenLink" >"$launch_log" 2>&1 &
+launch_pid=$!
+sleep 3
+if ! kill -0 "$launch_pid" 2>/dev/null; then
+  wait "$launch_pid" || launch_status=$?
+  cat "$launch_log" >&2
+  echo "Mounted TokenLink app exited during cold-start smoke test (status ${launch_status:-0})." >&2
+  exit 1
+fi
+kill "$launch_pid"
+wait "$launch_pid" 2>/dev/null || true
+if grep -F "could not load resource bundle" "$launch_log" >/dev/null; then
+  cat "$launch_log" >&2
+  echo "Mounted TokenLink app could not resolve a SwiftPM resource bundle." >&2
+  exit 1
+fi
+
 if [[ -n "$notary_profile" ]]; then
   spctl --assess --type execute --verbose=2 "$mounted_app"
 fi
 
-hdiutil detach "$mount_dir" >/dev/null
-mounted=false
+detach_mount
 
 (cd "$dist_dir" && shasum -a 256 "$(basename "$dmg")" > "$(basename "$checksum")")
 (cd "$dist_dir" && shasum -a 256 -c "$(basename "$checksum")" >/dev/null)

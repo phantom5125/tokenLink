@@ -9,7 +9,7 @@ struct MenuBarView: View {
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 12) {
-        TokenLinkMark(appearance: .brand)
+        TokenLinkMark()
           .frame(width: 27, height: 27)
           .frame(width: 38, height: 38)
           .background(.tint.opacity(0.12), in: RoundedRectangle(cornerRadius: 11))

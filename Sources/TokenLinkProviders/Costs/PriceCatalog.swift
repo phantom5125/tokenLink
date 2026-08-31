@@ -39,7 +39,7 @@ public struct PriceCatalog: Sendable {
 
   public static func bundled() throws -> PriceCatalog {
     guard
-      let url = Bundle.module.url(
+      let url = resources.url(
         forResource: "api-equivalent-prices",
         withExtension: "json")
     else { throw PriceCatalogError.missingResource }
@@ -54,6 +54,28 @@ public struct PriceCatalog: Sendable {
       effectiveDate: effectiveDate,
       entries: try document.entries.map(ModelPrice.init(document:)))
   }
+
+  /// Production packages keep SwiftPM resources in the standard macOS app
+  /// location. Resolve that location before touching Bundle.module because the
+  /// generated accessor may contain a CI-only absolute fallback path.
+  private static let resources: Bundle = {
+    let bundleName = "TokenLink_TokenLinkProviders.bundle"
+    let candidates = [
+      Bundle.main.resourceURL?.appendingPathComponent(bundleName),
+      Bundle.main.bundleURL.appendingPathComponent(bundleName),
+    ]
+    for case let url? in candidates {
+      if let bundle = Bundle(url: url) { return bundle }
+    }
+    #if TOKENLINK_PACKAGED_APP
+      // A packaged build must never consult SwiftPM's generated absolute
+      // build-machine fallback. The release smoke test verifies the resource
+      // exists before this Bundle.main fallback can produce missingResource.
+      return Bundle.main
+    #else
+      return Bundle.module
+    #endif
+  }()
 
   private static let dayFormatter: DateFormatter = {
     let formatter = DateFormatter()
