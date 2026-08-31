@@ -16,6 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Configure Developer ID and notarization
+        if: ${{ !contains(github.ref_name, '-') }}
         env:
           DEVELOPER_ID_P12_BASE64: ${{ secrets.TOKENLINK_DEVELOPER_ID_P12_BASE64 }}
           DEVELOPER_ID_P12_PASSWORD: ${{ secrets.TOKENLINK_DEVELOPER_ID_P12_PASSWORD }}
@@ -79,7 +80,14 @@ jobs:
       - name: Verify tag version
         run: |
           version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' packaging/Info.plist)"
-          test "v$version" = "$GITHUB_REF_NAME"
+          tag_version="${GITHUB_REF_NAME#v}"
+          base_version="${tag_version%%-*}"
+          test "$version" = "$base_version"
+          if [[ "$tag_version" == *-* ]]; then
+            [[ "$tag_version" =~ ^${version}-(alpha|beta|rc)\.[0-9]+$ ]]
+          else
+            test "$tag_version" = "$version"
+          fi
       - name: Build and verify Mac archive
         run: bash scripts/build_release_artifact.sh
       - uses: actions/upload-artifact@v4
@@ -103,7 +111,14 @@ jobs:
       - name: Verify tag version
         run: |
           version="$(sed -n 's/.*kFirmwareVersion\[\] = "\([0-9][0-9.]*\)-tokenlink".*/\1/p' firmware/stopwatch-c152/include/CodexMicroBle.h)"
-          test "v$version" = "$GITHUB_REF_NAME"
+          tag_version="${GITHUB_REF_NAME#v}"
+          base_version="${tag_version%%-*}"
+          test "$version" = "$base_version"
+          if [[ "$tag_version" == *-* ]]; then
+            [[ "$tag_version" =~ ^${version}-(alpha|beta|rc)\.[0-9]+$ ]]
+          else
+            test "$tag_version" = "$version"
+          fi
       - name: Build, test, and package C152 firmware
         run: |
           export TOKENLINK_PIO="$(command -v pio)"

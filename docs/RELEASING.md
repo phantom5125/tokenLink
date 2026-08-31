@@ -4,7 +4,7 @@ TokenLink has three artifact classes. Keep their names and expectations
 explicit:
 
 - **Mac development artifact:** an ad-hoc-signed Universal 2 DMG for source/CI
-  testing, not a notarized default download.
+  testing and GitHub prereleases, not a notarized default download.
 - **C152 firmware release:** a merged image, split-image archive, product/image
   manifests, and SHA-256 checksums built from `firmware/stopwatch-c152`.
 - **Mac public release:** `TokenLink-<version>.dmg`, containing the Universal 2
@@ -17,23 +17,26 @@ Before publishing a release:
 
 1. Confirm `CHANGELOG.md`, both READMEs, version/build values in
    `packaging/Info.plist`, and the Latest News date agree.
-2. Run `bash scripts/test.sh`, strict Swift formatting, and
-   `bash scripts/privacy_scan.sh`.
-3. Run `python scripts/test_package_firmware_release.py`,
+2. Run `bash scripts/test.sh`, strict Swift formatting,
+   `bash scripts/privacy_scan.sh`, and `bash scripts/resource_check.sh`.
+3. If the release changes cost estimates, verify the bundled price-catalog
+   version, effective date, first-party source URLs, model aliases, and all
+   visible `Estimated/API-equivalent` labels.
+4. Run `python scripts/test_package_firmware_release.py`,
    `bash scripts/test_firmware.sh`, and
    `bash scripts/build_firmware_artifact.sh`. Verify `dist/firmware/SHA256SUMS`.
    The version tag itself is the exact firmware source archive; no external
    checkout or separately maintained source ZIP is required.
-4. For a hardware-facing release, flash the built candidate only after the exact
+5. For a hardware-facing release, flash the built candidate only after the exact
    C152 port is resolved and explicitly confirmed. Verify the serial boot marker,
    BLE v2 negotiation, a live sync, and user-visible interaction separately, then
    record the evidence under `docs/validation/`.
-5. Push, review, tag, and publish only in the TokenLink repository. Never push a
+6. Push, review, tag, and publish only in the TokenLink repository. Never push a
    branch or open a PR in an external firmware repository as part of a TokenLink
    release.
-6. Verify both arm64 and x86_64 slices in the mounted Mac DMG. Do not publish the
+7. Verify both arm64 and x86_64 slices in the mounted Mac DMG. Do not publish the
    architecture-neutral filename if either slice is missing.
-7. Observe the hosted CI run on the final commit before tagging, then observe
+8. Observe the hosted CI run on the final commit before tagging, then observe
    the tag-triggered Release workflow before publishing the final URL.
 
 ## Build a development artifact
@@ -111,14 +114,16 @@ are missing:
 Never store the decoded certificate, private keys, or passwords in the
 repository or release artifacts.
 
-Pushing a `v*` tag runs `.github/workflows/release.yml`, imports the release
-identity into an ephemeral keychain, rebuilds both artifact classes from that
-tag, verifies their versions/checksums, and creates a GitHub Release from
-`docs/releases/<version>.md`. A tag containing a hyphen is published as a
-prerelease; a plain version tag such as `v0.2.2` is published as stable. The
-firmware source is already in the tag. Do not add a source ZIP copied from
-another repository.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, rebuilds both artifact
+classes from that tag, verifies their versions/checksums, and creates a GitHub
+Release from `docs/releases/<tag-without-v>.md`. A supported tag containing
+`-alpha.N`, `-beta.N`, or `-rc.N` is published as a prerelease with an explicitly
+ad-hoc-signed Mac development DMG. A plain version tag such as `v0.2.3` imports
+the release identity into an ephemeral keychain and is published as stable only
+after Developer ID signing and Apple notarization succeed. The firmware source
+is already in the tag. Do not add a source ZIP copied from another repository.
 
-Until Apple signing credentials are configured, ordinary CI may still create an
-ad-hoc development DMG, but the tag workflow will refuse to publish it. Promote
-a public DMG only after Gatekeeper verification on a separate Mac.
+Until Apple signing credentials are configured, ordinary CI and explicitly
+labelled prereleases may publish ad-hoc development DMGs. Stable tag workflows
+still fail closed. Promote a stable public DMG only after Gatekeeper verification
+on a separate Mac.

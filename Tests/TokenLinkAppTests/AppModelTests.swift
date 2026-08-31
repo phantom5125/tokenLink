@@ -11,6 +11,37 @@ private actor CountingRefresher: AppRefreshing {
   func refresh() async { count += 1 }
 }
 
+private actor AppCostProbe {
+  private(set) var authoritativeCalls = 0
+  private(set) var estimateCalls = 0
+
+  func authoritative(
+    _ source: AuthoritativeCostSource
+  ) -> Result<AuthoritativeCostSnapshot, ProviderFailure> {
+    authoritativeCalls += 1
+    return .success(
+      AuthoritativeCostSnapshot(
+        provider: source.provider,
+        balances: [AccountBalance(currency: "USD", available: 50)],
+        fetchedAt: Date(timeIntervalSince1970: 1_000)))
+  }
+
+  func estimate(_ provider: ProviderID) -> Result<EstimatedCostSnapshot, ProviderFailure> {
+    estimateCalls += 1
+    let date = Date(timeIntervalSince1970: 1_000)
+    return .success(
+      EstimatedCostSnapshot(
+        provider: provider,
+        period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+        lineItems: [],
+        totals: [],
+        unknownModelIDs: [],
+        catalogVersion: "test",
+        catalogEffectiveDate: date,
+        scannedAt: date))
+  }
+}
+
 private actor StateSequenceLoader {
   private var states: [[UUID: ProviderState]]
 
@@ -418,7 +449,7 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   model.stop()
 }
 
-@MainActor @Test func watchThemeChangeImmediatelyResyncsV2Payload() async throws {
+@MainActor @Test func watchFaceChangeImmediatelyResyncsV2Payload() async throws {
   let identifier = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
   let transport = TestBLETransport(
     capabilities: WatchCapabilities(protocolVersions: [1, 2], firmware: "0.2.0"))
@@ -435,7 +466,7 @@ private func snapshot(_ provider: ProviderID, remaining: Double) -> QuotaSnapsho
   await model.requestRefresh(reason: "Initial refresh")
   #expect(await transport.writes.count == 1)
 
-  try model.setWatchFaceTheme(.pet)
+  try model.setWatchFace(.pet)
   for _ in 0..<50 {
     if await transport.writes.count == 2 { break }
     try? await Task.sleep(for: .milliseconds(5))
@@ -881,4 +912,425 @@ private actor CountingClaudeTokenReader: ClaudeTokenReading {
   await model.refreshCredentialStates()
   #expect(await claudeReader.readCount == 1)
   #expect(model.configuration.claudeCredentialAccessAuthorized == false)
+}
+
+@MainActor @Test func costOnlyProvidersNeverEnterQuotaOrWatchPipelines() throws {
+  // Catches an all-provider enumeration leaking cost-only accounts into quota or BLE.
+  var configuration = AppConfiguration.default
+  let openRouter = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  let deepSeek = ProviderAccount(provider: .deepseek, label: "DeepSeek")
+  configuration.accounts += [openRouter, deepSeek]
+  configuration.watchSettings.syncedProviders.formUnion([.openrouter, .deepseek])
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration)
+
+  #expect(
+    AppModel.quotaAccounts(in: configuration).map(\.provider)
+      == [.codex, .kimi, .minimax, .glm])
+  #expect(model.orderedProviderRows.map(\.id) == [.codex, .kimi, .minimax, .glm])
+  #expect(model.accountGroups.allSatisfy { $0.provider != .openrouter && $0.provider != .deepseek })
+  #expect(model.costAccountGroups.map(\.provider) == [.openrouter, .deepseek])
+  #expect(!model.enabledWatchProviders.contains(.openrouter))
+  #expect(!model.enabledWatchProviders.contains(.deepseek))
+  #expect(model.enabledWatchProviders == [.codex])
+  #expect(model.watchEligibleProviders == [.codex, .kimi, .minimax, .glm])
+  #expect(throws: ProviderFailure.self) {
+    try model.setWatchSyncedProvider(.openrouter, enabled: true)
+  }
+}
+
+@MainActor @Test func disabledCostsStartNoWorkThroughQuotaRefreshes() async {
+  // Catches app start, scheduler setup, or quota refresh accidentally triggering cost I/O.
+  var configuration = AppConfiguration.default
+  let account = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  configuration.accounts.append(account)
+  let probe = AppCostProbe()
+  let dashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: account.id, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { Date(timeIntervalSince1970: 1_000) }),
+    authoritativeLoader: { await probe.authoritative($0) },
+    estimateLoader: { await probe.estimate($0) },
+    now: { Date(timeIntervalSince1970: 1_000) })
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.start()
+  await model.refreshManually()
+  model.stop()
+
+  #expect(await probe.authoritativeCalls == 0)
+  #expect(await probe.estimateCalls == 0)
+  #expect(model.costDashboard.authoritativeRows.isEmpty)
+}
+
+@MainActor @Test func betaCostsEnableExplicitLoadDisableAndPreserveCredential() async throws {
+  // Catches eager scans on enable, lost metric defaults, or credential deletion on disable.
+  var configuration = AppConfiguration.default
+  let account = ProviderAccount(provider: .openrouter, label: "OpenRouter")
+  configuration.accounts.append(account)
+  let keychain = AppModelFakeKeychain()
+  let vault = KeychainVault(client: keychain, kimiTokenReader: NoCLITokenReader())
+  let probe = AppCostProbe()
+  let dashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: account.id, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { Date(timeIntervalSince1970: 1_000) }),
+    authoritativeLoader: { await probe.authoritative($0) },
+    estimateLoader: { await probe.estimate($0) },
+    now: { Date(timeIntervalSince1970: 1_000) })
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault,
+    costDashboard: dashboard)
+  try await model.setAPIKey("management-key", for: account.id)
+
+  try await model.setBetaCostsEnabled(true)
+  #expect(model.configuration.betaCostsEnabled)
+  #expect(model.configuration.menuBarCostMetric == .localEstimate(.codex))
+  #expect(await probe.authoritativeCalls == 0)
+  #expect(await probe.estimateCalls == 0)
+
+  await model.loadCostsIfNeeded()
+  #expect(await probe.authoritativeCalls == 1)
+  #expect(await probe.estimateCalls == 1)
+  #expect(model.costDashboard.authoritativeRows.count == 1)
+  try model.setMenuBarCostMetric(
+    .authoritativeBalance(accountID: account.id, currency: "USD"))
+
+  try await model.setBetaCostsEnabled(false)
+  #expect(model.configuration.menuBarCostMetric == .none)
+  #expect(model.costDashboard.authoritativeRows.isEmpty)
+  #expect(await keychain.value(for: "openrouter") == "management-key")
+  await model.refreshCosts(force: true)
+  #expect(await probe.authoritativeCalls == 1)
+}
+
+@MainActor @Test func betaCostsRollsBackWhenConfigurationCannotBeSaved() async throws {
+  // Catches observable configuration and the runtime dashboard diverging after a disk failure.
+  let root = FileManager.default.temporaryDirectory.appending(
+    path: UUID().uuidString,
+    directoryHint: .isDirectory)
+  try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: root) }
+  let blockedDirectory = root.appending(path: "not-a-directory")
+  try Data("blocked".utf8).write(to: blockedDirectory)
+  let store = ConfigurationStore(directory: blockedDirectory)
+
+  let disabledDashboard = CostDashboardModel(
+    enabled: false,
+    authoritativeSources: [],
+    estimateProviders: [],
+    authoritativeLoader: { _ in .failure(.configuration("unused")) },
+    estimateLoader: { _ in .failure(.configuration("unused")) })
+  let disabledModel = AppModel(
+    refresher: CountingRefresher(),
+    configurationStore: store,
+    costDashboard: disabledDashboard)
+
+  do {
+    try await disabledModel.setBetaCostsEnabled(true)
+    Issue.record("Expected enabling Costs to fail")
+  } catch {}
+  #expect(!disabledModel.configuration.betaCostsEnabled)
+  #expect(disabledModel.configuration.menuBarCostMetric == .none)
+  #expect(!disabledModel.costDashboard.isEnabled)
+
+  var enabledConfiguration = AppConfiguration.default
+  enabledConfiguration.betaCostsEnabled = true
+  enabledConfiguration.menuBarCostMetric = .localEstimate(.codex)
+  let snapshotDate = Date(timeIntervalSince1970: 1_000)
+  let costSourceID = UUID()
+  let enabledDashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: costSourceID, provider: .openrouter)
+    ],
+    estimateProviders: [],
+    store: CostStore(now: { snapshotDate }),
+    authoritativeLoader: { _ in
+      .success(
+        AuthoritativeCostSnapshot(
+          provider: .openrouter,
+          balances: [AccountBalance(currency: "USD", available: 1)],
+          fetchedAt: snapshotDate))
+    },
+    estimateLoader: { _ in .failure(.configuration("unused")) },
+    now: { snapshotDate })
+  let enabledModel = AppModel(
+    refresher: CountingRefresher(),
+    configuration: enabledConfiguration,
+    configurationStore: store,
+    costDashboard: enabledDashboard)
+  await enabledModel.loadCostsIfNeeded()
+  #expect(enabledModel.costDashboard.authoritativeRows.count == 1)
+
+  do {
+    try await enabledModel.setBetaCostsEnabled(false)
+    Issue.record("Expected disabling Costs to fail")
+  } catch {}
+  #expect(enabledModel.configuration.betaCostsEnabled)
+  #expect(enabledModel.configuration.menuBarCostMetric == .localEstimate(.codex))
+  #expect(enabledModel.costDashboard.isEnabled)
+  #expect(enabledModel.costDashboard.authoritativeRows.count == 1)
+}
+
+@MainActor @Test func costAccountRemovalPromotesNamespacedCredential() async throws {
+  // Catches cost-only accounts bypassing the existing default-key promotion semantics.
+  var configuration = AppConfiguration.default
+  let defaultAccount = ProviderAccount(provider: .deepseek, label: "DeepSeek")
+  configuration.accounts.append(defaultAccount)
+  let keychain = AppModelFakeKeychain()
+  let vault = KeychainVault(client: keychain, kimiTokenReader: NoCLITokenReader())
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    configuration: configuration,
+    vault: vault)
+  try await model.setAPIKey("default-cost-key", for: defaultAccount.id)
+  let second = try model.addAccount(provider: .deepseek, label: "Work")
+  try await model.setAPIKey("work-cost-key", for: second.id)
+
+  try await model.removeAccount(id: defaultAccount.id)
+
+  #expect(await keychain.value(for: "deepseek") == "work-cost-key")
+  #expect(await keychain.value(for: "deepseek.\(second.id.uuidString)") == nil)
+  #expect(model.configuration.defaultAccount(for: .deepseek)?.id == second.id)
+}
+
+@MainActor @Test func menuBarCostEstimateKeepsQuotaFirstAndMarksApproximation() async throws {
+  // Catches replacing the quota segment or omitting the mandatory estimate marker.
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  configuration.betaCostsEnabled = true
+  configuration.menuBarCostMetric = .localEstimate(.codex)
+  let date = Date(timeIntervalSince1970: 1_000)
+  let dashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [],
+    estimateProviders: [.codex],
+    store: CostStore(now: { date }),
+    authoritativeLoader: { _ in .failure(.network("unused")) },
+    estimateLoader: { provider in
+      .success(
+        EstimatedCostSnapshot(
+          provider: provider,
+          period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+          lineItems: [],
+          totals: [CurrencyAmount(value: Decimal(string: "8.31")!, currency: "USD")],
+          unknownModelIDs: [],
+          catalogVersion: "menu-test",
+          catalogEffectiveDate: date,
+          scannedAt: date))
+    },
+    now: { date })
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    now: { date },
+    stateLoader: { _ in
+      [
+        codexAccount.id: ProviderState(
+          phase: .healthy,
+          snapshot: snapshot(.codex, remaining: 42))
+      ]
+    },
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.requestRefresh(reason: "Quota")
+  await model.loadCostsIfNeeded()
+
+  #expect(model.highlight?.provider == .codex)
+  #expect(model.menuBarLabel == "Codex 42% · ≈$8.31/7d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Codex local Estimated/API-equivalent cost $8.31 for the last 7 days; fresh"
+  )
+
+  try await model.setCostDisplayPeriod(.month)
+  #expect(model.menuBarLabel == "Codex 42% · ≈$8.31/30d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Codex local Estimated/API-equivalent cost $8.31 for the last 30 days; fresh"
+  )
+}
+
+@MainActor @Test func menuBarCostAuthoritativeBalanceAndMissingFallback() async throws {
+  // Catches adding an estimate marker to provider balances or showing a missing selection.
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  let openRouter = ProviderAccount(provider: .openrouter, label: "Private label")
+  configuration.accounts.append(openRouter)
+  configuration.betaCostsEnabled = true
+  configuration.menuBarCostMetric = .authoritativeBalance(
+    accountID: openRouter.id,
+    currency: "USD")
+  let date = Date(timeIntervalSince1970: 1_000)
+  let dashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: openRouter.id, provider: .openrouter)
+    ],
+    estimateProviders: [],
+    store: CostStore(now: { date }),
+    authoritativeLoader: { source in
+      .success(
+        AuthoritativeCostSnapshot(
+          provider: source.provider,
+          balances: [
+            AccountBalance(
+              currency: "USD",
+              available: Decimal(string: "18.40")!)
+          ],
+          fetchedAt: date))
+    },
+    estimateLoader: { _ in .failure(.network("unused")) },
+    now: { date })
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    now: { date },
+    stateLoader: { _ in
+      [
+        codexAccount.id: ProviderState(
+          phase: .healthy,
+          snapshot: snapshot(.codex, remaining: 42))
+      ]
+    },
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.requestRefresh(reason: "Quota")
+  await model.loadCostsIfNeeded()
+  #expect(model.menuBarLabel == "Codex 42% · OR $18.40 left")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; OpenRouter authoritative balance $18.40 remaining; fresh"
+  )
+
+  try model.setMenuBarCostMetric(
+    .authoritativeBalance(accountID: UUID(), currency: "USD"))
+  #expect(model.menuBarLabel == "Codex 42%")
+}
+
+@MainActor @Test func menuBarCostAccessibilityDescribesStaleEstimate() async throws {
+  // Catches stale cost text being exposed to assistive tech as if it were fresh.
+  var configuration = AppConfiguration.default
+  configuration.appLanguage = AppLanguage.english.rawValue
+  configuration.betaCostsEnabled = true
+  configuration.menuBarCostMetric = .localEstimate(.claude)
+  let date = Date(timeIntervalSince1970: 1_000)
+  let staleDate = date.addingTimeInterval(CostStore.estimateTTL + 1)
+  let dashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [],
+    estimateProviders: [.claude],
+    store: CostStore(now: { staleDate }),
+    authoritativeLoader: { _ in .failure(.network("unused")) },
+    estimateLoader: { provider in
+      .success(
+        EstimatedCostSnapshot(
+          provider: provider,
+          period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+          lineItems: [],
+          totals: [CurrencyAmount(value: Decimal(string: "4.20")!, currency: "USD")],
+          unknownModelIDs: [],
+          catalogVersion: "accessibility-test",
+          catalogEffectiveDate: date,
+          scannedAt: date))
+    },
+    now: { staleDate })
+  let codexAccount = try #require(configuration.defaultAccount(for: .codex))
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    stateLoader: { _ in
+      [
+        codexAccount.id: ProviderState(
+          phase: .healthy,
+          snapshot: snapshot(.codex, remaining: 42))
+      ]
+    },
+    configuration: configuration,
+    costDashboard: dashboard)
+
+  await model.requestRefresh(reason: "Quota")
+  await model.loadCostsIfNeeded()
+
+  #expect(model.costDashboard.estimateRows.first?.state.phase == .stale)
+  #expect(model.menuBarLabel == "Codex 42% · ≈$4.20/7d")
+  #expect(
+    model.menuBarAccessibilityLabel
+      == "Codex quota, 42 percent remaining; Claude local Estimated/API-equivalent cost $4.20 for the last 7 days; stale"
+  )
+}
+
+@MainActor @Test func costDiagnosticsContainOnlyRedactedMetadata() async throws {
+  // Catches snapshots, amounts, account identity, error text, or paths entering diagnostics.
+  var configuration = AppConfiguration.default
+  let privateAccount = ProviderAccount(
+    id: UUID(uuidString: "00000000-0000-0000-0000-00000000F001")!,
+    provider: .openrouter,
+    label: "private-account-label")
+  configuration.accounts.append(privateAccount)
+  configuration.betaCostsEnabled = true
+  let date = Date(timeIntervalSince1970: 1_000)
+  let dashboard = CostDashboardModel(
+    enabled: true,
+    authoritativeSources: [
+      AuthoritativeCostSource(accountID: privateAccount.id, provider: .openrouter)
+    ],
+    estimateProviders: [.codex],
+    store: CostStore(now: { date }),
+    authoritativeLoader: { _ in
+      .failure(.authentication("Rejected /Users/private/transcript.jsonl"))
+    },
+    estimateLoader: { provider in
+      .success(
+        EstimatedCostSnapshot(
+          provider: provider,
+          period: DateInterval(start: date.addingTimeInterval(-604_800), end: date),
+          lineItems: [],
+          totals: [
+            CurrencyAmount(value: Decimal(string: "98765.43")!, currency: "USD")
+          ],
+          unknownModelIDs: ["private-model"],
+          catalogVersion: "catalog-safe-version",
+          catalogEffectiveDate: date,
+          scannedAt: date))
+    },
+    now: { date })
+  let model = AppModel(
+    refresher: CountingRefresher(),
+    now: { date },
+    configuration: configuration,
+    costDashboard: dashboard)
+  await model.loadCostsIfNeeded()
+
+  let data = try JSONSerialization.data(
+    withJSONObject: model.diagnosticObject(),
+    options: [.sortedKeys])
+  let output = String(decoding: data, as: UTF8.self)
+
+  for expected in [
+    "costs", "authoritative", "estimate", "authentication",
+    "catalog-safe-version", "last_refresh_at", "updated_at",
+  ] {
+    #expect(output.contains(expected))
+  }
+  for sensitive in [
+    "98765.43", "private-account-label", privateAccount.id.uuidString,
+    "private-model", "/Users/private", "transcript.jsonl", "Rejected",
+  ] {
+    #expect(!output.contains(sensitive))
+  }
 }

@@ -20,6 +20,8 @@ enum ProviderPresentation {
     case .minimax: "sparkles"
     case .glm: "cube.transparent.fill"
     case .claude: "sun.max.fill"
+    case .openrouter: "arrow.triangle.branch"
+    case .deepseek: "wave.3.right.circle.fill"
     }
   }
 
@@ -30,6 +32,8 @@ enum ProviderPresentation {
     case .minimax: Color(red: 0.95, green: 0.49, blue: 0.32)
     case .glm: Color(red: 0.30, green: 0.66, blue: 0.95)
     case .claude: Color(red: 0.85, green: 0.55, blue: 0.35)
+    case .openrouter: Color(red: 0.35, green: 0.35, blue: 0.42)
+    case .deepseek: Color(red: 0.21, green: 0.38, blue: 0.94)
     }
   }
 
@@ -75,6 +79,8 @@ struct ProviderMark: View {
         .frame(width: size, height: size)
         .clipShape(RoundedRectangle(cornerRadius: size * 0.28, style: .continuous))
     } else {
+      // Cost-only providers intentionally use a code-native symbol until a
+      // reviewed, redistributable brand asset is added to the bundle.
       Image(systemName: ProviderPresentation.symbol(for: provider))
         .font(.system(size: size * 0.42, weight: .semibold))
         .foregroundStyle(.white)

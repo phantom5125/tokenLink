@@ -52,10 +52,10 @@ surface.
 > interface has been exercised on a C152 with protocol-v2 negotiation, aggregate
 > active count, three-provider sync, and physical UI feedback. Version 0.2.1
 > moved that firmware into this repository and passed its physical release
-> checks. The 0.2.2 candidate adds connection diagnostics, explicit task-link
-> outcomes, complete session pagination, and clearer C152 session states; its new
-> hardware-facing behavior still requires the checklist below. Long-duration
-> power behavior remains follow-up validation.
+> checks. The 0.2.3 release candidate adds a quota-pace watch face, a dedicated
+> Mac Cost Center, community-aligned Codex API-equivalent estimates, and clearer
+> small-size TokenLink icon artwork. Long-duration power behavior remains
+> follow-up validation.
 
 TokenLink is an independent open-source project and is not affiliated with,
 endorsed by, or an official product of OpenAI, Moonshot AI, MiniMax, Zhipu AI,
@@ -63,6 +63,10 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## Latest News
 
+- **2026-08-31 — TokenLink 0.2.3 RC 1 is ready for public testing.** The new
+  TokenLink-arc quota face and Mac Cost Center ship together with request-level
+  Codex token accounting, current reviewed prices, and explicit separation
+  between subscription quota and API-equivalent estimates.
 - **2026-08-31 — Direct Mac installation is ready for release signing.** The Mac
   builder now produces a checked Universal 2 `TokenLink-0.2.2.dmg` with an
   Applications shortcut. Public tags fail closed unless Developer ID signing
@@ -100,8 +104,8 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
 
 ## What it does
 
-- Native `MenuBarExtra` plus a four-route Control Center: Overview, Providers,
-  StopWatch, and Settings & Diagnostics.
+- Native `MenuBarExtra` plus a five-route Control Center: Overview, Providers,
+  Costs, StopWatch, and Settings & Diagnostics.
 - Normalizes several quota windows without inventing plan limits.
 - Projects burn rate per window ("runs out in ~3h at this pace") from recent
   local samples — no extra API calls.
@@ -109,6 +113,9 @@ or M5Stack. Provider names and trademarks belong to their respective owners.
   even consumption.
 - Offers an opt-in beta scan of documented local Codex, Claude, and Kimi CLI
   transcript directories to summarize recent token counters on-device.
+- Keeps cost data in a separate opt-in beta: official OpenRouter/DeepSeek
+  balances stay authoritative, while local Codex/Claude/Kimi usage is always
+  labelled `Estimated/API-equivalent` and priced from a reviewed bundled catalog.
 - Sends macOS notifications when a window runs low, a window resets, or a
   stored credential is rejected (toggle in Settings).
 - Keeps last-known-good snapshots and marks them stale when refresh fails.
@@ -290,6 +297,44 @@ TokenLink supports the current numeric-unit/camelCase quota shape plus an explic
 legacy compatibility branch. It preserves returned windows and does not estimate
 limits from a plan name.
 
+### Costs beta
+
+Enable **Settings & Diagnostics → Beta → Costs** to load the separate Costs
+page. Cost refresh, failure, and caching are independent from quota refresh,
+notifications, menu-bar severity, and StopWatch payloads. The menu bar can show
+one fixed cost metric after the primary quota; unavailable selections fall back
+to quota-only text.
+
+The two cost domains are intentionally not merged:
+
+- **Authoritative balances** come from an official provider account API.
+  OpenRouter calls `/api/v1/credits` and `/api/v1/key` independently. An explicit
+  Management Key can expose account credits; a regular API key may expose only
+  current-key spend, which TokenLink presents as partial data instead of
+  inventing a balance. DeepSeek calls `/user/balance` and preserves every
+  returned currency separately, including valid zero balances. TokenLink does
+  not convert currencies or infer spend from balance changes.
+- **`Estimated/API-equivalent`** values can show Today, a trailing seven-day
+  Week, or a trailing 30-day Month of supported local CLI token records using
+  the bundled catalog's version and effective date. One bounded 30-day pass
+  fills all three cached windows, so switching periods does not reopen session
+  files. They estimate what equivalent API traffic would cost; they do not
+  estimate, allocate, or assign monetary value to a Coding Plan subscription.
+  Codex follows the common local-usage-tool formula: request-level usage is
+  preferred over cumulative counters; ordinary input is `input - cache read -
+  cache write`; reasoning tokens stay inside output and are not charged twice.
+  Recorded `priority` / Fast requests and request-level long-context thresholds
+  use the reviewed catalog multipliers before model totals are aggregated.
+  Unmarked speed records fall back to the non-secret `service_tier` value in
+  `.codex/config.toml`, then to Standard when no recognized value is present.
+  Unknown models and token categories without a reviewed price are excluded and
+  surfaced as warnings.
+
+Cost credentials are explicit Keychain entries. TokenLink does not reuse
+browser state, organization-admin credentials, or unrelated CLI credentials for
+OpenRouter or DeepSeek. Balances and estimated monetary totals remain in memory
+and are not written to configuration or diagnostics.
+
 Provider and Codex-path changes are persisted immediately and take effect
 after restarting the app. Region, account, and refresh-interval changes take
 effect immediately.
@@ -331,6 +376,9 @@ GLM are never mislabeled as Codex on an existing v1 watch face.
 Protocol v2 is negotiated through an optional read-only capabilities
 characteristic. A compatible device can receive up to three quota windows, up
 to three short named work items, selected-provider rotation, and watch settings.
+Each window may include a backward-compatible `window_duration_seconds` hint so
+the watch can show a time-proportional planned-remainder tick without inferring
+unknown provider limits.
 If capability discovery, reading, or decoding fails, TokenLink silently falls
 back to v1. The Mac implementation and fake-transport tests are complete, and
 the v0.2.1 release carried its full active-count field and live multi-provider
@@ -347,9 +395,13 @@ candidate validation layer. See the latest report in [`docs/validation`](docs/va
   with user-only permissions.
 - No browser-cookie access, Full Disk Access, analytics, or remote TokenLink
   service.
-- The optional local-usage beta reads only `.codex/sessions`, `.claude/projects`,
-  and `.kimi-code/sessions`; it extracts token counters locally and never sends
-  transcript data over the network.
+- The optional local-usage and cost betas read only `.codex/sessions`, the
+  top-level `service_tier` setting in `.codex/config.toml`,
+  `.claude/projects`, and `.kimi-code/sessions`; they extract token counters
+  locally and never send transcript data over the network.
+- Local scans stream 64 KiB chunks, process files sequentially, skip files over
+  256 MiB and records over 1 MiB, and retain neither raw transcript content nor
+  monetary snapshots. There is no telemetry.
 - Provider URLs are HTTPS and checked against narrow official-host allowlists
   before credential-bearing requests.
 - Diagnostics are redacted before they are written to a user-selected file.
@@ -401,6 +453,21 @@ Each provider owns a fixture-tested parser and emits a shared `QuotaSnapshot`.
 The app is the only UI state owner. The device layer receives deliberate v1 or
 v2 projections and never receives provider credentials.
 
+Cost-only providers use separate adapters, state, refresh coordination, and UI
+models; they never receive synthetic quota snapshots or enter watch payloads.
+
+## Resource and privacy gates
+
+CI runs `scripts/resource_check.sh` after the regular macOS test job. The gate
+streams and parses a deterministic 64 MiB workload through the production JSONL
+reader, then enforces a maximum 160 MiB RSS, 30-second elapsed time, and 15 MiB
+release executable. Compiler processes are excluded from the measurement.
+
+`scripts/privacy_scan.sh` rejects secret-like values and production logging of
+balances, raw monetary values, authorization headers, raw response bodies, or
+transcript paths. Diagnostics separately test that amounts, model identifiers,
+account labels/UUIDs, error text, and paths cannot enter exported metadata.
+
 ## Protocol-v2 status
 
 The Mac side implements payload projection, capability negotiation, v1 fallback,
@@ -415,6 +482,17 @@ the v0.2.1 rebuild has its own flash, boot, live-sync, reconnect, C04 command,
 physical UI, and session-focus acceptance record. The 0.2.2 integration adds
 diagnostics, complete pagination, focus feedback, and clearer session status;
 its physical checklist and the 24-hour power soak remain separate evidence.
+
+## Roadmap: extensible watch faces
+
+The 0.3.x line will gradually separate semantic watch state from rendering.
+0.3.0 introduces a shared face-state/runtime boundary for the built-in Data and
+Pet faces without enabling third-party installation. Later 0.3.x releases add a
+declarative `.tokenface` package schema, deterministic validation and preview,
+then a hash-verified BLE install/rollback flow and an opt-in local-authoring beta.
+Packages will not execute native code or scripts. A public community gallery is
+a separate 0.4.0+ decision, not a prerequisite for local packages. See the
+[extensible watch-face roadmap](docs/plans/2026-08-30-extensible-watch-face-roadmap.md).
 
 ## Contributing
 

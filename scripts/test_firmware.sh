@@ -23,6 +23,7 @@ plain_tests=(
   power_button_input_test
   power_button_gesture_test
   raise_wake_test
+  watch_face_quota_test
   watch_protocol_presentation_test
 )
 
@@ -30,6 +31,7 @@ json_tests=(
   host_rpc_request_test
   quota_payload_test
   session_presentation_test
+  watch_face_runtime_test
   watch_model_test
   watch_protocol_v2_test
 )

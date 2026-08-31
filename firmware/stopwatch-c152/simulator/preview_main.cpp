@@ -56,7 +56,8 @@ dashboard::State previewState(const char* scenario) {
 }
 
 watch_v2::Payload makeProvider(const char* id, const char* windowId,
-                               float percent, std::uint32_t reset) {
+                               float percent, std::uint32_t reset,
+                               std::uint32_t duration = 0) {
   watch_v2::Payload payload;
   watch_v2::copyAscii(payload.providerId, sizeof(payload.providerId), id);
   payload.windowCount = 1;
@@ -64,20 +65,25 @@ watch_v2::Payload makeProvider(const char* id, const char* windowId,
                       windowId);
   payload.windows[0].remainingPercent = percent;
   payload.windows[0].resetInSeconds = reset;
+  payload.windows[0].durationSeconds = duration;
+  payload.windows[0].hasDuration = duration > 0;
   return payload;
 }
 
 watch_model::Store previewStore(const char* scenario) {
   watch_model::Store store;
   store.apply(makeProvider("codex", "5h", 72.0f, 900), 1000);
-  store.apply(makeProvider("kimi", "week", 35.0f, 3 * 86400), 2000);
+  store.apply(makeProvider("kimi", "week", 65.0f, 3 * 86400), 2000);
   store.apply(makeProvider("glm", "month", 88.0f, 20 * 86400), 3000);
 
-  watch_v2::Payload codex = makeProvider("codex", "5h", 72.0f, 900);
+  watch_v2::Payload codex =
+      makeProvider("codex", "5h", 72.0f, 900, 5 * 3600);
   codex.windowCount = 2;
   watch_v2::copyAscii(codex.windows[1].id, sizeof(codex.windows[1].id), "week");
   codex.windows[1].remainingPercent = 54.0f;
   codex.windows[1].resetInSeconds = 4 * 86400 + 3 * 3600;
+  codex.windows[1].durationSeconds = 7 * 86400;
+  codex.windows[1].hasDuration = true;
   codex.workItemCount = 3;
   codex.workItems[0].slot = 0;
   watch_v2::copyAscii(codex.workItems[0].name, sizeof(codex.workItems[0].name),
@@ -114,7 +120,7 @@ watch_model::Store previewStore(const char* scenario) {
 
 watchface::State previewFaceState(const char* scenario) {
   watchface::State state;
-  state.nowMs = 60000;
+  state.nowMs = std::strcmp(scenario, "v2-home") == 0 ? 4000 : 60000;
   state.sync = watchface::SyncDot::Synced;
   state.bleConnected = true;
   state.hostLive = true;
@@ -122,7 +128,7 @@ watchface::State previewFaceState(const char* scenario) {
   state.hour = 21;
   state.minute = 45;
   state.batteryPercent = 82;
-  state.firmwareVersion = "0.2.2-tokenlink";
+  state.firmwareVersion = "0.2.3-tokenlink";
   state.protocolVersion = 2;
 
   if (std::strcmp(scenario, "v2-home") == 0) {
@@ -142,11 +148,11 @@ watchface::State previewFaceState(const char* scenario) {
     state.page = watchface::Page::System;
   } else if (std::strcmp(scenario, "v2-pet") == 0) {
     state.page = watchface::Page::Home;
-    state.petTheme = true;
+    state.face = watch_face_runtime::FaceID::Pet;
     state.nowMs = 60500;  // mid bounce
   } else if (std::strcmp(scenario, "v2-pet-sleep") == 0) {
     state.page = watchface::Page::Home;
-    state.petTheme = true;
+    state.face = watch_face_runtime::FaceID::Pet;
     state.sync = watchface::SyncDot::Offline;
     state.bleConnected = false;
     state.hostLive = false;

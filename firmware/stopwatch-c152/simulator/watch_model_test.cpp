@@ -15,6 +15,8 @@ watch_v2::Payload makePayload(const char* provider, float percent) {
                       "week");
   payload.windows[0].remainingPercent = percent;
   payload.windows[0].resetInSeconds = 3600;
+  payload.windows[0].durationSeconds = 7 * 86400;
+  payload.windows[0].hasDuration = true;
   return payload;
 }
 
@@ -35,6 +37,8 @@ int main() {
   const watch_model::ProviderEntry* tight =
       store.providerAt(static_cast<std::size_t>(tightest.providerIndex));
   assert(tight != nullptr && std::strcmp(tight->id, "kimi") == 0);
+  assert(tight->windows[0].hasDuration);
+  assert(tight->windows[0].durationSeconds == 7 * 86400);
 
   // Re-applying the same provider updates in place.
   store.apply(makePayload("kimi", 90.0f), 3000);
@@ -76,15 +80,15 @@ int main() {
   payload.workItems[1].latest = true;
   payload.activeCount = 5;
   payload.hasActiveCount = true;
-  payload.settings.theme = watch_v2::Theme::Pet;
-  payload.settings.hasTheme = true;
+  payload.settings.face = watch_face_runtime::FaceID::Pet;
+  payload.settings.hasFace = true;
   store.apply(payload, 8000);
   assert(store.workItemCount() == 2);
   assert(store.workItems()[1].state == watch_v2::WorkState::NeedsInput);
   assert(store.workItems()[1].latest);
   assert(store.hasActiveCount());
   assert(store.activeCount() == 5);
-  assert(store.settings().theme == watch_v2::Theme::Pet);
+  assert(store.settings().face == watch_face_runtime::FaceID::Pet);
   assert(store.settings().wake == watch_v2::WakeMode::Raise);  // untouched
 
   // A payload without work_items keeps the previous set.

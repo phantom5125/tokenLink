@@ -15,6 +15,9 @@ public struct QuotaWindow: Codable, Equatable, Identifiable, Sendable {
   public let remainingCount: Double?
   public let limitCount: Double?
   public let resetsAt: Date?
+  /// Authoritative cycle length when the provider exposes it. Consumers may
+  /// fall back to a known window ID only when this metadata is unavailable.
+  public let durationSeconds: Int?
 
   public init(
     id: String,
@@ -23,7 +26,8 @@ public struct QuotaWindow: Codable, Equatable, Identifiable, Sendable {
     remainingPercent: Double,
     remainingCount: Double?,
     limitCount: Double?,
-    resetsAt: Date?
+    resetsAt: Date?,
+    durationSeconds: Int? = nil
   ) {
     self.id = id
     self.label = label
@@ -32,6 +36,7 @@ public struct QuotaWindow: Codable, Equatable, Identifiable, Sendable {
     self.remainingCount = remainingCount
     self.limitCount = limitCount
     self.resetsAt = resetsAt
+    self.durationSeconds = durationSeconds.flatMap { $0 > 0 ? $0 : nil }
   }
 }
 

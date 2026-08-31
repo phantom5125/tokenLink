@@ -78,6 +78,29 @@ public enum ProviderRegistry {
   /// Providers with a hand-written adapter (local subprocess, no API key).
   public static let customProviders: Set<ProviderID> = [.codex]
 
+  public static let quotaProviderIDs: [ProviderID] = [
+    .codex, .kimi, .minimax, .glm, .claude,
+  ]
+
+  public static let authoritativeCostProviderIDs: [ProviderID] = [
+    .openrouter, .deepseek,
+  ]
+
+  public static let localCostEstimateProviderIDs: [ProviderID] = [
+    .codex, .kimi, .claude,
+  ]
+
+  public static func capabilities(for id: ProviderID) -> ProviderCapability {
+    switch id {
+    case .codex, .kimi, .claude:
+      [.quota, .localCostEstimate]
+    case .minimax, .glm:
+      [.quota]
+    case .openrouter, .deepseek:
+      [.authoritativeCost]
+    }
+  }
+
   public static func spec(for id: ProviderID) -> ProviderSpec? {
     specs[id]
   }
@@ -86,6 +109,8 @@ public enum ProviderRegistry {
     if let spec = specs[id] { return spec.displayName }
     switch id {
     case .codex: return "Codex"
+    case .openrouter: return "OpenRouter"
+    case .deepseek: return "DeepSeek"
     default: return id.rawValue.capitalized
     }
   }

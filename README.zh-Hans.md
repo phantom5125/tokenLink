@@ -49,9 +49,9 @@ Codex、Claude、Kimi、MiniMax 和 GLM 的额度，新增协商式手表协议 
 
 > 状态：早期开发。各厂商接口可能随时变动。v0.2 界面已在 C152 上完成协议 v2
 > 协商、完整 Active 计数、三家 provider 同步及实体 UI 反馈迭代。0.2.1 已将固件移入
-> 本仓库并通过实体发布验收。0.2.2 候选新增连接诊断、明确的任务链接结果、完整 session
-> 分页和更清晰的 C152 session 状态；新增硬件行为仍需完成下方清单。长时功耗仍是
-> 后续验证项。
+> 本仓库并通过实体发布验收。0.2.3 发布候选新增额度节奏表盘、Mac 成本中心、与社区
+> 主流口径对齐的 Codex API 等价成本估算，以及小尺寸下更清晰的 TokenLink 图标。
+> 长时功耗仍是后续验证项。
 
 TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、MiniMax、
 智谱 AI、M5Stack 均无隶属或背书关系，也不是它们的官方产品。各厂商名称与
@@ -59,6 +59,9 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 最新动态
 
+- **2026-08-31 — TokenLink 0.2.3 RC 1 已可公开测试。** TokenLink 圆弧额度表盘与 Mac
+  成本中心一起发布，并加入按请求计算的 Codex Token 口径、经过审阅的当前价格，以及
+  订阅额度和 API 等价成本之间的明确区分。
 - **2026-08-31 — Mac 直接安装已进入正式签名准备状态。** Mac 构建现在会生成经过
   校验的 Universal 2 `TokenLink-0.2.2.dmg`，并包含 Applications 快捷方式；公开 tag
   缺少 Developer ID 签名或 Apple 公证凭据时会直接失败，不会发布 ad-hoc 制品。
@@ -86,12 +89,14 @@ TokenLink 是独立的开源项目，与 OpenAI、Anthropic、Moonshot AI、Mini
 
 ## 功能
 
-- 原生 `MenuBarExtra` 菜单栏 + 管控中心四个页面：概览、额度源、StopWatch、设置与诊断。
+- 原生 `MenuBarExtra` 菜单栏 + 管控中心五个页面：概览、额度源、成本、StopWatch、设置与诊断。
 - 统一归一化多家、多窗口额度，绝不凭空推算套餐限额。
 - 烧速预测：根据本地最近样本推算"按当前速度约几小时后耗尽"，不额外调用 API。
 - 可选合理用量参考线，标出额度窗口在均匀消耗情况下应该所处的位置。
 - 可选 Beta 本地用量观测：只读扫描 Codex、Claude、Kimi CLI 的已知会话目录，
   仅在本机汇总近期 token 计数。
+- 成本作为独立的可选 Beta：OpenRouter/DeepSeek 官方余额保持权威数据语义；
+  Codex/Claude/Kimi 本地用量始终标注 `Estimated/API-equivalent`，并使用随包审阅的价格目录计价。
 - macOS 系统通知：窗口额度告急、窗口重置、凭据被拒时提醒（可在设置中关闭）。
 - 刷新失败时保留最近一次成功快照并标记为 stale，绝不显示虚构的实时值。
 - API key 只存 macOS 钥匙串（显示名称 `TokenLink`，service
@@ -248,6 +253,26 @@ Token Plan」页面获取，与按量付费 API Key 不互通），并选择 Glo
 保存 GLM Coding Plan API key，并选择 Global（Z.AI）或中国（BigModel）区域。
 解析器保留服务端实际返回的各窗口，不根据套餐名称推算额度。
 
+### 成本 Beta
+
+在 **设置与诊断 → Beta 功能 → 成本** 启用后，会出现独立的成本页面。成本刷新、失败与
+缓存均不影响额度刷新、通知、菜单栏严重程度或 StopWatch payload。菜单栏可以在主额度
+后显示一个固定成本指标；所选数据不可用时自动退回仅显示额度。
+
+两类成本数据绝不混为一谈：
+
+- **权威余额**来自服务商官方账户 API。OpenRouter 独立请求 `/api/v1/credits` 与
+  `/api/v1/key`：显式 Management Key 可以读取账户余额，普通 API key 可能只能读取
+  当前 key 的支出；后者会显示为部分数据，不会凭空推算余额。DeepSeek 通过
+  `/user/balance` 返回余额，TokenLink 保留每一种币种和有效的零余额，不换汇，也不从
+  余额变化反推支出。
+- **`Estimated/API-equivalent`** 根据价格目录的版本和生效日期，为近 7 天支持的本地
+  CLI token 记录估算等价 API 流量成本。它不估算编程订阅套餐的价值，也不会把额度百分比
+  换算成金额。未知模型或缺少已审阅价格的 token 类别会从金额中排除并显示警告。
+
+成本凭据必须显式存入钥匙串；OpenRouter/DeepSeek 不复用浏览器状态、组织管理员凭据或
+无关 CLI 凭据。余额和估算金额仅保存在内存中，不写入配置与诊断。
+
 额度源启用状态和 Codex 路径的修改在重启 app 后生效；区域、账户、刷新间隔、语言、
 通知开关的修改立即生效。
 
@@ -289,8 +314,11 @@ payload 送达 C152。0.2.2 候选新增完整分页、稳定优先级槽位、�
 - 显式 API key：只存 macOS 钥匙串。
 - 非敏感配置：`~/Library/Application Support/TokenLink/config.json`，仅本人权限。
 - 不读浏览器 Cookie，不需要完全磁盘访问权限，无埋点，无远端服务。
-- 可选本地用量 Beta 只读取 `.codex/sessions`、`.claude/projects`、
-  `.kimi-code/sessions`，仅在本机提取 token 计数，不上传会话内容。
+- 可选本地用量与成本 Beta 只读取 `.codex/sessions`、`.codex/config.toml` 中顶层的
+  `service_tier`、`.claude/projects`、`.kimi-code/sessions`，仅在本机提取 token
+  计数，不上传会话内容。
+- 本地扫描按 64 KiB 分块、逐文件处理，跳过超过 256 MiB 的文件与超过 1 MiB 的记录；
+  不保留原始会话内容或金额快照，也没有遥测。
 - 所有厂商请求都是 HTTPS，且在携带凭据前校验官方 host allowlist。
 - 诊断导出前脱敏。
 
@@ -337,6 +365,19 @@ firmware/
 声明式 `ProviderSpec` 注册表接入。app 是唯一的 UI 状态所有者；设备层只接收经过
 显式 v1/v2 投影的字段，不接触任何凭据。
 
+纯成本 provider 使用独立的适配器、状态、刷新协调与 UI 模型，不会获得伪造的额度快照，
+也不会进入手表 payload。
+
+## 资源与隐私门禁
+
+常规 macOS 测试任务通过后，CI 会运行 `scripts/resource_check.sh`：将确定性的 64 MiB
+工作负载流过生产 JSONL reader 与解析器，并限制最大 RSS 为 160 MiB、耗时为 30 秒、
+release 可执行文件为 15 MiB。编译器进程不计入测量。
+
+`scripts/privacy_scan.sh` 会拒绝疑似密钥，以及把余额、原始金额、Authorization header、
+原始响应 body 或会话路径写入生产日志的代码。诊断测试另行保证金额、模型标识、账户
+标签/UUID、错误文本与路径不会进入导出的元数据。
+
 ## 协议 v2 状态
 
 Mac 端已经实现 payload 投影、能力协商、v1 回退、provider 轮转、三个可见工作单元、
@@ -347,6 +388,14 @@ C152 固件、触摸聚焦、可选宠物主题、抬腕唤醒和 host-native �
 及用户实体 UI 迭代；0.2.1 重建镜像已有独立的烧录、启动、真实同步、重连、C04
 命令、实体 UI 与 session 聚焦验收记录。0.2.2 整合新增诊断、完整分页、聚焦反馈和
 更清晰的 session 状态；实体清单与 24 小时功耗浸泡仍作为分离证据。
+
+## 路线图：可扩展表盘
+
+0.3.x 将渐进拆分表盘语义状态与渲染实现。0.3.0 先让内置数据 / 宠物表盘共用
+FaceState 与运行时边界，不开放第三方安装；后续 0.3.x 再加入声明式 `.tokenface`
+包格式、确定性校验与预览、带 hash 校验和回滚的 BLE 安装，以及主动开启的本地创作
+Beta。表盘包不执行原生代码或脚本。公共社区画廊属于独立的 0.4.0+ 决策，不是本地包
+能力的前置条件。详见[可扩展表盘路线图](docs/plans/2026-08-30-extensible-watch-face-roadmap.md)。
 
 ## 参与贡献
 

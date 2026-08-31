@@ -80,13 +80,13 @@ struct WatchFaceSettingsView: View {
         Picker(
           model.text(.watchTheme),
           selection: Binding(
-            get: { model.configuration.watchSettings.faceTheme },
-            set: { theme in
-              persist { try model.setWatchFaceTheme(theme) }
+            get: { model.configuration.watchSettings.faceID },
+            set: { faceID in
+              persist { try model.setWatchFace(faceID) }
             })
         ) {
-          Text(model.text(.watchThemeData)).tag(WatchFaceTheme.data)
-          Text(model.text(.watchThemePet)).tag(WatchFaceTheme.pet)
+          Text(model.text(.watchThemeData)).tag(WatchFaceID.data)
+          Text(model.text(.watchThemePet)).tag(WatchFaceID.pet)
         }
         .labelsHidden()
         .frame(width: 170)
@@ -253,9 +253,7 @@ struct WatchFaceSettingsView: View {
   }
 
   private var enabledProviders: [ProviderID] {
-    ProviderID.allCases.filter { provider in
-      model.configuration.accounts.contains { $0.provider == provider && $0.enabled }
-    }
+    model.watchEligibleProviders
   }
 
   private var negotiatedProtocolText: String {

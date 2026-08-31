@@ -514,7 +514,7 @@ watchface::State watchfaceState() {
                          ? sessionSelection
                          : quotaSelection;
   ui.quotaExpanded = quotaExpanded;
-  ui.petTheme = appliedSettings.theme == watch_v2::Theme::Pet;
+  ui.face = appliedSettings.face;
 
   ui.batteryPercent = batteryPercent;
   ui.charging = charging;
@@ -550,9 +550,9 @@ watchface::State watchfaceState() {
 
 void loadWatchSettings() {
   if (!watchPrefs.begin("codex-watch", true)) return;
-  appliedSettings.theme = watchPrefs.getUChar("theme", 0) == 1
-                              ? watch_v2::Theme::Pet
-                              : watch_v2::Theme::Data;
+  appliedSettings.face = watchPrefs.getUChar("theme", 0) == 1
+                             ? watch_face_runtime::FaceID::Pet
+                             : watch_face_runtime::FaceID::Data;
   appliedSettings.wake = watchPrefs.getUChar("wake", 0) == 1
                              ? watch_v2::WakeMode::Tap
                              : watch_v2::WakeMode::Raise;
@@ -566,7 +566,9 @@ void loadWatchSettings() {
 void persistWatchSettings() {
   if (!watchPrefs.begin("codex-watch", false)) return;
   watchPrefs.putUChar("theme",
-                      appliedSettings.theme == watch_v2::Theme::Pet ? 1 : 0);
+                      appliedSettings.face == watch_face_runtime::FaceID::Pet
+                          ? 1
+                          : 0);
   watchPrefs.putUChar("wake",
                       appliedSettings.wake == watch_v2::WakeMode::Tap ? 1 : 0);
   watchPrefs.putUChar(
@@ -584,8 +586,8 @@ void applySettingsFromStore() {
   appliedSettingsVersion = version;
   appliedSettings = state.watchStore.settings();
   persistWatchSettings();
-  Serial.printf("WATCH settings theme=%d wake=%d hourfmt=%d\n",
-                static_cast<int>(appliedSettings.theme),
+  Serial.printf("WATCH settings face=%d wake=%d hourfmt=%d\n",
+                static_cast<int>(appliedSettings.face),
                 static_cast<int>(appliedSettings.wake),
                 static_cast<int>(appliedSettings.hourFormat));
   drawScreen();
@@ -749,6 +751,8 @@ void beginTouchGesture(int x, int y) {
   activeSwipe = touch_gesture::Direction::None;
 
   if (v2Mode()) {
+    const watch_face_runtime::Descriptor& face =
+        watch_face_runtime::descriptor(appliedSettings.face);
     Serial.printf("TOUCH begin x=%d y=%d page=%d\n", x, y,
                   static_cast<int>(currentPage));
     if (currentPage == watchface::Page::Sessions) {
@@ -761,7 +765,8 @@ void beginTouchGesture(int x, int y) {
       }
     }
     if (currentPage == watchface::Page::Home &&
-        appliedSettings.theme != watch_v2::Theme::Pet) {
+        face.homeInteraction ==
+            watch_face_runtime::HomeInteraction::NavigateCards) {
       if (watchface::homeSessionsAtPoint(x, y)) {
         homeTouchDestination = watchface::Page::Sessions;
         beginTouchSend();
@@ -791,7 +796,8 @@ void beginTouchGesture(int x, int y) {
       return;
     }
     if (currentPage == watchface::Page::Home &&
-        appliedSettings.theme == watch_v2::Theme::Pet &&
+        face.homeInteraction ==
+            watch_face_runtime::HomeInteraction::RefreshPrimary &&
         petface::atPoint(x, y, watchface::kCenterX, watchface::kPetTop)) {
       touchPetPressed = true;
       return;

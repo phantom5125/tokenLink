@@ -90,6 +90,7 @@ bash scripts/test.sh
 swift format lint --strict Package.swift
 swift format lint --recursive --strict Sources Tests
 bash scripts/privacy_scan.sh
+bash scripts/resource_check.sh
 ```
 
 On a Command-Line-Tools-only machine, compilation may work while the Swift
@@ -100,10 +101,13 @@ use the macOS CI result as the test evidence.
 
 TokenLink uses a narrow, adapter-oriented architecture:
 
-- `TokenLinkCore` owns provider-neutral identifiers, quota snapshots, and state;
+- `TokenLinkCore` owns provider-neutral identifiers, quota and cost snapshots,
+  and state;
 - `TokenLinkProviders` contains isolated provider parsers and fetchers;
-- providers implement `QuotaProvider` and emit a normalized `QuotaSnapshot`;
-  and
+- quota providers implement `QuotaProvider` and emit a normalized
+  `QuotaSnapshot`;
+- authoritative cost providers use their own capability, adapter, snapshot,
+  store, and refresh path; and
 - the app supplies credentials and HTTP access through narrow interfaces.
 
 Adapters are currently compiled into TokenLink. They are plugin-like extension
@@ -146,6 +150,30 @@ Do not publish tokens, cookies, request headers, raw private payloads, usernames
 home paths, subscription identifiers, or exact quota values when they could
 identify an account. It is acceptable to obscure account-specific values while
 showing that the expected windows, reset behavior, and status are present.
+
+## Cost provider and pricing contributions
+
+Quota, authoritative balances, and local cost estimates are separate domains.
+A cost-only provider must not receive a synthetic quota snapshot, affect quota
+severity or notifications, or enter a StopWatch payload.
+
+An authoritative cost adapter must:
+
+- use an official account or billing endpoint with a narrow HTTPS host policy;
+- require an explicit Keychain credential rather than browser state or an
+  unrelated CLI credential;
+- preserve returned currencies and valid zero values without conversion or
+  inference from balance changes;
+- distinguish authentication, timeout, decoding, and partial-source failures;
+  and
+- include synthetic fixture tests without real account payloads or amounts.
+
+A price-catalog change must include the catalog version and effective date,
+first-party pricing references, explicit model aliases, and independent rates
+for every supported token bucket. Never guess an unknown model price, silently
+price a partially covered record, convert currencies, or remove the visible
+`Estimated/API-equivalent` label. Update estimator tests and the resource
+workload when a new local transcript format is introduced.
 
 ## Hardware adapter contributions
 

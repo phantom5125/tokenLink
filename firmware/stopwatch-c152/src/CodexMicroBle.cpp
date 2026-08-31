@@ -8,6 +8,7 @@
 #include "HostRpcRequest.h"
 #include "QuotaPayload.h"
 #include "WatchCommandFrame.h"
+#include "WatchFaceRuntime.h"
 
 // Out-of-line definition: kFirmwareVersion is odr-used by snprintf.
 constexpr char CodexMicroBle::kFirmwareVersion[];
@@ -418,10 +419,13 @@ void CodexMicroBle::begin() {
   BLECharacteristic* capabilities = quotaService->createCharacteristic(
       kCapabilitiesUuid, BLECharacteristic::PROPERTY_READ);
   capabilities->setAccessPermissions(ESP_GATT_PERM_READ_ENCRYPTED);
-  char capabilitiesJson[96];
+  char capabilitiesJson[160];
   snprintf(capabilitiesJson, sizeof(capabilitiesJson),
-           "{\"protocol_versions\":[1,2],\"firmware\":\"%s\"}",
-           kFirmwareVersion);
+           "{\"protocol_versions\":[1,2],\"firmware\":\"%s\","
+           "\"features\":[\"face_runtime\"],"
+           "\"face_runtime_versions\":[%u]}",
+           kFirmwareVersion,
+           static_cast<unsigned>(watch_face_runtime::kRuntimeVersion));
   capabilities->setValue(capabilitiesJson);
 
   // C04 command channel, watch -> Mac. READ so the Mac can poll the last

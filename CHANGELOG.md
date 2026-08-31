@@ -4,6 +4,40 @@ Notable TokenLink changes are recorded here. The project follows semantic
 versioning while it is pre-1.0; hardware verification is reported separately in
 `docs/validation`.
 
+## Unreleased
+
+## 0.2.3-rc.1 — 2026-08-31
+
+- Reworked the Data watch face around a TokenLink-style open quota arc, with
+  rounded Nunito numerals, a time-proportional plan tick, percentage-point
+  variance, reset countdown, and a compact session-action pill.
+- Rebuilt the macOS app icon as high-contrast vector geometry so the surrounding
+  open arc remains visible at 16 px Finder and sidebar sizes.
+- Added an optional protocol-v2 window-duration hint for fair-pace rendering,
+  preserving compatibility in both directions and omitting pace for unknown
+  windows instead of inventing plan limits.
+- Promoted the Mac Costs beta to a dedicated localized Cost Center route with
+  Today / Week / Month views and drill-down cost provenance.
+- Aligned Codex API-equivalent estimates with the leading community method:
+  request-level deltas, disjoint input/cache buckets, recorded and configured
+  Fast tiers, request-level long-context pricing, current GPT-5.6 official
+  rates, and streaming support for normal rollout files up to 256 MiB.
+
+- Added a persisted Today / Week / Month selector shared by the Costs screen
+  and local-estimate menu-bar supplement.
+- Built all three local estimate windows from one bounded transcript pass and
+  cached them independently, so changing the visible period performs no new
+  file reads.
+- Matched authoritative daily, weekly, and monthly spend to the same selected
+  period while keeping provider balances visible and separate.
+
+- Added an opt-in Costs beta that keeps provider-reported OpenRouter and
+  DeepSeek balances separate from coding-plan quota.
+- Added seven-day local `Estimated/API-equivalent` cost estimates for Codex,
+  Claude, and Kimi, backed by a versioned, reviewed price catalog.
+- Added bounded streaming transcript scans, explicit cost provenance and
+  freshness, and CI gates for privacy, memory, runtime, and executable size.
+
 ## 0.2.2 — Unreleased
 
 - Added a Universal 2 `TokenLink-0.2.2.dmg` with a drag-to-Applications layout,

@@ -51,11 +51,13 @@ private actor FakeAppServerTransport: AppServerTransport {
   let current = try CodexRateLimitParser.parse(
     data: Fixture.load("codex-rate-limits.json"), fetchedAt: now)
   #expect(current.windows[0].remainingPercent == 82)
+  #expect(current.windows[0].durationSeconds == 7 * 86_400)
   let legacyData = Data(
     #"{"id":1,"result":{"rateLimits":{"limitId":"codex","primary":{"usedPercent":32,"resetsAt":1787616000}}}}"#
       .utf8)
   let legacy = try CodexRateLimitParser.parse(data: legacyData, fetchedAt: now)
   #expect(legacy.windows[0].remainingPercent == 68)
+  #expect(legacy.windows[0].durationSeconds == nil)
 }
 
 @Test func rejectsLegacyCodexBucketWithDifferentLimitID() {

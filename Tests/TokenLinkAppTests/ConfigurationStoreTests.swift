@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 import TokenLinkCore
+import TokenLinkDevice
 import TokenLinkProviders
 
 @testable import TokenLinkApp
@@ -19,9 +20,10 @@ import TokenLinkProviders
     glmRegion: .china)
   expected.fairPaceEnabled = true
   expected.betaLocalUsageEnabled = true
+  expected.costDisplayPeriod = .month
   expected.watchSettings = WatchSettings(
     syncedProviders: [.codex, .kimi],
-    faceTheme: .pet,
+    faceID: .pet,
     wakeMode: .tap,
     hourFormat: .h24)
 
@@ -32,6 +34,35 @@ import TokenLinkProviders
   #expect(
     !String(decoding: bytes, as: UTF8.self)
       .localizedCaseInsensitiveContains("apiKey"))
+}
+
+@Test func legacyWatchFaceThemeMigratesToOpenFaceID() throws {
+  let legacy = """
+    {
+      "syncedProviders" : ["codex"],
+      "faceTheme" : "pet",
+      "wakeMode" : "tap",
+      "hourFormat" : "h24"
+    }
+    """
+
+  let settings = try JSONDecoder().decode(WatchSettings.self, from: Data(legacy.utf8))
+
+  #expect(settings.faceID == .pet)
+  let encoded = try JSONEncoder().encode(settings)
+  let object = try #require(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+  #expect(object["faceID"] as? String == "pet")
+  #expect(object["faceTheme"] == nil)
+}
+
+@Test func packagedWatchFaceIDRoundTripsInSettings() throws {
+  let custom = try #require(WatchFaceID(rawValue: "community.pixel-pet"))
+  let expected = WatchSettings(faceID: custom)
+
+  let data = try JSONEncoder().encode(expected)
+  let decoded = try JSONDecoder().decode(WatchSettings.self, from: data)
+
+  #expect(decoded == expected)
 }
 
 @Test func corruptConfigurationIsQuarantinedAndDefaultsAreReturned() throws {
@@ -96,7 +127,23 @@ import TokenLinkProviders
   #expect(loaded.fairPaceEnabled == false)
   #expect(loaded.betaLocalUsageEnabled == false)
   #expect(loaded.legacyKeychainMigrationCompleted == false)
+  #expect(loaded.betaCostsEnabled == false)
+  #expect(loaded.menuBarCostMetric == .none)
+  #expect(loaded.costDisplayPeriod == .week)
+  #expect(!loaded.accounts.contains { [.openrouter, .deepseek].contains($0.provider) })
   #expect(loaded.watchSettings == WatchSettings())
+}
+
+@Test func defaultConfigurationIncludesQuotaProvidersOnly() {
+  #expect(
+    AppConfiguration.default.accounts.allSatisfy {
+      ProviderRegistry.capabilities(for: $0.provider).contains(.quota)
+    })
+  #expect(!AppConfiguration.default.accounts.contains { $0.provider == .openrouter })
+  #expect(!AppConfiguration.default.accounts.contains { $0.provider == .deepseek })
+  #expect(AppConfiguration.default.betaCostsEnabled == false)
+  #expect(AppConfiguration.default.menuBarCostMetric == .none)
+  #expect(AppConfiguration.default.costDisplayPeriod == .week)
 }
 
 @Test func accountsRoundTripWithStableIDsAndLabels() throws {

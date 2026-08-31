@@ -19,6 +19,11 @@ is distributed under the SIL Open Font License 1.1. The source font, full
 license text, and generated embedded font data are under `assets/fonts/` and
 `include/SpaceMonoVlw.h`.
 
+Nunito font software is copyright 2014 The Nunito Project Authors and is
+distributed under the SIL Open Font License 1.1. The unmodified variable source
+font and license are under `assets/fonts/`; the numeric subset generated for the
+quota dial is under `include/NunitoDigitsVlw.h`.
+
 ## Independent project and trademarks
 
 This is an independent, unofficial compatibility project. It is not affiliated
@@ -62,7 +67,7 @@ BLE pairing uses a "Just Works" flow without passkey authentication. Use the
 device only in a trusted environment and remove stale pairings from both the
 host and device when appropriate.
 
-This firmware does not connect directly to OpenAI. TokenLink 0.2.2 builds only
+This firmware does not connect directly to OpenAI. TokenLink builds only
 the default wireless image, which does not capture or stream the StopWatch
 microphone; the earlier optional USB-microphone experiment is not included as a
 build target. The firmware sends button events, directional actions, and device

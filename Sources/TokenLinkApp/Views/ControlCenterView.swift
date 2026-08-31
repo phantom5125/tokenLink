@@ -3,6 +3,7 @@ import SwiftUI
 enum ControlRoute: String, CaseIterable, Identifiable {
   case overview = "Overview"
   case providers = "Providers"
+  case costs = "Costs"
   case stopwatch = "StopWatch"
   case settings = "Settings & Diagnostics"
   var id: Self { self }
@@ -11,6 +12,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     switch self {
     case .overview: "square.grid.2x2"
     case .providers: "bolt.horizontal.circle"
+    case .costs: "dollarsign.circle"
     case .stopwatch: "stopwatch"
     case .settings: "gearshape.2"
     }
@@ -20,6 +22,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     switch self {
     case .overview: .routeOverview
     case .providers: .routeProviders
+    case .costs: .routeCosts
     case .stopwatch: .routeStopwatch
     case .settings: .routeSettings
     }
@@ -46,6 +49,8 @@ struct ControlCenterView: View {
           OverviewView(model: model)
         case .providers:
           ProvidersView(model: model)
+        case .costs:
+          CostsView(model: model)
         case .stopwatch:
           StopWatchView(model: model)
         case .settings:
@@ -56,11 +61,19 @@ struct ControlCenterView: View {
       .toolbar {
         ToolbarItem {
           Button {
-            Task { await model.refreshManually() }
+            Task {
+              if selection == .costs {
+                await model.refreshCosts(force: true)
+              } else {
+                await model.refreshManually()
+              }
+            }
           } label: {
-            Label(model.text(.actionRefresh), systemImage: "arrow.clockwise")
+            Label(
+              model.text(selection == .costs ? .actionRefreshCosts : .actionRefresh),
+              systemImage: "arrow.clockwise")
           }
-          .disabled(model.isRefreshing)
+          .disabled(selection == .costs ? model.costDashboard.isRefreshing : model.isRefreshing)
         }
       }
     }

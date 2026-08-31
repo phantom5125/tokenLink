@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <cstring>
 
+#include "WatchFaceRuntime.h"
+
 namespace watch_v2 {
 
 constexpr std::size_t kMaxWindows = 3;
@@ -28,11 +30,6 @@ enum class WorkState : std::uint8_t {
   Unknown,
 };
 
-enum class Theme : std::uint8_t {
-  Data,
-  Pet,
-};
-
 enum class WakeMode : std::uint8_t {
   Raise,  // BMI270 raise-to-wake plus tap
   Tap,    // tap only
@@ -48,6 +45,8 @@ struct Window {
   char id[kWindowIdCapacity] = {};
   float remainingPercent = 0.0f;
   std::uint32_t resetInSeconds = 0;
+  std::uint32_t durationSeconds = 0;
+  bool hasDuration = false;
 };
 
 struct WorkItem {
@@ -60,10 +59,10 @@ struct WorkItem {
 };
 
 struct Settings {
-  Theme theme = Theme::Data;
+  watch_face_runtime::FaceID face = watch_face_runtime::FaceID::Data;
   WakeMode wake = WakeMode::Raise;
   HourFormat hourFormat = HourFormat::System;
-  bool hasTheme = false;
+  bool hasFace = false;
   bool hasWake = false;
   bool hasHourFormat = false;
 };
@@ -163,6 +162,11 @@ inline bool parse(JsonObjectConst value, Payload& output) {
       if (window.id[0] == '\0') continue;
       window.remainingPercent = percent;
       window.resetInSeconds = reset.as<std::uint32_t>();
+      const JsonVariantConst duration = entry["window_duration_seconds"];
+      window.hasDuration = duration.is<std::uint32_t>() &&
+                           duration.as<std::uint32_t>() > 0;
+      window.durationSeconds =
+          window.hasDuration ? duration.as<std::uint32_t>() : 0;
       ++output.windowCount;
     }
   }
@@ -209,14 +213,10 @@ inline bool parse(JsonObjectConst value, Payload& output) {
   const JsonObjectConst settings = value["settings"].as<JsonObjectConst>();
   if (!settings.isNull()) {
     const char* theme = settings["theme"].as<const char*>();
-    if (theme != nullptr) {
-      if (std::strcmp(theme, "data") == 0) {
-        output.settings.theme = Theme::Data;
-        output.settings.hasTheme = true;
-      } else if (std::strcmp(theme, "pet") == 0) {
-        output.settings.theme = Theme::Pet;
-        output.settings.hasTheme = true;
-      }
+    watch_face_runtime::FaceID face;
+    if (watch_face_runtime::resolve(theme, face)) {
+      output.settings.face = face;
+      output.settings.hasFace = true;
     }
     const char* wake = settings["wake"].as<const char*>();
     if (wake != nullptr) {

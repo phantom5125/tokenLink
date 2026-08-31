@@ -1,5 +1,13 @@
 import AppKit
 import SwiftUI
+import TokenLinkCore
+import TokenLinkProviders
+
+private struct CostMetricOption: Identifiable {
+  let metric: MenuBarCostMetric
+  let label: String
+  var id: MenuBarCostMetric { metric }
+}
 
 struct SettingsView: View {
   @Bindable var model: AppModel
@@ -180,6 +188,55 @@ struct SettingsView: View {
         }
         .disabled(model.isScanningLocalUsage)
       }
+
+      Divider()
+
+      LabeledContent(model.text(.betaCosts)) {
+        Toggle(
+          model.text(.betaCosts),
+          isOn: Binding(
+            get: { model.configuration.betaCostsEnabled },
+            set: { enabled in
+              Task { @MainActor in
+                do {
+                  try await model.setBetaCostsEnabled(enabled)
+                } catch {
+                  message = error.localizedDescription
+                }
+              }
+            })
+        )
+        .toggleStyle(.switch)
+        .labelsHidden()
+      }
+      Text(model.text(.betaCostsHint))
+        .font(.caption)
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
+
+      if model.configuration.betaCostsEnabled {
+        LabeledContent(model.text(.betaCostsMetric)) {
+          Picker(
+            model.text(.betaCostsMetric),
+            selection: Binding(
+              get: { model.configuration.menuBarCostMetric },
+              set: { metric in
+                do { try model.setMenuBarCostMetric(metric) } catch {
+                  message = error.localizedDescription
+                }
+              })
+          ) {
+            ForEach(costMetricOptions) { option in
+              Text(option.label).tag(option.metric)
+            }
+          }
+          .labelsHidden()
+          .frame(width: 250)
+        }
+        Text(model.text(.betaCostsMetricHint))
+          .font(.caption)
+          .foregroundStyle(.secondary)
+      }
     }
     .settingsCard()
   }
@@ -190,6 +247,45 @@ struct SettingsView: View {
     let total = formatter.string(from: NSNumber(value: summary.totalTokens)) ?? "0"
     let cached = formatter.string(from: NSNumber(value: summary.cachedInputTokens)) ?? "0"
     return "\(total) tok (\(cached) cached)"
+  }
+
+  private var costMetricOptions: [CostMetricOption] {
+    var options = [
+      CostMetricOption(metric: .none, label: model.text(.costMetricNone))
+    ]
+    options += ProviderRegistry.localCostEstimateProviderIDs.map { provider in
+      CostMetricOption(
+        metric: .localEstimate(provider),
+        label: String(
+          format: model.text(.costMetricLocalFormat),
+          AppModel.displayName(for: provider)))
+    }
+    for row in model.costDashboard.authoritativeRows {
+      let providerName = AppModel.displayName(for: row.source.provider)
+      let currencies = row.state.snapshot?.balances.map(\.available.currency) ?? []
+      for currency in currencies {
+        options.append(
+          CostMetricOption(
+            metric: .authoritativeBalance(
+              accountID: row.source.accountID, currency: currency),
+            label: String(
+              format: model.text(.costMetricBalanceFormat), providerName, currency)))
+      }
+    }
+    let selected = model.configuration.menuBarCostMetric
+    if !options.contains(where: { $0.metric == selected }),
+      case .authoritativeBalance(let accountID, let currency) = selected
+    {
+      let provider = model.configuration.accounts.first(where: { $0.id == accountID })?.provider
+      options.append(
+        CostMetricOption(
+          metric: selected,
+          label: String(
+            format: model.text(.costMetricBalanceFormat),
+            provider.map(AppModel.displayName(for:)) ?? model.text(.costsAuthoritative),
+            currency)))
+    }
+    return options
   }
 
   private var privacyCard: some View {

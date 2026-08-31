@@ -76,8 +76,8 @@ class Store {
     }
 
     bool settingsChanged = false;
-    if (payload.settings.hasTheme && settings_.theme != payload.settings.theme) {
-      settings_.theme = payload.settings.theme;
+    if (payload.settings.hasFace && settings_.face != payload.settings.face) {
+      settings_.face = payload.settings.face;
       settingsChanged = true;
     }
     if (payload.settings.hasWake && settings_.wake != payload.settings.wake) {

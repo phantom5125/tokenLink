@@ -35,7 +35,7 @@ private func kimiFixtureClient() -> SpecHTTPClient {
 }
 
 @Test func registryCoversEveryProviderWithSpecOrCustomMarker() {
-  for id in ProviderID.allCases {
+  for id in ProviderRegistry.quotaProviderIDs {
     if id == .codex {
       #expect(ProviderRegistry.spec(for: id) == nil)
       #expect(ProviderRegistry.customProviders.contains(id))
@@ -44,6 +44,10 @@ private func kimiFixtureClient() -> SpecHTTPClient {
       #expect(!ProviderRegistry.customProviders.contains(id))
     }
   }
+  for id in ProviderRegistry.authoritativeCostProviderIDs {
+    #expect(ProviderRegistry.spec(for: id) == nil)
+    #expect(!ProviderRegistry.customProviders.contains(id))
+  }
 }
 
 @Test func registryDisplayNamesCoverCustomProviders() {
@@ -51,6 +55,21 @@ private func kimiFixtureClient() -> SpecHTTPClient {
     #expect(!ProviderRegistry.displayName(for: id).isEmpty)
   }
   #expect(ProviderRegistry.displayName(for: .codex) == "Codex")
+}
+
+@Test func registrySeparatesQuotaAndCostCapabilities() {
+  #expect(
+    ProviderRegistry.capabilities(for: .codex)
+      == [.quota, .localCostEstimate])
+  #expect(
+    ProviderRegistry.capabilities(for: .openrouter)
+      == [.authoritativeCost])
+  #expect(
+    ProviderRegistry.capabilities(for: .deepseek)
+      == [.authoritativeCost])
+  #expect(!ProviderRegistry.quotaProviderIDs.contains(.openrouter))
+  #expect(ProviderRegistry.authoritativeCostProviderIDs == [.openrouter, .deepseek])
+  #expect(ProviderRegistry.localCostEstimateProviderIDs == [.codex, .kimi, .claude])
 }
 
 @Test func specDrivenProviderSendsBearerHeader() async throws {
