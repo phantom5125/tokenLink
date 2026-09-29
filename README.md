@@ -335,6 +335,25 @@ browser state, organization-admin credentials, or unrelated CLI credentials for
 OpenRouter or DeepSeek. Balances and estimated monetary totals remain in memory
 and are not written to configuration or diagnostics.
 
+### Tokenizer comparison beta
+
+Control Center → Tokenizer comparison runs only after you click **Run comparison**.
+It uses a saved API key for a selected Kimi, MiniMax, GLM, OpenRouter, or
+DeepSeek account and sends 30 fixed public texts to that provider's official
+inference endpoint, requesting at most one output token each time. The model ID
+is editable. Calls may consume subscription quota or incur API charges; a key
+that only grants balance access cannot run the probe. No key, response text, or
+measurement is written to disk or included in diagnostics.
+
+The screen compares returned input-token counts with versioned, attributed
+reference profiles using the most common fixed count difference. It shows the
+closest profiles, coverage, and each text's count difference. A high score is
+evidence of a similar tokenization and request-wrapping stack, **not** proof of
+the actual model, weights, or vendor. Fewer than 20 valid counts, under 80%
+coverage, or fewer than five distinct counts produce no score. The reference data comes from
+[which-llm](https://github.com/ictchenbo/which-llm); it was collected through
+OpenRouter and may differ from direct provider endpoints or later model routes.
+
 Provider and Codex-path changes are persisted immediately and take effect
 after restarting the app. Region, account, and refresh-interval changes take
 effect immediately.

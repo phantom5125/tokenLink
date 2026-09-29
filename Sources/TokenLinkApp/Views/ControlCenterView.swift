@@ -4,6 +4,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
   case overview = "Overview"
   case providers = "Providers"
   case costs = "Costs"
+  case tokenizer = "Tokenizer comparison"
   case stopwatch = "StopWatch"
   case settings = "Settings & Diagnostics"
   var id: Self { self }
@@ -13,6 +14,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     case .overview: "square.grid.2x2"
     case .providers: "bolt.horizontal.circle"
     case .costs: "dollarsign.circle"
+    case .tokenizer: "text.magnifyingglass"
     case .stopwatch: "stopwatch"
     case .settings: "gearshape.2"
     }
@@ -23,6 +25,7 @@ enum ControlRoute: String, CaseIterable, Identifiable {
     case .overview: .routeOverview
     case .providers: .routeProviders
     case .costs: .routeCosts
+    case .tokenizer: .routeTokenizer
     case .stopwatch: .routeStopwatch
     case .settings: .routeSettings
     }
@@ -51,6 +54,8 @@ struct ControlCenterView: View {
           ProvidersView(model: model)
         case .costs:
           CostsView(model: model)
+        case .tokenizer:
+          TokenizerLabView(model: model)
         case .stopwatch:
           StopWatchView(model: model)
         case .settings:
@@ -60,20 +65,22 @@ struct ControlCenterView: View {
       .environment(\.appLanguage, model.currentLanguage)
       .toolbar {
         ToolbarItem {
-          Button {
-            Task {
-              if selection == .costs {
-                await model.refreshCosts(force: true)
-              } else {
-                await model.refreshManually()
+          if selection != .tokenizer {
+            Button {
+              Task {
+                if selection == .costs {
+                  await model.refreshCosts(force: true)
+                } else {
+                  await model.refreshManually()
+                }
               }
+            } label: {
+              Label(
+                model.text(selection == .costs ? .actionRefreshCosts : .actionRefresh),
+                systemImage: "arrow.clockwise")
             }
-          } label: {
-            Label(
-              model.text(selection == .costs ? .actionRefreshCosts : .actionRefresh),
-              systemImage: "arrow.clockwise")
+            .disabled(selection == .costs ? model.costDashboard.isRefreshing : model.isRefreshing)
           }
-          .disabled(selection == .costs ? model.costDashboard.isRefreshing : model.isRefreshing)
         }
       }
     }
