@@ -32,6 +32,7 @@ public enum L10n {
     case routeOverview = "route.overview"
     case routeProviders = "route.providers"
     case routeCosts = "route.costs"
+    case routeTokenizer = "route.tokenizer"
     case routeStopwatch = "route.stopwatch"
     case routeSettings = "route.settings"
     case actionRefresh = "action.refresh"
@@ -304,6 +305,10 @@ public enum L10n {
     ],
     .routeCosts: [
       .english: "Cost Center β", .simplifiedChinese: "成本中心 β", .japanese: "コストセンター β",
+    ],
+    .routeTokenizer: [
+      .english: "Tokenizer comparison β", .simplifiedChinese: "Tokenizer 对比 β",
+      .japanese: "トークナイザー比較 β",
     ],
     .routeStopwatch: [
       .english: "StopWatch", .simplifiedChinese: "StopWatch", .japanese: "StopWatch",
